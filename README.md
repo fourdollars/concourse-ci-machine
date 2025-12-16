@@ -1,0 +1,525 @@
+**Work in progress**
+
+# Concourse CI Machine Charm
+
+[![Charmhub](https://charmhub.io/concourse-ci-machine/badge.svg)](https://charmhub.io/concourse-ci-machine)
+[![Release](https://img.shields.io/github/v/release/fourdollars/concourse-ci-machine)](https://github.com/fourdollars/concourse-ci-machine/releases)
+
+A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/) - a modern, scalable continuous integration and delivery system. This charm supports flexible deployment patterns including single-unit, multi-unit with automatic role assignment, and separate web/worker configurations.
+
+> **Note:** This is a machine charm designed for bare metal, VMs, and LXD deployments. For Kubernetes deployments, see https://charmhub.io/concourse-web and https://charmhub.io/concourse-worker.
+
+## Features
+
+✅ **Flexible Deployment Modes**: Deploy as all-in-one, auto-scaled web/workers, or explicit roles
+✅ **Automatic Role Detection**: Leader unit becomes web server, followers become workers
+✅ **Fully Automated Key Distribution**: TSA keys automatically shared via peer relations - zero manual setup!
+✅ **Secure Random Passwords**: Auto-generated admin password stored in Juju peer data
+✅ **Latest Version Detection**: Automatically downloads the latest Concourse release from GitHub
+✅ **PostgreSQL Integration**: Seamless database relation support
+✅ **Container Runtime**: Uses containerd with LXD-compatible configuration
+✅ **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
+✅ **Prometheus Metrics**: Optional metrics endpoint for monitoring
+✅ **Download Progress**: Real-time installation progress in Juju status
+
+## Quick Start
+
+### Prerequisites
+
+- Juju 3.x
+- Ubuntu 22.04 LTS (on Juju-managed machines)
+- PostgreSQL charm (for web server)
+
+### Basic Deployment (All-in-One)
+
+```bash
+# Create a Juju model
+juju add-model concourse
+
+# Deploy PostgreSQL
+juju deploy postgresql --channel 14/stable
+
+# Deploy Concourse CI charm as application "concourse-ci"
+juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
+
+# Relate to database
+juju relate concourse-ci:postgresql postgresql:db
+
+# Wait for deployment (takes ~5-10 minutes)
+juju status --watch 1s
+```
+
+**Naming Convention:**
+- **Charm name**: `concourse-ci-machine` (what you deploy from Charmhub)
+- **Application name**: `concourse-ci` (used throughout this guide)
+- **Unit names**: `concourse-ci/0`, `concourse-ci/1`, etc.
+
+Once deployed, get credentials with `juju run concourse-ci/leader get-admin-password`
+
+### Multi-Unit Deployment with Auto Mode (Recommended)
+
+Deploy multiple units with automatic role assignment and key distribution:
+
+```bash
+# Deploy PostgreSQL
+juju deploy postgresql --channel 14/stable
+
+# Deploy Concourse charm (named "concourse-ci") with 1 web + 2 workers
+juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
+
+# Relate to database (using application name "concourse-ci")
+juju relate concourse-ci:postgresql postgresql:db
+
+# Check deployment
+juju status
+```
+
+**Result:**
+- `concourse-ci/0` (leader): Web server
+- `concourse-ci/1-2`: Workers
+- **All keys automatically distributed via peer relations!** ✨
+
+**Note:** Application is named `concourse-ci` for easier reference (shorter than `concourse-ci-machine`)
+
+### Separated Web/Worker Deployment (For Independent Scaling)
+
+For maximum flexibility with separate applications:
+
+```bash
+# Deploy PostgreSQL
+juju deploy postgresql --channel 14/stable
+
+# Deploy web server (1 unit)
+juju deploy concourse-ci-machine web --config deployment-mode=web
+
+# Deploy workers (2 units)  
+juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
+
+# Relate web to database
+juju relate web:postgresql postgresql:db
+
+# Check deployment
+juju status
+```
+
+**Result:**
+- `web/0`: Web server only
+- `worker/0`, `worker/1`: Workers only
+
+**Note**: Separated applications (different app names) require manual key distribution as they don't share peer relations. See [Manual Key Setup](#manual-key-setup-for-separated-applications) below.
+
+## Deployment Modes
+
+The charm supports four deployment modes via the `deployment-mode` configuration:
+
+### 1. `all` (Single Unit - Fully Automated)
+Both web and worker run on the same unit. **Fully automated, no manual setup required.**
+
+```bash
+juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
+juju relate concourse-ci:postgresql postgresql:db
+```
+
+**Best for:** Development, testing, small deployments
+**Key Distribution:** ✅ Automatic (single unit)
+
+### 2. `auto` (Multi-Unit - Fully Automated ✨)
+Leader unit runs web server, non-leader units run workers. **Keys automatically distributed via peer relations!**
+
+```bash
+juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
+juju relate concourse-ci:postgresql postgresql:db
+```
+
+**Best for:** Production, scalable deployments
+**Key Distribution:** ✅ **Fully Automatic** - zero manual intervention required!
+
+### 3. `web` + `worker` (Separate Apps - Manual Setup)
+Deploy web and workers as separate applications for independent scaling.
+
+```bash
+# Web application
+juju deploy concourse-ci-machine web --config deployment-mode=web
+
+# Worker application (scalable)
+juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
+
+# Relate web to PostgreSQL
+juju relate web:postgresql postgresql:db
+```
+
+**Best for:** Independent scaling of web and workers
+**Key Distribution:** ⚠️ Manual setup required (different applications don't share peer relations)
+
+## Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `deployment-mode` | string | `auto` | Deployment mode: auto, all, web, or worker |
+| `concourse-version` | string | `latest` | Concourse version to install (auto-detects latest from GitHub) |
+| `web-port` | int | `8080` | Web UI and API port |
+| `worker-procs` | int | `1` | Number of worker processes per unit |
+| `log-level` | string | `info` | Log level: debug, info, warn, error |
+| `enable-metrics` | bool | `true` | Enable Prometheus metrics on port 9391 |
+| `external-url` | string | (auto) | External URL for webhooks and OAuth |
+| `initial-admin-username` | string | `admin` | Initial admin username |
+| `container-placement-strategy` | string | `volume-locality` | Container placement: volume-locality, random, etc. |
+| `max-concurrent-downloads` | int | `10` | Max concurrent resource downloads |
+| `containerd-dns-proxy-enable` | bool | `false` | Enable containerd DNS proxy |
+| `containerd-dns-server` | string | `1.1.1.1,8.8.8.8` | DNS servers for containerd containers |
+
+### Changing Configuration
+
+```bash
+# Set custom web port
+juju config concourse-ci-machine web-port=9090
+
+# Set specific Concourse version
+juju config concourse-ci-machine concourse-version=7.14.3
+
+# Enable debug logging
+juju config concourse-ci-machine log-level=debug
+
+# Set external URL
+juju config concourse-ci-machine external-url=https://ci.example.com
+```
+
+## Using Concourse
+
+### Access the Web UI
+
+1. Get the web server IP:
+```bash
+juju status
+```
+
+2. **Note about IPv6**: Juju may display IPv6 addresses for LXD containers. The web server listens on both IPv4 and IPv6. To get the IPv4 address:
+```bash
+# If juju status shows IPv6 address
+juju ssh web/0 "hostname -I | awk '{print \$1}'"
+```
+
+3. Open in browser: `http://<web-unit-ipv4>:8080`
+
+4. Get the admin credentials:
+```bash
+juju run concourse-ci/leader get-admin-password
+```
+
+Example output:
+```
+message: Use these credentials to login to Concourse web UI
+password: 01JfF@I!9W^0%re!3I!hyy3C
+username: admin
+```
+
+**Security**: A random password is automatically generated on first deployment and stored securely in Juju peer relation data. All units in the deployment share the same credentials.
+
+### Using Fly CLI
+
+The Fly CLI is Concourse's command-line tool for managing pipelines:
+
+```bash
+# Download fly from your Concourse instance
+curl -Lo fly "http://<web-unit-ip>:8080/api/v1/cli?arch=amd64&platform=linux"
+chmod +x fly
+sudo mv fly /usr/local/bin/
+
+# Get credentials
+ADMIN_PASSWORD=$(juju run concourse-ci/leader get-admin-password --format=json | jq -r '."unit-concourse-ci-2".results.password')
+
+# Login
+fly -t prod login -c http://<web-unit-ip>:8080 -u admin -p "$ADMIN_PASSWORD"
+
+# Sync fly version
+fly -t prod sync
+```
+
+### Create Your First Pipeline
+
+**⚠️ Important**: This charm uses containerd runtime. All tasks **must** include an `image_resource`.
+
+1. Create a pipeline file `hello.yml`:
+```yaml
+jobs:
+- name: hello-world
+  plan:
+  - task: say-hello
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: busybox
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "=============================="
+          echo "Hello from Concourse CI!"
+          echo "Date: $(date)"
+          echo "=============================="
+```
+
+2. Set the pipeline:
+```bash
+fly -t prod set-pipeline -p hello -c hello.yml
+fly -t prod unpause-pipeline -p hello
+```
+
+3. Trigger the job:
+```bash
+fly -t prod trigger-job -j hello/hello-world -w
+```
+
+**Note**: Common lightweight images: `busybox` (~2MB), `alpine` (~5MB), `ubuntu` (~28MB)
+
+## Scaling
+
+### Add More Workers
+
+```bash
+# Add 2 more worker units to the concourse-ci application
+juju add-unit concourse-ci -n 2
+
+# Verify workers
+juju ssh concourse-ci/0  # SSH to unit 0 of concourse-ci application
+fly -t local workers
+```
+
+### Remove Workers
+
+```bash
+# Remove specific unit
+juju remove-unit concourse-ci/3
+```
+
+## Relations
+
+### Required Relations
+
+#### PostgreSQL (Required for Web Server)
+The web server requires a PostgreSQL database:
+
+```bash
+juju relate concourse-ci:postgresql postgresql:db
+```
+
+**Supported PostgreSQL Charms:**
+- `postgresql` (14/stable recommended)
+- Any charm providing the `postgresql` interface
+
+### Optional Relations
+
+#### Monitoring
+Concourse exposes Prometheus metrics on port 9391:
+
+```bash
+juju relate concourse-ci:monitoring prometheus:target
+```
+
+#### Peer Relation
+Units automatically coordinate via the `concourse-peer` relation (automatic, no action needed).
+
+## Storage
+
+The charm uses Juju storage for persistent data:
+
+```bash
+# Deploy with specific storage
+juju deploy concourse-ci-machine concourse-ci --storage concourse-data=20G
+
+# Add storage to existing unit
+juju add-storage concourse-ci/0 concourse-data=10G
+```
+
+Storage is mounted at `/var/lib/concourse`.
+
+## Troubleshooting
+
+### Charm Shows "Blocked" Status
+
+**Cause:** Usually means PostgreSQL relation is missing (for web units).
+
+**Fix:**
+```bash
+juju relate concourse-ci:postgresql postgresql:db
+```
+
+### Web Server Won't Start
+
+**Check logs:**
+```bash
+juju debug-log --include concourse-ci/0 --replay --no-tail | tail -50
+
+# Or SSH and check systemd
+juju ssh concourse-ci/0
+sudo journalctl -u concourse-server -f
+```
+
+**Common issues:**
+- Database not configured: Check PostgreSQL relation
+- Auth configuration missing: Check `/var/lib/concourse/config.env`
+- Port already in use: Change `web-port` config
+
+### Workers Not Connecting
+
+**Check worker status:**
+```bash
+juju ssh concourse-ci/1  # Worker unit
+sudo systemctl status concourse-worker
+sudo journalctl -u concourse-worker -f
+```
+
+**Common issues:**
+- TSA keys not generated: Check `/var/lib/concourse/keys/`
+- Containerd not running: `sudo systemctl status containerd`
+- Network connectivity: Ensure workers can reach web server
+
+
+### View Configuration
+
+```bash
+juju ssh concourse-ci/0
+sudo cat /var/lib/concourse/config.env
+```
+
+## Architecture
+
+### Components
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Web Server                          │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐         │
+│  │ Web UI/API │  │    TSA     │  │ Scheduler  │         │
+│  └────────────┘  └────────────┘  └────────────┘         │
+│         │              │                 │              │
+│         └──────────────┴─────────────────┘              │
+│                        │                                │
+└────────────────────────┼────────────────────────────────┘
+                         │
+                         │ (SSH over TSA)
+                         │
+        ┌────────────────┴────────────────┐
+        │                                 │
+  ┌─────▼──────┐                   ┌─────▼──────┐
+  │  Worker 1  │                   │  Worker 2  │
+  │┌──────────┐│                   │┌──────────┐│
+  ││Container ││                   ││Container ││
+  ││Runtime   ││                   ││Runtime   ││
+  │└──────────┘│                   │└──────────┘│
+  └────────────┘                   └────────────┘
+```
+
+... see https://concourse-ci.org/internals.html
+
+### Key Directories
+
+- `/opt/concourse/`: Concourse binaries
+- `/var/lib/concourse/`: Data and configuration
+- `/var/lib/concourse/keys/`: TSA and worker keys
+- `/var/lib/concourse/worker/`: Worker runtime directory
+
+### Systemd Services
+
+- `concourse-server.service`: Web server (runs as `concourse` user)
+- `concourse-worker.service`: Worker (runs as `root`)
+
+## Development
+
+### Building from Source
+
+```bash
+# Install charmcraft
+sudo snap install charmcraft --classic
+
+# Clone repository
+git clone https://github.com/fourdollars/concourse-ci-machine.git
+cd concourse-ci-machine
+
+# Build charm
+charmcraft pack
+
+# Deploy locally
+juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64-machine.charm
+```
+
+### Project Structure
+
+```
+concourse-ci-machine/
+├── src/
+│   └── charm.py                  # Main charm logic
+├── lib/
+│   ├── concourse_common.py       # Shared utilities
+│   ├── concourse_installer.py    # Installation logic
+│   ├── concourse_web.py          # Web server management
+│   └── concourse_worker.py       # Worker management
+├── metadata.yaml                 # Charm metadata
+├── config.yaml                   # Configuration options
+├── charmcraft.yaml               # Build configuration
+├── actions.yaml                  # Charm actions
+└── README.md                     # This file
+```
+
+## Security
+
+### Initial Setup
+
+1. **Change default password immediately:**
+```bash
+fly -t prod login -c http://<ip>:8080 -u admin -p admin
+# Use web UI to change password in team settings
+```
+
+2. **Configure proper authentication:**
+   - Set up OAuth providers (GitHub, GitLab, etc.)
+   - Use Juju secrets for credentials
+   - Enable HTTPS with reverse proxy (nginx/haproxy)
+
+3. **Network security:**
+   - Use Juju spaces to isolate networks
+   - Configure firewall rules to restrict access
+   - Use private PostgreSQL endpoints
+
+### Database Credentials
+
+Database credentials are passed securely via Juju relations, not environment variables.
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`pytest`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+## License
+
+This charm is licensed under the Apache 2.0 License. See [LICENSE](LICENSE) for details.
+
+## Resources
+
+- **Concourse CI**: https://concourse-ci.org/
+- **Documentation**: https://concourse-ci.org/docs.html
+- **Charm Hub**: https://charmhub.io/concourse-ci
+- **Source Code**: https://github.com/fourdollars/concourse-ci-machine
+- **Issue Tracker**: https://github.com/fourdollars/concourse-ci-machine/issues
+- **Juju**: https://juju.is/
+
+## Support
+
+- **Community Support**: Open an issue on GitHub
+- **Commercial Support**: Contact maintainers
+
+## Acknowledgments
+
+- Concourse CI team for the amazing CI/CD system
+- Canonical for Juju and the Operator Framework
+- Contributors to this charm

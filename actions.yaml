@@ -1,0 +1,33 @@
+check-status:
+  description: Check Concourse server and worker process status
+  params:
+    verbose:
+      description: Show detailed status information
+      type: boolean
+      default: false
+
+restart-services:
+  description: Restart Concourse server and worker services gracefully
+  params:
+    force:
+      description: Force kill services instead of graceful restart
+      type: boolean
+      default: false
+
+run-migrations:
+  description: Run database migrations (usually automatic on config change)
+  params:
+    target-version:
+      description: Target schema version (leave empty for latest)
+      type: string
+      default: ""
+
+get-admin-password:
+  description: Get or generate initial admin password
+
+update-concourse-version:
+  description: Update to a new Concourse CI version
+  params:
+    version:
+      description: Target Concourse version (e.g., 7.14.3)
+      type: string

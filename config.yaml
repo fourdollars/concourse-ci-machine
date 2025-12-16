@@ -1,0 +1,104 @@
+options:
+  deployment-mode:
+    description: |
+      Deployment mode for this unit: 
+      - 'auto': Leader runs web, non-leaders run workers (recommended for multi-unit)
+      - 'all': Run both web and worker on this unit (default for single-unit)
+      - 'web': Only run web server
+      - 'worker': Only run worker
+      Default: auto
+    default: "auto"
+    type: string
+  
+  concourse-version:
+    description: |
+      Version of Concourse CI to deploy (e.g., 7.14.3).
+      Leave empty to use the latest stable version.
+    default: ""
+    type: string
+  
+  web-port:
+    description: |
+      Port for Concourse web UI and API server.
+      Default: 8080
+    default: 8080
+    type: int
+  
+  worker-procs:
+    description: |
+      Number of worker processes to spawn on this unit.
+      Controls parallelism for job execution.
+      Default: 1
+    default: 1
+    type: int
+  
+  external-url:
+    description: |
+      External URL for Concourse web UI (used for redirects and webhooks).
+      If not set, defaults to http://<unit-ip>:<web-port>
+    default: ""
+    type: string
+  
+  tls-enabled:
+    description: |
+      Enable TLS/HTTPS for Concourse web UI.
+      Requires TLS certificate relation (future enhancement).
+      Default: false
+    default: false
+    type: boolean
+  
+  initial-admin-username:
+    description: |
+      Initial admin user for Concourse authentication.
+      Default: admin
+    default: admin
+    type: string
+  
+  log-level:
+    description: |
+      Logging level for Concourse components (debug, info, warn, error).
+      Default: info
+    default: info
+    type: string
+    enum:
+      - debug
+      - info
+      - warn
+      - error
+  
+  enable-metrics:
+    description: |
+      Enable Prometheus metrics endpoint on port 9391.
+      Default: true
+    default: true
+    type: boolean
+  
+  max-concurrent-downloads:
+    description: |
+      Maximum number of concurrent resource downloads.
+      Default: 10
+    default: 10
+    type: int
+  
+  container-placement-strategy:
+    description: |
+      Container placement strategy (volume-locality, random, fewest-build-containers).
+      Default: volume-locality
+    default: volume-locality
+    type: string
+  
+  containerd-dns-proxy-enable:
+    description: |
+      Enable containerd DNS proxy for container name resolution.
+      Set to false to use external DNS servers directly.
+      Default: false
+    default: false
+    type: boolean
+  
+  containerd-dns-server:
+    description: |
+      DNS servers for containerd containers (comma-separated).
+      Used when containerd-dns-proxy-enable is false.
+      Default: 1.1.1.1,8.8.8.8
+    default: "1.1.1.1,8.8.8.8"
+    type: string

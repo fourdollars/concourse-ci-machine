@@ -1,0 +1,32 @@
+name: concourse-ci-machine
+display-name: Concourse CI
+summary: A Juju charm for Concourse CI deployment and management
+description: |
+  This charm provides automated deployment, configuration, and lifecycle management
+  of Concourse CI on Juju infrastructure. It includes PostgreSQL database integration,
+  systemd-based service management, and operational actions for common tasks.
+
+tags:
+  - ci-cd
+  - automation
+  - devops
+
+provides:
+  # For potential subordinate charms (monitoring, logging, etc.)
+  monitoring:
+    interface: monitoring
+
+requires:
+  postgresql:
+    interface: pgsql
+    limit: 1
+    description: PostgreSQL database backend for Concourse
+
+peers:
+  concourse-peer:
+    interface: concourse-peer
+
+storage:
+  concourse-data:
+    type: filesystem
+    location: /var/lib/concourse
