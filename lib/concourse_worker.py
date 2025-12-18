@@ -70,31 +70,25 @@ WantedBy=multi-user.target
         """
         Configure Concourse worker's containerd to use NVIDIA runtime
         
-        Creates a custom containerd config with GPU support
+        Creates custom containerd config and GPU wrapper for automatic GPU injection
         """
         if not self.config.get("enable-gpu", False):
             logger.info("GPU not enabled, skipping containerd GPU configuration")
             return
         
         # Create a custom GPU-enabled containerd config
-        # We'll use a separate file that worker will be configured to use
         gpu_containerd_config = Path(CONCOURSE_DATA_DIR) / "containerd-gpu.toml"
         
         try:
-            # Create new config with NVIDIA runtime support
-            # For containerd v3, we need to set the runtime at a different level
-            # The simplest approach: symlink runc to nvidia-container-runtime
-            # But first, let's try configuring the runtime binary path correctly
+            # Create containerd config with GPU support
             gpu_config = """version = 3
 
 oom_score = -999
 disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.aufs", "io.containerd.snapshotter.v1.btrfs", "io.containerd.snapshotter.v1.zfs"]
 
 # Configure default runtime to use nvidia-container-runtime
-# In containerd v3, runtime configuration is at the plugin level
 [plugins]
   [plugins."io.containerd.runtime.v2.task"]
-    # Use nvidia-container-runtime as the OCI runtime
     runtime = "/usr/bin/nvidia-container-runtime"
     runtime_root = ""
     shim = "containerd-shim-runc-v2"
@@ -105,9 +99,273 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             os.chmod(gpu_containerd_config, 0o644)
             logger.info(f"Created GPU containerd config at {gpu_containerd_config}")
             
+            # Ensure NVIDIA tools are installed
+            self._ensure_nvidia_tools()
+            
+            # Install GPU wrapper script for automatic GPU device injection
+            self._install_gpu_wrapper()
+            
+            # Configure nvidia-container-runtime
+            self._configure_nvidia_runtime()
+            
         except Exception as e:
             logger.error(f"Failed to configure worker containerd for GPU: {e}")
             raise
+    
+    def _ensure_nvidia_tools(self):
+        """
+        Ensure NVIDIA utilities and container toolkit are installed
+        
+        Automatically sets up NVIDIA repository and installs required packages:
+        - nvidia-utils (for nvidia-smi and driver libraries)
+        - nvidia-container-toolkit (for GPU container support)
+        """
+        import subprocess
+        
+        try:
+            # Check if nvidia-smi is available
+            result = subprocess.run(
+                ["which", "nvidia-smi"],
+                capture_output=True
+            )
+            
+            if result.returncode != 0:
+                logger.info("Installing nvidia-utils...")
+                
+                # Update apt cache
+                subprocess.run(
+                    ["apt-get", "update"],
+                    check=True,
+                    capture_output=True,
+                    timeout=120
+                )
+                
+                # Install nvidia-utils (requires Ubuntu restricted repo)
+                # Detect the latest driver version available
+                subprocess.run(
+                    ["apt-get", "install", "-y", "nvidia-utils-580"],
+                    check=True,
+                    capture_output=True,
+                    timeout=300
+                )
+                
+                logger.info("nvidia-utils installed successfully")
+            else:
+                logger.info("nvidia-utils already installed")
+            
+            # Check if nvidia-container-toolkit is installed
+            result = subprocess.run(
+                ["which", "nvidia-container-toolkit"],
+                capture_output=True
+            )
+            
+            if result.returncode != 0:
+                logger.info("Setting up NVIDIA Container Toolkit repository...")
+                
+                # Ensure curl and gnupg are installed
+                subprocess.run(
+                    ["apt-get", "install", "-y", "curl", "gnupg"],
+                    check=True,
+                    capture_output=True,
+                    timeout=120
+                )
+                
+                # Add NVIDIA GPG key (using separate steps to avoid redirect issues)
+                key_data = subprocess.run(
+                    ["curl", "-fsSL", "https://nvidia.github.io/libnvidia-container/gpgkey"],
+                    check=True,
+                    capture_output=True,
+                    timeout=60
+                ).stdout
+                
+                dearmored_key = subprocess.run(
+                    ["gpg", "--dearmor"],
+                    input=key_data,
+                    check=True,
+                    capture_output=True
+                ).stdout
+                
+                keyring_path = Path("/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg")
+                keyring_path.write_bytes(dearmored_key)
+                os.chmod(keyring_path, 0o644)
+                
+                # Detect architecture
+                arch_result = subprocess.run(
+                    ["dpkg", "--print-architecture"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                arch = arch_result.stdout.strip()
+                
+                # Add NVIDIA repository (only generic deb repo - distro-specific repos don't exist)
+                repo_content = f"deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://nvidia.github.io/libnvidia-container/stable/deb/{arch} /\n"
+                Path("/etc/apt/sources.list.d/nvidia-container-toolkit.list").write_text(repo_content)
+                os.chmod("/etc/apt/sources.list.d/nvidia-container-toolkit.list", 0o644)
+                
+                logger.info("NVIDIA repository added successfully")
+                
+                # Update apt cache with new repository
+                subprocess.run(
+                    ["apt-get", "update"],
+                    check=True,
+                    capture_output=True,
+                    timeout=120
+                )
+                
+                # Install nvidia-container-toolkit
+                logger.info("Installing nvidia-container-toolkit...")
+                subprocess.run(
+                    ["apt-get", "install", "-y", "nvidia-container-toolkit"],
+                    check=True,
+                    capture_output=True,
+                    timeout=300
+                )
+                
+                logger.info("nvidia-container-toolkit installed successfully")
+            else:
+                logger.info("nvidia-container-toolkit already installed")
+            
+            # Configure nvidia-container-toolkit runtime
+            logger.info("Configuring nvidia-container-toolkit...")
+            subprocess.run(
+                ["nvidia-ctk", "runtime", "configure", "--runtime=containerd"],
+                check=False,  # Don't fail if already configured
+                capture_output=True
+            )
+            
+            logger.info("NVIDIA tools installation and configuration complete")
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout while installing NVIDIA tools")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to ensure NVIDIA tools: {e}")
+            raise
+    
+    def _install_gpu_wrapper(self):
+        """
+        Install GPU wrapper script that injects NVIDIA_VISIBLE_DEVICES into OCI specs
+        
+        The wrapper intercepts runc calls, injects GPU env vars into the OCI spec,
+        and then calls nvidia-container-runtime which handles device injection.
+        """
+        import subprocess
+        
+        wrapper_path = Path("/usr/local/bin/runc-gpu-wrapper")
+        concourse_runc = Path("/opt/concourse/bin/runc")
+        concourse_runc_real = Path("/opt/concourse/bin/runc.real")
+        nvidia_runtime = Path("/usr/bin/nvidia-container-runtime")
+        nvidia_runtime_real = Path("/usr/bin/nvidia-container-runtime.real")
+        
+        try:
+            # Install jq if not present (needed for JSON manipulation)
+            logger.info("Ensuring jq is installed...")
+            subprocess.run(
+                ["apt-get", "install", "-y", "jq"],
+                check=False,  # Don't fail if already installed
+                capture_output=True,
+                timeout=60
+            )
+            
+            # Create GPU wrapper script
+            logger.info(f"Creating GPU wrapper script at {wrapper_path}")
+            wrapper_script = '''#!/bin/bash
+# GPU wrapper for Concourse CI - injects NVIDIA_VISIBLE_DEVICES into OCI specs
+
+# Parse arguments to find bundle path
+BUNDLE=""
+PREV=""
+for arg in "$@"; do
+    if [[ "$PREV" == "--bundle" ]]; then
+        BUNDLE="$arg"
+        break
+    fi
+    PREV="$arg"
+done
+
+# If bundle found and config exists, inject GPU env vars
+if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
+    # Use jq to inject environment variables
+    jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
+       "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
+    
+    if [[ $? -eq 0 ]]; then
+        mv "$BUNDLE/config.json.gpu" "$BUNDLE/config.json"
+    fi
+fi
+
+# Call nvidia-container-runtime which will inject GPU devices
+exec /usr/bin/nvidia-container-runtime.real "$@"
+'''
+            
+            wrapper_path.write_text(wrapper_script)
+            os.chmod(wrapper_path, 0o755)
+            logger.info("GPU wrapper script created successfully")
+            
+            # Backup nvidia-container-runtime if not already backed up
+            if nvidia_runtime.exists() and not nvidia_runtime_real.exists():
+                logger.info(f"Backing up nvidia-container-runtime to {nvidia_runtime_real}")
+                subprocess.run(
+                    ["cp", str(nvidia_runtime), str(nvidia_runtime_real)],
+                    check=True
+                )
+            
+            # Backup original runc if not already backed up
+            if concourse_runc.exists() and not concourse_runc_real.exists():
+                logger.info(f"Backing up original runc to {concourse_runc_real}")
+                subprocess.run(
+                    ["mv", str(concourse_runc), str(concourse_runc_real)],
+                    check=True
+                )
+            
+            # Create symlink from concourse runc to wrapper
+            if not concourse_runc.exists():
+                logger.info(f"Creating symlink: {concourse_runc} -> {wrapper_path}")
+                subprocess.run(
+                    ["ln", "-sf", str(wrapper_path), str(concourse_runc)],
+                    check=True
+                )
+                logger.info("GPU wrapper installed successfully")
+            else:
+                logger.info("Concourse runc already configured")
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout while installing dependencies")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to install GPU wrapper: {e}")
+            raise
+    
+    def _configure_nvidia_runtime(self):
+        """
+        Configure nvidia-container-runtime to use the real runc binary
+        
+        This prevents infinite loops where nvidia-container-runtime calls our wrapper
+        """
+        import subprocess
+        
+        nvidia_config = Path("/etc/nvidia-container-runtime/config.toml")
+        
+        if not nvidia_config.exists():
+            logger.warning(f"NVIDIA container runtime config not found at {nvidia_config}")
+            return
+        
+        try:
+            # Configure nvidia-container-runtime to use the real runc
+            logger.info("Configuring nvidia-container-runtime to use real runc")
+            subprocess.run(
+                ["sed", "-i", 
+                 's|runtimes = \\["runc", "crun"\\]|runtimes = ["/opt/concourse/bin/runc.real", "crun"]|',
+                 str(nvidia_config)],
+                check=True
+            )
+            logger.info("NVIDIA container runtime configured successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to configure nvidia-container-runtime: {e}")
+            # Non-fatal - wrapper might still work
+            pass
 
     def update_config(self, tsa_host: str = "127.0.0.1:2222"):
         """Update Concourse worker configuration"""

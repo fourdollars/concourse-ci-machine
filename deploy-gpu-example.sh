@@ -36,6 +36,7 @@ juju deploy "$CHARM_FILE" worker \
 # Create relations
 echo "Creating relations..."
 juju relate web:postgresql postgresql:db
+juju relate web:web-tsa worker:worker-tsa
 
 echo ""
 echo "=== Deployment initiated ==="

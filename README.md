@@ -98,15 +98,18 @@ juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
 # Relate web to database
 juju relate web:postgresql postgresql:db
 
+# Relate web and worker for automatic TSA key exchange
+juju relate web:web-tsa worker:worker-tsa
+
 # Check deployment
 juju status
 ```
 
 **Result:**
 - `web/0`: Web server only
-- `worker/0`, `worker/1`: Workers only
+- `worker/0`, `worker/1`: Workers only connected via TSA
 
-**Note**: Separated applications (different app names) require manual key distribution as they don't share peer relations. See [Manual Key Setup](#manual-key-setup-for-separated-applications) below.
+**Note**: The `web-tsa` / `worker-tsa` relation automatically handles SSH key exchange between web and worker applications, eliminating the need for manual key management.
 
 ## Deployment Modes
 
@@ -134,7 +137,7 @@ juju relate concourse-ci:postgresql postgresql:db
 **Best for:** Production, scalable deployments
 **Key Distribution:** ✅ **Fully Automatic** - zero manual intervention required!
 
-### 3. `web` + `worker` (Separate Apps - Manual Setup)
+### 3. `web` + `worker` (Separate Apps - Automatic TSA Setup)
 Deploy web and workers as separate applications for independent scaling.
 
 ```bash
@@ -146,10 +149,13 @@ juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
 
 # Relate web to PostgreSQL
 juju relate web:postgresql postgresql:db
+
+# Relate web and worker for automatic TSA key exchange
+juju relate web:web-tsa worker:worker-tsa
 ```
 
 **Best for:** Independent scaling of web and workers
-**Key Distribution:** ⚠️ Manual setup required (different applications don't share peer relations)
+**Key Distribution:** ✅ Automatic via `web-tsa` / `worker-tsa` relation
 
 ## Configuration Options
 
@@ -344,17 +350,66 @@ Concourse workers can utilize NVIDIA GPUs for ML/AI workloads, GPU-accelerated b
 
 - NVIDIA GPU hardware on the host machine
 - NVIDIA drivers installed on the host (tested with driver 580.95+)
-- nvidia-container-toolkit installed on the host
+- **For LXD/containers:** GPU passthrough configured (see below)
 
-### Enabling GPU Support
+**Note:** The charm automatically installs `nvidia-container-toolkit` and configures the GPU runtime. No manual setup required!
+
+### Quick Start: Deploy with GPU
+
+Complete deployment from scratch:
 
 ```bash
-# Deploy worker with GPU support
-juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker --config enable-gpu=true
+# 1. Deploy PostgreSQL
+juju deploy postgresql --channel 14/stable
 
-# Or enable on existing worker
+# 2. Deploy web server
+juju deploy concourse-ci-machine web --config deployment-mode=web
+
+# 3. Deploy GPU-enabled worker
+juju deploy concourse-ci-machine worker \
+  --config deployment-mode=worker \
+  --config enable-gpu=true
+
+# 4. Add GPU to LXD container (only manual step for localhost cloud)
+lxc config device add <container-name> gpu0 gpu
+# Example: lxc config device add juju-abc123-0 gpu0 gpu
+
+# 5. Create relations
+juju relate web:postgresql postgresql:db
+juju relate web:web-tsa worker:worker-tsa
+
+# 6. Check status
+juju status worker
+# Expected: "Worker ready (GPU: 1x NVIDIA)"
+```
+
+### Enable GPU on Existing Worker
+
+```bash
+# Enable GPU on already deployed worker
 juju config worker enable-gpu=true
 ```
+
+### LXD GPU Passthrough (One-time setup)
+
+If deploying on LXD (localhost cloud), add GPU to the container:
+
+```bash
+# Find your worker container name
+lxc list | grep juju
+
+# Add GPU device (requires container restart)
+lxc config device add <container-name> gpu0 gpu
+
+# Example:
+lxc config device add juju-abc123-0 gpu0 gpu
+```
+
+**Everything else is automated!** The charm will:
+- ✅ Install nvidia-container-toolkit
+- ✅ Create GPU wrapper script
+- ✅ Configure runtime for GPU passthrough
+- ✅ Set up automatic GPU device injection
 
 ### GPU Configuration Options
 
@@ -419,13 +474,10 @@ jobs:
 ```bash
 # Check worker status
 juju status worker
-
 # Should show: "Worker ready (GPU: 1x NVIDIA)"
 
-# Verify GPU in Concourse
-juju ssh worker/0
+# Verify GPU tags in Concourse
 fly -t local workers
-
 # Worker should show tags: gpu, gpu-type=nvidia, gpu-count=1
 ```
 

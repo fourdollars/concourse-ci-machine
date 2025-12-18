@@ -101,19 +101,36 @@ juju status worker
 
 ### LXD GPU Passthrough (Required for localhost cloud)
 ```bash
-# Add GPU to LXD container
-lxc stop juju-efaf63-13
+# Add GPU to LXD container (only manual step needed)
 lxc config device add juju-efaf63-13 gpu0 gpu
-lxc start juju-efaf63-13
 
-# Install nvidia utils in container
-juju ssh worker/0 'sudo apt-get update && sudo apt-get install -y nvidia-utils-580 nvidia-container-toolkit'
+# Verify status shows GPU was detected and configured automatically
+juju status worker
+# Expected: "Worker ready (GPU: 1x NVIDIA)"
 
-# Configure nvidia-container-runtime
-juju ssh worker/0 'sudo nvidia-ctk runtime configure --runtime=containerd && sudo systemctl restart containerd'
+# All GPU setup is now AUTOMATED! The charm automatically:
+# - Installs nvidia-utils-580
+# - Installs nvidia-container-toolkit  
+# - Creates GPU wrapper script at /usr/local/bin/runc-gpu-wrapper
+# - Backs up original runc and nvidia-container-runtime
+# - Creates symlinks and configures runtime
+# No manual SSH commands needed!
+```
 
-# Create GPU wrapper script
-juju ssh worker/0 << 'ENDSSH'
+### Manual Steps (Deprecated - For Reference Only)
+The following manual steps are NO LONGER NEEDED as they are automated:
+
+```bash
+# These steps are now AUTOMATED - shown for reference only
+
+# Install nvidia utils in container (AUTOMATED)
+# juju ssh worker/0 'sudo apt-get update && sudo apt-get install -y nvidia-utils-580 nvidia-container-toolkit'
+
+# Configure nvidia-container-runtime (AUTOMATED)
+# juju ssh worker/0 'sudo nvidia-ctk runtime configure --runtime=containerd && sudo systemctl restart containerd'
+
+# Create GPU wrapper script (AUTOMATED)
+# juju ssh worker/0 << 'ENDSSH'
 sudo bash -c 'cat > /usr/local/bin/runc-gpu-wrapper << "EOF"
 #!/bin/bash
 BUNDLE=""
@@ -133,18 +150,18 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
 fi
 
 exec /usr/bin/nvidia-container-runtime.real "$@"
-EOF'
-sudo chmod +x /usr/local/bin/runc-gpu-wrapper
-ENDSSH
+# EOF'
+# sudo chmod +x /usr/local/bin/runc-gpu-wrapper
+# ENDSSH
 
-# Backup and replace runc with wrapper
-juju ssh worker/0 'sudo mv /opt/concourse/bin/runc /opt/concourse/bin/runc.real && sudo ln -s /usr/local/bin/runc-gpu-wrapper /opt/concourse/bin/runc'
+# Backup and replace runc with wrapper (AUTOMATED)
+# juju ssh worker/0 'sudo mv /opt/concourse/bin/runc /opt/concourse/bin/runc.real && sudo ln -s /usr/local/bin/runc-gpu-wrapper /opt/concourse/bin/runc'
 
-# Configure nvidia-container-runtime to use real runc
-juju ssh worker/0 'sudo sed -i "s|runtimes = \[\"runc\", \"crun\"\]|runtimes = [\"/opt/concourse/bin/runc.real\", \"crun\"]|" /etc/nvidia-container-runtime/config.toml'
+# Configure nvidia-container-runtime to use real runc (AUTOMATED)
+# juju ssh worker/0 'sudo sed -i "s|runtimes = \[\"runc\", \"crun\"\]|runtimes = [\"/opt/concourse/bin/runc.real\", \"crun\"]|" /etc/nvidia-container-runtime/config.toml'
 
-# Restart worker
-juju ssh worker/0 'sudo systemctl restart concourse-worker'
+# Restart worker (AUTOMATED)
+# juju ssh worker/0 'sudo systemctl restart concourse-worker'
 ```
 
 ---
@@ -339,17 +356,19 @@ tag: latest
 
 ### Debugging
 ```bash
-# Check GPU detection
+# Check GPU automation logs
 juju debug-log --include worker/0 | grep -i gpu
 
-# Check worker logs
-juju ssh worker/0 'sudo journalctl -u concourse-worker -f'
+# Check worker status
+juju status worker
+# Expected: "Worker ready (GPU: 1x NVIDIA)"
 
-# Test GPU in container
-juju ssh worker/0 'nvidia-smi'
+# Check Concourse workers list
+fly -t <target> workers
+# Should show GPU tags
 
-# Check wrapper execution
-juju ssh worker/0 'cat /tmp/jq-error.log'
+# Test GPU with pipeline
+fly -t <target> trigger-job -j <pipeline>/<gpu-job> -w
 ```
 
 ---

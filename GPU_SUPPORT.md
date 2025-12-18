@@ -63,8 +63,9 @@ juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
   --config deployment-mode=worker \
   --config enable-gpu=true
 
-# Relate web to database
+# Create relations
 juju relate web:postgresql postgresql:db
+juju relate web:web-tsa worker:worker-tsa
 
 # Wait for deployment
 juju status --watch 1s
@@ -75,17 +76,14 @@ juju status --watch 1s
 ```bash
 # Check worker status (should show GPU info)
 juju status worker
-
 # Expected: "Worker ready (GPU: 1x NVIDIA)"
 
-# SSH to worker and verify
-juju ssh worker/0
+# Check workers have GPU tags in Concourse
+fly -t <target> workers
+# Expected tags: gpu, gpu-type=nvidia, gpu-count=1
 
-# Check containerd config
-sudo cat /etc/containerd/config.toml | grep nvidia
-
-# Check worker is running with GPU tags
-sudo journalctl -u concourse-worker -n 50 | grep -i gpu
+# Check automation logs if needed
+juju debug-log --include worker/0 | grep -i gpu
 ```
 
 ### Test GPU Pipeline
@@ -368,22 +366,20 @@ When deploying on LXD (Juju localhost cloud), GPU devices must be passed through
 ### Option 1: Pass GPU to Specific Container (After Deployment)
 
 ```bash
-# Get container name
-CONTAINER=$(juju ssh -m concourse-ci worker/0 hostname)
+# Find the worker container name
+lxc list | grep worker
 
-# Stop the container
-lxc stop $CONTAINER
+# Add GPU device (container will automatically restart)
+lxc config device add <container-name> gpu0 gpu
 
-# Add GPU device
-lxc config device add $CONTAINER gpu0 gpu
+# Example:
+lxc config device add juju-abc123-0 gpu0 gpu
 
-# Start the container
-lxc start $CONTAINER
+# Verify GPU in container (check status)
+juju status worker
+# Should show: "Worker ready (GPU: 1x NVIDIA)"
 
-# Verify GPU in container
-juju ssh -m concourse-ci worker/0 'nvidia-smi'
-
-# Trigger config-changed to reconfigure worker
+# If status doesn't show GPU, trigger reconfiguration
 juju config worker enable-gpu=false
 juju config worker enable-gpu=true
 ```
@@ -417,17 +413,16 @@ juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
 ### Verifying GPU Passthrough
 
 ```bash
-# Check if nvidia devices exist in container
-juju ssh -m concourse-ci worker/0 'ls -la /dev/nvidia*'
+# Check worker status shows GPU
+juju status worker
+# Expected: "Worker ready (GPU: 1x NVIDIA)"
 
-# Should show:
-# /dev/nvidia0
-# /dev/nvidiactl
-# /dev/nvidia-modeset
-# /dev/nvidia-uvm
+# Check Concourse workers list
+fly -t <target> workers
+# Should show GPU tags: gpu, gpu-type=nvidia, gpu-count=1
 
-# Test nvidia-smi
-juju ssh -m concourse-ci worker/0 'nvidia-smi'
+# Run a test pipeline with nvidia-smi to verify GPU access
+fly -t <target> trigger-job -j <pipeline>/<gpu-job> -w
 ```
 
 ## Future Enhancements
@@ -443,6 +438,6 @@ juju ssh -m concourse-ci worker/0 'nvidia-smi'
 ## Support
 
 For issues or questions:
-- Check logs: `juju debug-log --include worker`
-- GPU status: `juju ssh worker/0 nvidia-smi`
-- Worker config: `juju ssh worker/0 sudo cat /var/lib/concourse/config.env`
+- Check logs: `juju debug-log --include worker | grep -i gpu`
+- GPU status: `juju status worker` (should show GPU count)
+- Worker tags: `fly -t <target> workers` (should show GPU tags)
