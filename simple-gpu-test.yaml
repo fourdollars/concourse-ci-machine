@@ -1,0 +1,14 @@
+jobs:
+- name: simple-test
+  plan:
+  - task: hello
+    timeout: 1m30s
+    tags: [gpu]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: busybox}
+      run:
+        path: echo
+        args: ["Hello from GPU worker!"]

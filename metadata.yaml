@@ -15,12 +15,20 @@ provides:
   # For potential subordinate charms (monitoring, logging, etc.)
   monitoring:
     interface: monitoring
+  
+  # TSA (web) provides connection info to workers
+  web-tsa:
+    interface: concourse-tsa
 
 requires:
   postgresql:
     interface: pgsql
     limit: 1
     description: PostgreSQL database backend for Concourse
+  
+  # Worker connects to TSA (web)
+  worker-tsa:
+    interface: concourse-tsa
 
 peers:
   concourse-peer:

@@ -1,0 +1,159 @@
+jobs:
+- name: benchmark-cpu
+  plan:
+  - task: matrix-multiply-cpu
+    timeout: 5m
+    tags: [gpu]  # Run on GPU worker but only use CPU
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: python
+          tag: 3.11-slim
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "=============================="
+          echo "CPU Benchmark - Matrix Multiply"
+          echo "=============================="
+          pip install --quiet numpy
+          
+          python3 << 'EOF'
+          import numpy as np
+          import time
+          
+          print("Testing CPU performance...")
+          print("Matrix size: 5000x5000")
+          print()
+          
+          # Create large matrices
+          np.random.seed(42)
+          A = np.random.rand(5000, 5000).astype(np.float32)
+          B = np.random.rand(5000, 5000).astype(np.float32)
+          
+          # Warm-up
+          _ = np.dot(A[:100, :100], B[:100, :100])
+          
+          # Benchmark
+          iterations = 3
+          times = []
+          
+          for i in range(iterations):
+              start = time.time()
+              C = np.dot(A, B)
+              end = time.time()
+              elapsed = end - start
+              times.append(elapsed)
+              print(f"Iteration {i+1}: {elapsed:.3f} seconds")
+          
+          avg_time = sum(times) / len(times)
+          print()
+          print(f"Average time: {avg_time:.3f} seconds")
+          print(f"Performance: {(2 * 5000**3) / avg_time / 1e9:.2f} GFLOPS")
+          print()
+          print("✓ CPU benchmark complete")
+          EOF
+
+- name: benchmark-gpu
+  plan:
+  - task: matrix-multiply-gpu
+    timeout: 5m
+    tags: [gpu]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: pytorch/pytorch
+          tag: 2.1.0-cuda12.1-cudnn8-runtime
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "=============================="
+          echo "GPU Benchmark - Matrix Multiply"
+          echo "=============================="
+          echo "GPU Info:"
+          nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+          echo
+          
+          python3 << 'EOF'
+          import torch
+          import time
+          
+          if not torch.cuda.is_available():
+              print("ERROR: CUDA not available!")
+              exit(1)
+          
+          print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+          print(f"CUDA Version: {torch.version.cuda}")
+          print("Matrix size: 5000x5000")
+          print()
+          
+          # Create large matrices on GPU
+          torch.manual_seed(42)
+          A = torch.randn(5000, 5000, dtype=torch.float32).cuda()
+          B = torch.randn(5000, 5000, dtype=torch.float32).cuda()
+          
+          # Warm-up
+          _ = torch.matmul(A[:100, :100], B[:100, :100])
+          torch.cuda.synchronize()
+          
+          # Benchmark
+          iterations = 3
+          times = []
+          
+          for i in range(iterations):
+              torch.cuda.synchronize()
+              start = time.time()
+              C = torch.matmul(A, B)
+              torch.cuda.synchronize()
+              end = time.time()
+              elapsed = end - start
+              times.append(elapsed)
+              print(f"Iteration {i+1}: {elapsed:.3f} seconds")
+          
+          avg_time = sum(times) / len(times)
+          print()
+          print(f"Average time: {avg_time:.3f} seconds")
+          print(f"Performance: {(2 * 5000**3) / avg_time / 1e9:.2f} GFLOPS")
+          print()
+          print("✓ GPU benchmark complete")
+          EOF
+
+- name: benchmark-comparison
+  plan:
+  - task: summary
+    timeout: 1m
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: busybox
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "============================================"
+          echo "     CPU vs GPU Benchmark Comparison"
+          echo "============================================"
+          echo
+          echo "To compare results:"
+          echo "1. Run 'fly -t gpu-test trigger-job -j benchmark/benchmark-cpu -w'"
+          echo "2. Run 'fly -t gpu-test trigger-job -j benchmark/benchmark-gpu -w'"
+          echo "3. Compare the average times and GFLOPS"
+          echo
+          echo "Expected Results:"
+          echo "  - CPU: ~10-30 seconds (depending on CPU)"
+          echo "  - GPU: ~0.1-1 seconds (10-100x faster)"
+          echo
+          echo "The GPU should show significantly higher GFLOPS"
+          echo "and much faster execution time for matrix operations."
+          echo

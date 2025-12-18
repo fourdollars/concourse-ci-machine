@@ -1,0 +1,21 @@
+jobs:
+- name: check-devices
+  plan:
+  - task: list-devices
+    timeout: 1m30s
+    tags: [gpu]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: busybox}
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "Checking for NVIDIA devices:"
+          ls -la /dev/nvidia* 2>&1 || echo "No /dev/nvidia* devices found"
+          echo ""
+          echo "Checking /dev:"
+          ls /dev/ | grep -i nv || echo "No nvidia-related devices"

@@ -14,6 +14,8 @@ from concourse_common import (
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
+    detect_nvidia_gpus,
+    verify_nvidia_container_runtime,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,49 @@ WantedBy=multi-user.target
         except Exception as e:
             logger.error(f"Failed to create systemd service: {e}")
             raise
+    
+    def configure_containerd_for_gpu(self):
+        """
+        Configure Concourse worker's containerd to use NVIDIA runtime
+        
+        Creates a custom containerd config with GPU support
+        """
+        if not self.config.get("enable-gpu", False):
+            logger.info("GPU not enabled, skipping containerd GPU configuration")
+            return
+        
+        # Create a custom GPU-enabled containerd config
+        # We'll use a separate file that worker will be configured to use
+        gpu_containerd_config = Path(CONCOURSE_DATA_DIR) / "containerd-gpu.toml"
+        
+        try:
+            # Create new config with NVIDIA runtime support
+            # For containerd v3, we need to set the runtime at a different level
+            # The simplest approach: symlink runc to nvidia-container-runtime
+            # But first, let's try configuring the runtime binary path correctly
+            gpu_config = """version = 3
+
+oom_score = -999
+disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.aufs", "io.containerd.snapshotter.v1.btrfs", "io.containerd.snapshotter.v1.zfs"]
+
+# Configure default runtime to use nvidia-container-runtime
+# In containerd v3, runtime configuration is at the plugin level
+[plugins]
+  [plugins."io.containerd.runtime.v2.task"]
+    # Use nvidia-container-runtime as the OCI runtime
+    runtime = "/usr/bin/nvidia-container-runtime"
+    runtime_root = ""
+    shim = "containerd-shim-runc-v2"
+"""
+            
+            # Write GPU config
+            gpu_containerd_config.write_text(gpu_config)
+            os.chmod(gpu_containerd_config, 0o644)
+            logger.info(f"Created GPU containerd config at {gpu_containerd_config}")
+            
+        except Exception as e:
+            logger.error(f"Failed to configure worker containerd for GPU: {e}")
+            raise
 
     def update_config(self, tsa_host: str = "127.0.0.1:2222"):
         """Update Concourse worker configuration"""
@@ -86,6 +131,19 @@ WantedBy=multi-user.target
                 "containerd-dns-server", "1.1.1.1,8.8.8.8"
             ),
         }
+        
+        # Add GPU configuration if enabled
+        if self.config.get("enable-gpu", False):
+            gpu_config_path = Path(CONCOURSE_DATA_DIR) / "containerd-gpu.toml"
+            if gpu_config_path.exists():
+                config["CONCOURSE_CONTAINERD_CONFIG"] = str(gpu_config_path)
+                logger.info(f"Using GPU containerd config: {gpu_config_path}")
+        
+        # Add GPU tags if enabled
+        gpu_tags = self._get_gpu_tags()
+        if gpu_tags:
+            config["CONCOURSE_TAG"] = ",".join(gpu_tags)
+            logger.info(f"Adding GPU tags: {gpu_tags}")
 
         # Write config file
         self._write_config(config)
@@ -150,3 +208,85 @@ WantedBy=multi-user.target
             return result.returncode == 0 and result.stdout.strip() == "active"
         except:
             return False
+    
+    def _get_gpu_tags(self):
+        """
+        Generate worker tags based on GPU configuration
+        
+        Returns:
+            list: GPU tags for worker, or empty list if GPU disabled
+        """
+        if not self.config.get("enable-gpu", False):
+            return []
+        
+        # Verify GPU availability
+        gpu_info = detect_nvidia_gpus()
+        if not gpu_info:
+            logger.warning("GPU enabled but no NVIDIA GPUs detected")
+            return []
+        
+        if not verify_nvidia_container_runtime():
+            logger.warning("GPU enabled but nvidia-container-runtime not available")
+            return []
+        
+        tags = ["gpu"]
+        
+        # Add GPU type
+        tags.append("gpu-type=nvidia")
+        
+        # Handle device selection
+        device_ids_config = self.config.get("gpu-device-ids", "all")
+        
+        if device_ids_config == "all":
+            # Expose all GPUs
+            gpu_count = gpu_info["count"]
+            tags.append(f"gpu-count={gpu_count}")
+        else:
+            # Parse specific device IDs
+            try:
+                device_ids = [int(x.strip()) for x in device_ids_config.split(",")]
+                # Validate device IDs exist
+                max_device = max(device_ids)
+                if max_device >= gpu_info["count"]:
+                    logger.error(f"Invalid GPU device ID {max_device}, only {gpu_info['count']} GPUs available")
+                    return []
+                
+                gpu_count = len(device_ids)
+                tags.append(f"gpu-count={gpu_count}")
+                tags.append(f"gpu-devices={device_ids_config}")
+            except ValueError as e:
+                logger.error(f"Invalid gpu-device-ids format: {device_ids_config}")
+                return []
+        
+        logger.info(f"Generated GPU tags: {tags}")
+        return tags
+    
+    def get_gpu_status_message(self):
+        """
+        Get GPU status message for unit status
+        
+        Returns:
+            str: GPU status message or empty string
+        """
+        if not self.config.get("enable-gpu", False):
+            return ""
+        
+        gpu_info = detect_nvidia_gpus()
+        if not gpu_info:
+            return ""
+        
+        device_ids_config = self.config.get("gpu-device-ids", "all")
+        if device_ids_config == "all":
+            count = gpu_info["count"]
+        else:
+            try:
+                device_ids = [int(x.strip()) for x in device_ids_config.split(",")]
+                count = len(device_ids)
+            except:
+                count = 0
+        
+        if count > 0:
+            gpu_name = gpu_info["devices"][0]["name"]
+            return f" (GPU: {count}x NVIDIA)"
+        
+        return ""

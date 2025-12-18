@@ -5,6 +5,7 @@ Supports web-only, worker-only, or combined deployments
 """
 
 import logging
+import os
 import secrets
 import string
 import sys
@@ -83,6 +84,20 @@ class ConcourseCharm(CharmBase):
         # Peer relation
         self.framework.observe(
             self.on.concourse_peer_relation_changed, self._on_peer_relation_changed
+        )
+        
+        # Cross-application TSA relation (web provides, worker requires)
+        self.framework.observe(
+            self.on.web_tsa_relation_joined, self._on_tsa_relation_joined
+        )
+        self.framework.observe(
+            self.on.web_tsa_relation_changed, self._on_tsa_relation_changed
+        )
+        self.framework.observe(
+            self.on.worker_tsa_relation_joined, self._on_tsa_relation_joined
+        )
+        self.framework.observe(
+            self.on.worker_tsa_relation_changed, self._on_tsa_relation_changed
         )
 
         # Actions
@@ -204,6 +219,11 @@ class ConcourseCharm(CharmBase):
                 subprocess.run(
                     ["apt-get", "install", "-y", "containerd"], capture_output=True
                 )
+                
+                # Configure GPU support if enabled
+                if self.config.get("enable-gpu", False):
+                    logger.info("Configuring GPU support for worker")
+                    self.worker_helper.configure_containerd_for_gpu()
 
             self.unit.status = MaintenanceStatus("Installation complete")
             logger.info("Concourse installation completed successfully")
@@ -237,6 +257,11 @@ class ConcourseCharm(CharmBase):
                 if self._should_run_worker():
                     logger.info("Updating worker configuration")
                     tsa_host = self._get_tsa_host()
+                    
+                    # Check if GPU config changed and reconfigure if needed
+                    if self.config.get("enable-gpu", False):
+                        self.worker_helper.configure_containerd_for_gpu()
+                    
                     self.worker_helper.update_config(tsa_host=tsa_host)
 
             self._update_status()
@@ -557,8 +582,20 @@ class ConcourseCharm(CharmBase):
         if mode == "both":
             return "127.0.0.1:2222"
 
-        # In auto/worker mode, need to find the leader (web server) IP
-        # Try to get leader IP from peer relation
+        # Priority 1: Check worker-tsa relation (for separate web/worker apps)
+        tsa_relation = self.model.get_relation("worker-tsa")
+        if tsa_relation:
+            for unit in tsa_relation.units:
+                try:
+                    data = tsa_relation.data.get(unit, {})
+                    tsa_host = data.get("tsa-host")
+                    if tsa_host:
+                        logger.info(f"Using TSA host from relation: {tsa_host}")
+                        return tsa_host
+                except Exception as e:
+                    logger.warning(f"Failed to get TSA host from relation: {e}")
+
+        # Priority 2: Try to get leader IP from peer relation (for auto mode)
         peer_relation = self.model.get_relation("concourse-peer")
         if peer_relation:
             for unit in peer_relation.units:
@@ -628,9 +665,11 @@ class ConcourseCharm(CharmBase):
             if mode == "web":
                 self.unit.status = ActiveStatus("Web server ready")
             elif mode == "worker":
-                self.unit.status = ActiveStatus("Worker ready")
+                gpu_status = self.worker_helper.get_gpu_status_message()
+                self.unit.status = ActiveStatus(f"Worker ready{gpu_status}")
             else:
-                self.unit.status = ActiveStatus("Ready")
+                gpu_status = self.worker_helper.get_gpu_status_message()
+                self.unit.status = ActiveStatus(f"Ready{gpu_status}")
 
         except Exception as e:
             logger.error(f"Status update failed: {e}", exc_info=True)
@@ -653,6 +692,125 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             event.fail(f"Failed to retrieve admin password: {e}")
             logger.error(f"Get admin password action failed: {e}", exc_info=True)
+    
+    def _on_tsa_relation_joined(self, event):
+        """Handle TSA relation joined - bidirectional: web publishes TSA info, worker publishes worker key"""
+        if self._should_run_web():
+            # Web side: publish TSA info
+            try:
+                # Get web IP
+                import subprocess
+                result = subprocess.run(["hostname", "-I"], capture_output=True, text=True)
+                ips = result.stdout.strip().split()
+                web_ip = None
+                for ip in ips:
+                    if "." in ip and not ip.startswith("127."):
+                        web_ip = ip
+                        break
+                
+                if not web_ip:
+                    logger.warning("Could not determine web IP")
+                    return
+                
+                # Read TSA public key
+                tsa_pub_key_path = Path(KEYS_DIR) / "tsa_host_key.pub"
+                if not tsa_pub_key_path.exists():
+                    logger.warning("TSA public key not found")
+                    return
+                
+                tsa_pub_key = tsa_pub_key_path.read_text().strip()
+                
+                # Publish to relation
+                event.relation.data[self.unit]["tsa-host"] = f"{web_ip}:2222"
+                event.relation.data[self.unit]["tsa-public-key"] = tsa_pub_key
+                
+                logger.info(f"Published TSA info: {web_ip}:2222")
+                
+            except Exception as e:
+                logger.error(f"Failed to publish TSA info: {e}", exc_info=True)
+        
+        elif self._should_run_worker():
+            # Worker side: publish worker public key
+            try:
+                worker_pub_key_path = Path(KEYS_DIR) / "worker_key.pub"
+                if not worker_pub_key_path.exists():
+                    logger.warning("Worker public key not found")
+                    return
+                
+                worker_pub_key = worker_pub_key_path.read_text().strip()
+                event.relation.data[self.unit]["worker-public-key"] = worker_pub_key
+                
+                logger.info("Published worker public key")
+                
+            except Exception as e:
+                logger.error(f"Failed to publish worker key: {e}", exc_info=True)
+    
+    def _on_tsa_relation_changed(self, event):
+        """Handle TSA relation changed - bidirectional exchange"""
+        if self._should_run_web():
+            # Web side: authorize worker keys
+            try:
+                authorized_keys_path = Path(KEYS_DIR) / "authorized_worker_keys"
+                existing_keys = set()
+                if authorized_keys_path.exists():
+                    existing_keys = set(authorized_keys_path.read_text().strip().split("\n"))
+                
+                # Get worker keys from all related units
+                for unit in event.relation.units:
+                    worker_pub_key = event.relation.data[unit].get("worker-public-key")
+                    if worker_pub_key and worker_pub_key not in existing_keys:
+                        # Append to authorized keys
+                        with open(authorized_keys_path, "a") as f:
+                            f.write(worker_pub_key + "\n")
+                        existing_keys.add(worker_pub_key)
+                        logger.info(f"Authorized worker key from {unit.name}")
+                
+                # Restart web server to pick up new keys
+                if self.web_helper.is_running():
+                    self.web_helper.restart_service()
+                
+            except Exception as e:
+                logger.error(f"Failed to authorize worker keys: {e}", exc_info=True)
+        
+        elif self._should_run_worker():
+            # Worker side: get TSA info and connect
+            try:
+                # Get TSA info from relation
+                tsa_host = None
+                tsa_pub_key = None
+                
+                for unit in event.relation.units:
+                    tsa_host = event.relation.data[unit].get("tsa-host")
+                    tsa_pub_key = event.relation.data[unit].get("tsa-public-key")
+                    if tsa_host and tsa_pub_key:
+                        break
+                
+                if not tsa_host or not tsa_pub_key:
+                    logger.info("TSA info not yet available from relation")
+                    self.unit.status = WaitingStatus("Waiting for TSA connection info...")
+                    return
+                
+                logger.info(f"Received TSA info: {tsa_host}")
+                
+                # Write TSA public key
+                tsa_pub_key_path = Path(KEYS_DIR) / "tsa_host_key.pub"
+                tsa_pub_key_path.write_text(tsa_pub_key + "\n")
+                os.chmod(tsa_pub_key_path, 0o644)
+                
+                # Update worker config with correct TSA host
+                self.worker_helper.update_config(tsa_host=tsa_host)
+                
+                # Restart worker if running
+                if self.worker_helper.is_running():
+                    self.worker_helper.restart_service()
+                else:
+                    self.worker_helper.start_service()
+                
+                self._update_status()
+                
+            except Exception as e:
+                logger.error(f"Failed to handle TSA relation: {e}", exc_info=True)
+                self.unit.status = BlockedStatus(f"TSA relation failed: {e}")
 
 
 if __name__ == "__main__":

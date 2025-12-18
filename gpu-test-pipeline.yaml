@@ -1,0 +1,65 @@
+jobs:
+- name: gpu-check
+  plan:
+  - task: nvidia-smi-test
+    timeout: 1m30s
+    tags: [gpu]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: nvidia/cuda
+          tag: 12.3.0-base-ubuntu22.04
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "=============================="
+          echo "GPU Test on Concourse Worker"
+          echo "=============================="
+          nvidia-smi
+          echo ""
+          echo "=============================="
+          echo "CUDA Version Check"
+          echo "=============================="
+          nvcc --version || echo "nvcc not available (expected for base image)"
+
+- name: gpu-pytorch-test
+  plan:
+  - task: pytorch-gpu
+    timeout: 1m30s
+    tags: [gpu, gpu-type=nvidia]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: pytorch/pytorch
+          tag: 2.1.0-cuda12.1-cudnn8-runtime
+      run:
+        path: python
+        args:
+        - -c
+        - |
+          import torch
+          print("=" * 50)
+          print("PyTorch GPU Test")
+          print("=" * 50)
+          print(f"PyTorch version: {torch.__version__}")
+          print(f"CUDA available: {torch.cuda.is_available()}")
+          if torch.cuda.is_available():
+              print(f"CUDA version: {torch.version.cuda}")
+              print(f"GPU count: {torch.cuda.device_count()}")
+              print(f"GPU name: {torch.cuda.get_device_name(0)}")
+              print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+              
+              # Simple tensor test
+              x = torch.rand(1000, 1000).cuda()
+              y = torch.rand(1000, 1000).cuda()
+              z = torch.matmul(x, y)
+              print(f"GPU tensor operation successful!")
+          else:
+              print("WARNING: CUDA not available!")
+          print("=" * 50)

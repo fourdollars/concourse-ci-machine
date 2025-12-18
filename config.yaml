@@ -102,3 +102,21 @@ options:
       Default: 1.1.1.1,8.8.8.8
     default: "1.1.1.1,8.8.8.8"
     type: string
+  
+  enable-gpu:
+    description: |
+      Enable GPU support for this worker.
+      Requires NVIDIA drivers and nvidia-container-toolkit installed on host.
+      Worker will be tagged with GPU capabilities for job targeting.
+      Default: false
+    default: false
+    type: boolean
+  
+  gpu-device-ids:
+    description: |
+      GPU device IDs to expose to worker (comma-separated).
+      Use "all" to expose all GPUs, or specify devices like "0,1".
+      Only used when enable-gpu is true.
+      Default: all
+    default: "all"
+    type: string

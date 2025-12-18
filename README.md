@@ -336,6 +336,123 @@ juju add-storage concourse-ci/0 concourse-data=10G
 
 Storage is mounted at `/var/lib/concourse`.
 
+## GPU Support
+
+Concourse workers can utilize NVIDIA GPUs for ML/AI workloads, GPU-accelerated builds, and compute-intensive tasks.
+
+### Prerequisites
+
+- NVIDIA GPU hardware on the host machine
+- NVIDIA drivers installed on the host (tested with driver 580.95+)
+- nvidia-container-toolkit installed on the host
+
+### Enabling GPU Support
+
+```bash
+# Deploy worker with GPU support
+juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker --config enable-gpu=true
+
+# Or enable on existing worker
+juju config worker enable-gpu=true
+```
+
+### GPU Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enable-gpu` | `false` | Enable GPU support for this worker |
+| `gpu-device-ids` | `all` | GPU devices to expose: "all" or "0,1,2" |
+
+### GPU Worker Tags
+
+When GPU is enabled, workers are automatically tagged:
+- `gpu` - Worker has GPU
+- `gpu-type=nvidia` - GPU vendor type
+- `gpu-count=N` - Number of GPUs available
+- `gpu-devices=0,1` - Specific device IDs (if configured)
+
+### Example: GPU Pipeline
+
+Create a pipeline that targets GPU-enabled workers:
+
+```yaml
+jobs:
+- name: train-model
+  plan:
+  - task: gpu-training
+    tags: [gpu]  # Target GPU-enabled workers
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: nvidia/cuda
+          tag: 12.3.0-runtime-ubuntu22.04
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          # Verify GPU access
+          nvidia-smi
+          
+          # Run your GPU workload
+          python train.py --use-gpu
+
+- name: gpu-benchmark
+  plan:
+  - task: benchmark
+    tags: [gpu, gpu-type=nvidia, gpu-count=1]  # More specific targeting
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: nvidia/cuda
+          tag: 12.3.0-base-ubuntu22.04
+      run:
+        path: nvidia-smi
+```
+
+### Verifying GPU Access
+
+```bash
+# Check worker status
+juju status worker
+
+# Should show: "Worker ready (GPU: 1x NVIDIA)"
+
+# Verify GPU in Concourse
+juju ssh worker/0
+fly -t local workers
+
+# Worker should show tags: gpu, gpu-type=nvidia, gpu-count=1
+```
+
+### Common GPU Images
+
+- `nvidia/cuda:12.3.0-base-ubuntu22.04` - CUDA base (~2.5GB)
+- `nvidia/cuda:12.3.0-runtime-ubuntu22.04` - CUDA runtime (~4GB)
+- `nvidia/cuda:12.3.0-devel-ubuntu22.04` - CUDA development (~8GB)
+- `tensorflow/tensorflow:latest-gpu` - TensorFlow with GPU
+- `pytorch/pytorch:latest` - PyTorch with GPU
+
+### GPU Troubleshooting
+
+**Worker shows "GPU enabled but no GPU detected"**
+- Verify GPU present: `nvidia-smi`
+- Check driver installation: `nvidia-smi`
+
+**Container cannot access GPU**
+- Verify nvidia-container-runtime: `which nvidia-container-runtime`
+- Check containerd config: `cat /etc/containerd/config.toml`
+- Restart containerd: `sudo systemctl restart containerd`
+
+**GPU not showing in task**
+- Ensure using NVIDIA CUDA base image
+- Run `nvidia-smi` in task to debug
+- Check worker tags: `fly -t local workers`
+
 ## Troubleshooting
 
 ### Charm Shows "Blocked" Status

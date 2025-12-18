@@ -138,3 +138,62 @@ def get_concourse_version(config) -> str:
     from concourse_installer import get_latest_concourse_version
 
     return get_latest_concourse_version()
+
+
+def detect_nvidia_gpus():
+    """
+    Detect NVIDIA GPUs on the system
+    
+    Returns:
+        dict with keys: count, devices (list of dicts with index, name, driver)
+        or None if no GPUs found or nvidia-smi unavailable
+    """
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,driver_version", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        devices = []
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    devices.append({
+                        "index": int(parts[0]),
+                        "name": parts[1],
+                        "driver": parts[2] if len(parts) > 2 else "unknown"
+                    })
+        
+        if devices:
+            logger.info(f"Detected {len(devices)} NVIDIA GPU(s)")
+            return {"count": len(devices), "devices": devices}
+        else:
+            logger.info("No NVIDIA GPUs detected")
+            return None
+            
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to detect NVIDIA GPUs: {e}")
+        return None
+
+
+def verify_nvidia_container_runtime():
+    """
+    Verify NVIDIA container runtime is available
+    
+    Returns:
+        bool: True if nvidia-container-runtime is available
+    """
+    try:
+        result = subprocess.run(
+            ["which", "nvidia-container-runtime"],
+            capture_output=True,
+            check=True,
+        )
+        logger.info("NVIDIA container runtime is available")
+        return True
+    except subprocess.CalledProcessError:
+        logger.warning("NVIDIA container runtime not found")
+        return False
