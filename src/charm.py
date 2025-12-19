@@ -38,6 +38,14 @@ from concourse_installer import (
 from concourse_web import ConcourseWebHelper
 from concourse_worker import ConcourseWorkerHelper
 
+# Import data platform library for PostgreSQL 16+ support
+try:
+    from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+    HAS_DATA_PLATFORM = True
+except ImportError:
+    HAS_DATA_PLATFORM = False
+    logger.warning("data_platform_libs not available, PostgreSQL 16+ support disabled")
+
 # Configure logging
 log_handlers = [logging.StreamHandler()]
 log_file_path = Path("/var/log/concourse-ci.log")
@@ -63,6 +71,16 @@ class ConcourseCharm(CharmBase):
         self.web_helper = ConcourseWebHelper(self)
         self.worker_helper = ConcourseWorkerHelper(self)
 
+        # Initialize DatabaseRequires for PostgreSQL 16+ support
+        if HAS_DATA_PLATFORM:
+            self.database = DatabaseRequires(
+                self, relation_name="postgresql", database_name="concourse"
+            )
+            self.framework.observe(self.database.on.database_created, self._on_database_created)
+            self.framework.observe(self.database.on.endpoints_changed, self._on_database_changed)
+        else:
+            self.database = None
+
         # Register event handlers
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -70,7 +88,7 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.stop, self._on_stop)
 
-        # PostgreSQL relation
+        # Legacy PostgreSQL relation (for older PostgreSQL charms)
         self.framework.observe(
             self.on.postgresql_relation_created, self._on_postgresql_relation_created
         )
@@ -244,6 +262,8 @@ class ConcourseCharm(CharmBase):
                 # When running both, we need to merge configs
                 logger.info("Updating merged web+worker configuration")
                 self._update_merged_config()
+                # Restart the service to apply new config
+                self._restart_concourse_service()
             else:
                 # Single role - update separately
                 if self._should_run_web():
@@ -253,6 +273,8 @@ class ConcourseCharm(CharmBase):
                     self.web_helper.update_config(
                         db_url=db_url, admin_password=admin_password
                     )
+                    # Restart web service to apply new config
+                    self._restart_concourse_service()
 
                 if self._should_run_worker():
                     logger.info("Updating worker configuration")
@@ -263,6 +285,8 @@ class ConcourseCharm(CharmBase):
                         self.worker_helper.configure_containerd_for_gpu()
                     
                     self.worker_helper.update_config(tsa_host=tsa_host)
+                    # Restart worker service to apply new config
+                    self._restart_concourse_service()
 
             self._update_status()
             logger.info("Configuration updated successfully")
@@ -344,6 +368,67 @@ class ConcourseCharm(CharmBase):
             logger.warning("PostgreSQL relation broken")
             self.web_helper.stop_service()
             self.unit.status = BlockedStatus("PostgreSQL database required")
+
+    def _on_database_created(self, event):
+        """Handle database created event from PostgreSQL 16+"""
+        logger.info("Database created event received (PostgreSQL 16+)")
+        self._on_database_changed(event)
+
+    def _on_database_changed(self, event):
+        """Handle database endpoints changed from PostgreSQL 16+"""
+        try:
+            if not self._should_run_web():
+                logger.info("Not a web unit, skipping database configuration")
+                return
+
+            logger.info("Database endpoints changed (PostgreSQL 16+)")
+            
+            if not self.database or not self.database.fetch_relation_data():
+                logger.warning("Database connection info not yet available")
+                self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                return
+
+            # Get connection info directly from relation data
+            relation = self.model.get_relation("postgresql")
+            if not relation:
+                logger.warning("No postgresql relation found")
+                self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                return
+            
+            # Use DatabaseRequires library which handles secrets automatically
+            db_data = self.database.fetch_relation_data()
+            logger.info(f"Database data from library: {list(db_data.keys()) if db_data else 'None'}")
+            
+            # Extract connection info from first relation
+            db_url = None
+            for rel_id, data in db_data.items():
+                # Library provides 'uris' with full connection string including credentials
+                if "uris" in data:
+                    db_url = data["uris"]
+                    # Mask password in log
+                    masked_url = db_url.split('@')[0].split(':')[0] + ':***@' + db_url.split('@')[1] if '@' in db_url else db_url
+                    logger.info(f"Using connection URI from library: {masked_url}")
+                    break
+            
+            if not db_url:
+                logger.warning("No connection URI in database data yet")
+                self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                return
+            
+            admin_password = self._get_or_create_admin_password()
+            self.web_helper.update_config(db_url=db_url, admin_password=admin_password)
+
+            # Restart web service
+            if self.web_helper.is_running():
+                self.web_helper.restart_service()
+            else:
+                self.web_helper.start_service()
+
+            self._update_status()
+
+        except Exception as e:
+            logger.error(f"Database configuration failed: {e}", exc_info=True)
+            self.unit.status = BlockedStatus(f"Database config failed: {e}")
 
     def _publish_keys_to_peers(self):
         """Publish TSA keys and web IP to peer relation"""
@@ -501,7 +586,7 @@ class ConcourseCharm(CharmBase):
 
         config = {
             # Web server config
-            "CONCOURSE_PORT": str(web_port),
+            "CONCOURSE_BIND_PORT": str(web_port),
             "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
             "CONCOURSE_ENABLE_METRICS": str(
                 self.config.get("enable-metrics", True)
@@ -555,12 +640,64 @@ class ConcourseCharm(CharmBase):
         )
         logger.info(f"Merged configuration written to {CONCOURSE_CONFIG_FILE}")
 
+    def _restart_concourse_service(self):
+        """Restart Concourse service to apply configuration changes"""
+        import subprocess
+        try:
+            logger.info("Restarting Concourse service to apply configuration changes")
+            # Try to restart web server if it exists
+            result = subprocess.run(
+                ["systemctl", "is-active", "concourse-server.service"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                subprocess.run(
+                    ["systemctl", "restart", "concourse-server.service"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info("Concourse server service restarted successfully")
+            
+            # Try to restart worker if it exists
+            result = subprocess.run(
+                ["systemctl", "is-active", "concourse-worker.service"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                subprocess.run(
+                    ["systemctl", "restart", "concourse-worker.service"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info("Concourse worker service restarted successfully")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to restart Concourse service: {e.stderr}")
+            raise
+
     def _get_postgresql_url(self) -> str:
-        """Extract PostgreSQL URL from relation data"""
+        """Extract PostgreSQL URL from relation data
+        
+        Supports both old pgsql interface and new postgresql_client interface
+        """
         relation = self.model.get_relation("postgresql")
         if not relation or not relation.data:
             return None
 
+        # Try new postgresql_client interface first (PostgreSQL 16+)
+        # Use DatabaseRequires library if available - it handles secrets
+        if HAS_DATA_PLATFORM and self.database:
+            db_data = self.database.fetch_relation_data()
+            for rel_id, data in db_data.items():
+                # Library provides 'uris' with full connection string
+                if "uris" in data:
+                    logger.info("Using connection URI from DatabaseRequires library")
+                    return data["uris"]
+        
+        # Fallback to old pgsql interface (check unit data)
         for unit, data in relation.data.items():
             if hasattr(unit, "name") and "postgresql" in unit.name:
                 host = data.get("host")
@@ -570,6 +707,7 @@ class ConcourseCharm(CharmBase):
                 password = data.get("password")
 
                 if all([host, database, user, password]):
+                    logger.info("Using legacy pgsql interface")
                     return f"postgres://{user}:{password}@{host}:{port}/{database}"
 
         return None
@@ -663,12 +801,26 @@ class ConcourseCharm(CharmBase):
 
             # All good
             if mode == "web":
+                # Open the web port for external access
+                web_port = self.config.get("web-port", 8080)
+                try:
+                    self.unit.open_port("tcp", web_port)
+                    logger.info(f"Opened port {web_port}/tcp")
+                except Exception as e:
+                    logger.warning(f"Failed to open port {web_port}: {e}")
                 self.unit.status = ActiveStatus("Web server ready")
             elif mode == "worker":
                 gpu_status = self.worker_helper.get_gpu_status_message()
                 self.unit.status = ActiveStatus(f"Worker ready{gpu_status}")
             else:
                 gpu_status = self.worker_helper.get_gpu_status_message()
+                # Open web port when running both
+                web_port = self.config.get("web-port", 8080)
+                try:
+                    self.unit.open_port("tcp", web_port)
+                    logger.info(f"Opened port {web_port}/tcp")
+                except Exception as e:
+                    logger.warning(f"Failed to open port {web_port}: {e}")
                 self.unit.status = ActiveStatus(f"Ready{gpu_status}")
 
         except Exception as e:

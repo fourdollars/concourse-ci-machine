@@ -177,7 +177,7 @@ class ConcourseHelper:
         """Update Concourse configuration file"""
         keys_dir = Path(CONCOURSE_DATA_DIR) / "keys"
         config = {
-            "CONCOURSE_PORT": str(self.config.get("web-port", 8080)),
+            "CONCOURSE_BIND_PORT": str(self.config.get("web-port", 8080)),
             "CONCOURSE_WORKER_PROCS": str(self.config.get("worker-procs", 1)),
             "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
             "CONCOURSE_ENABLE_METRICS": str(
@@ -240,6 +240,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
@@ -447,7 +448,7 @@ WantedBy=multi-user.target
                         status["details"] = {
                             "config_file_exists": True,
                             "web_port": self._extract_from_config(
-                                config, "CONCOURSE_PORT"
+                                config, "CONCOURSE_BIND_PORT"
                             ),
                             "worker_procs": self._extract_from_config(
                                 config, "CONCOURSE_WORKER_PROCS"

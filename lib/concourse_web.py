@@ -47,6 +47,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
@@ -72,7 +73,7 @@ WantedBy=multi-user.target
         keys_dir = Path(KEYS_DIR)
         username = self.config.get("initial-admin-username", "admin")
         config = {
-            "CONCOURSE_PORT": str(self.config.get("web-port", 8080)),
+            "CONCOURSE_BIND_PORT": str(self.config.get("web-port", 8080)),
             "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
             "CONCOURSE_ENABLE_METRICS": str(
                 self.config.get("enable-metrics", True)

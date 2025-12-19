@@ -16,7 +16,11 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 ✅ **Fully Automated Key Distribution**: TSA keys automatically shared via peer relations - zero manual setup!
 ✅ **Secure Random Passwords**: Auto-generated admin password stored in Juju peer data
 ✅ **Latest Version Detection**: Automatically downloads the latest Concourse release from GitHub
-✅ **PostgreSQL Integration**: Seamless database relation support
+✅ **PostgreSQL 16+ Integration**: Full support with Juju secrets API for secure credential management
+✅ **Dynamic Port Configuration**: Change web port on-the-fly with automatic service restart
+✅ **Privileged Port Support**: Run on port 80 with proper Linux capabilities (CAP_NET_BIND_SERVICE)
+✅ **Auto External-URL**: Automatically detects unit IP for external-url configuration
+✅ **Ubuntu 24.04 LTS**: Optimized for Ubuntu 24.04 LTS
 ✅ **Container Runtime**: Uses containerd with LXD-compatible configuration
 ✅ **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
 ✅ **Prometheus Metrics**: Optional metrics endpoint for monitoring
@@ -27,8 +31,8 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 ### Prerequisites
 
 - Juju 3.x
-- Ubuntu 22.04 LTS (on Juju-managed machines)
-- PostgreSQL charm (for web server)
+- Ubuntu 24.04 LTS (on Juju-managed machines)
+- PostgreSQL charm 16/stable (for web server)
 
 ### Basic Deployment (All-in-One)
 
@@ -37,17 +41,26 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 juju add-model concourse
 
 # Deploy PostgreSQL
-juju deploy postgresql --channel 14/stable
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI charm as application "concourse-ci"
 juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
 
-# Relate to database
-juju relate concourse-ci:postgresql postgresql:db
+# Relate to database (uses PostgreSQL 16 client interface with Juju secrets)
+juju integrate concourse-ci:postgresql postgresql:database
+
+# Expose the web interface (opens port in Juju)
+juju expose concourse-ci
 
 # Wait for deployment (takes ~5-10 minutes)
 juju status --watch 1s
 ```
+
+The charm automatically:
+- Reads database credentials from Juju secrets
+- Configures the external URL based on unit IP
+- Opens the configured web port (default: 8080)
+- Generates and stores admin password in peer relation data
 
 **Naming Convention:**
 - **Charm name**: `concourse-ci-machine` (what you deploy from Charmhub)
@@ -62,13 +75,13 @@ Deploy multiple units with automatic role assignment and key distribution:
 
 ```bash
 # Deploy PostgreSQL
-juju deploy postgresql --channel 14/stable
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse charm (named "concourse-ci") with 1 web + 2 workers
 juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
 
 # Relate to database (using application name "concourse-ci")
-juju relate concourse-ci:postgresql postgresql:db
+juju relate concourse-ci:postgresql postgresql:database
 
 # Check deployment
 juju status
@@ -87,7 +100,7 @@ For maximum flexibility with separate applications:
 
 ```bash
 # Deploy PostgreSQL
-juju deploy postgresql --channel 14/stable
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy web server (1 unit)
 juju deploy concourse-ci-machine web --config deployment-mode=web
@@ -96,7 +109,7 @@ juju deploy concourse-ci-machine web --config deployment-mode=web
 juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
 
 # Relate web to database
-juju relate web:postgresql postgresql:db
+juju relate web:postgresql postgresql:database
 
 # Relate web and worker for automatic TSA key exchange
 juju relate web:web-tsa worker:worker-tsa
@@ -120,7 +133,7 @@ Both web and worker run on the same unit. **Fully automated, no manual setup req
 
 ```bash
 juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
-juju relate concourse-ci:postgresql postgresql:db
+juju relate concourse-ci:postgresql postgresql:database
 ```
 
 **Best for:** Development, testing, small deployments
@@ -131,7 +144,7 @@ Leader unit runs web server, non-leader units run workers. **Keys automatically 
 
 ```bash
 juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
-juju relate concourse-ci:postgresql postgresql:db
+juju relate concourse-ci:postgresql postgresql:database
 ```
 
 **Best for:** Production, scalable deployments
@@ -148,7 +161,7 @@ juju deploy concourse-ci-machine web --config deployment-mode=web
 juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
 
 # Relate web to PostgreSQL
-juju relate web:postgresql postgresql:db
+juju relate web:postgresql postgresql:database
 
 # Relate web and worker for automatic TSA key exchange
 juju relate web:web-tsa worker:worker-tsa
@@ -176,19 +189,26 @@ juju relate web:web-tsa worker:worker-tsa
 
 ### Changing Configuration
 
+Configuration changes are applied dynamically with automatic service restart.
+
 ```bash
-# Set custom web port
-juju config concourse-ci-machine web-port=9090
+# Set custom web port (automatically restarts service)
+juju config concourse-ci web-port=9090
+
+# Change to privileged port 80 (requires CAP_NET_BIND_SERVICE - already configured)
+juju config concourse-ci web-port=80
 
 # Set specific Concourse version
-juju config concourse-ci-machine concourse-version=7.14.3
+juju config concourse-ci concourse-version=7.14.3
 
 # Enable debug logging
-juju config concourse-ci-machine log-level=debug
+juju config concourse-ci log-level=debug
 
-# Set external URL
-juju config concourse-ci-machine external-url=https://ci.example.com
+# Set external URL (auto-detects unit IP if not set)
+juju config concourse-ci external-url=https://ci.example.com
 ```
+
+**Note**: The `web-port` configuration supports dynamic changes including privileged ports (< 1024) thanks to `AmbientCapabilities=CAP_NET_BIND_SERVICE` in the systemd service.
 
 ## Using Concourse
 
@@ -199,13 +219,13 @@ juju config concourse-ci-machine external-url=https://ci.example.com
 juju status
 ```
 
-2. **Note about IPv6**: Juju may display IPv6 addresses for LXD containers. The web server listens on both IPv4 and IPv6. To get the IPv4 address:
+2. Check the exposed port (shown in Ports column):
 ```bash
-# If juju status shows IPv6 address
-juju ssh web/0 "hostname -I | awk '{print \$1}'"
+juju status concourse-ci
+# Look for: Ports column showing "80/tcp" or "8080/tcp"
 ```
 
-3. Open in browser: `http://<web-unit-ipv4>:8080`
+3. Open in browser: `http://<web-unit-ip>:<port>`
 
 4. Get the admin credentials:
 ```bash
@@ -309,11 +329,11 @@ juju remove-unit concourse-ci/3
 The web server requires a PostgreSQL database:
 
 ```bash
-juju relate concourse-ci:postgresql postgresql:db
+juju relate concourse-ci:postgresql postgresql:database
 ```
 
 **Supported PostgreSQL Charms:**
-- `postgresql` (14/stable recommended)
+- `postgresql` (16/stable recommended)
 - Any charm providing the `postgresql` interface
 
 ### Optional Relations
@@ -360,7 +380,7 @@ Complete deployment from scratch:
 
 ```bash
 # 1. Deploy PostgreSQL
-juju deploy postgresql --channel 14/stable
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # 2. Deploy web server
 juju deploy concourse-ci-machine web --config deployment-mode=web
@@ -375,7 +395,7 @@ lxc config device add <container-name> gpu0 gpu
 # Example: lxc config device add juju-abc123-0 gpu0 gpu
 
 # 5. Create relations
-juju relate web:postgresql postgresql:db
+juju relate web:postgresql postgresql:database
 juju relate web:web-tsa worker:worker-tsa
 
 # 6. Check status
@@ -513,7 +533,7 @@ fly -t local workers
 
 **Fix:**
 ```bash
-juju relate concourse-ci:postgresql postgresql:db
+juju relate concourse-ci:postgresql postgresql:database
 ```
 
 ### Web Server Won't Start
@@ -612,7 +632,7 @@ cd concourse-ci-machine
 charmcraft pack
 
 # Deploy locally
-juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64-machine.charm
+juju deploy ./concourse-ci-machine_amd64.charm
 ```
 
 ### Project Structure

@@ -20,6 +20,8 @@ options:
   web-port:
     description: |
       Port for Concourse web UI and API server.
+      Supports dynamic changes with automatic service restart.
+      Privileged ports (< 1024) are supported via CAP_NET_BIND_SERVICE.
       Default: 8080
     default: 8080
     type: int
@@ -35,7 +37,8 @@ options:
   external-url:
     description: |
       External URL for Concourse web UI (used for redirects and webhooks).
-      If not set, defaults to http://<unit-ip>:<web-port>
+      If not set, automatically detects and uses http://<unit-ip>:<web-port>
+      Important: Set this to your actual external URL if behind a proxy/NAT.
     default: ""
     type: string
   

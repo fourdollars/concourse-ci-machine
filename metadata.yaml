@@ -3,8 +3,10 @@ display-name: Concourse CI
 summary: A Juju charm for Concourse CI deployment and management
 description: |
   This charm provides automated deployment, configuration, and lifecycle management
-  of Concourse CI on Juju infrastructure. It includes PostgreSQL database integration,
-  systemd-based service management, and operational actions for common tasks.
+  of Concourse CI on Juju infrastructure. Features include PostgreSQL 16+ integration
+  with Juju secrets support, dynamic port configuration with privileged port support,
+  automatic external-URL detection, and systemd-based service management with operational
+  actions for common tasks. Optimized for Ubuntu 24.04 LTS.
 
 tags:
   - ci-cd
@@ -22,9 +24,9 @@ provides:
 
 requires:
   postgresql:
-    interface: pgsql
+    interface: postgresql_client
     limit: 1
-    description: PostgreSQL database backend for Concourse
+    description: PostgreSQL 16+ database backend for Concourse (uses Juju secrets for credentials)
   
   # Worker connects to TSA (web)
   worker-tsa:
