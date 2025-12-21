@@ -22,6 +22,41 @@ jobs:
                 echo "========================================="
                 echo "GPU + Dataset Test with Docker-in-Docker"
                 echo "========================================="
+                echo ""
+                
+                # Test on host before starting Docker daemon
+                echo "🔍 GPU Detection on Host (Task Container):"
+                echo "-------------------------------------------"
+                
+                echo "1. NVIDIA Driver Version:"
+                if [ -f /proc/driver/nvidia/version ]; then
+                  cat /proc/driver/nvidia/version | head -1
+                else
+                  echo "⚠️  NVIDIA driver not detected"
+                fi
+                echo ""
+                
+                echo "2. GPU Device Count:"
+                GPU_COUNT=$(ls -1 /dev/nvidia[0-9]* 2>/dev/null | wc -l)
+                if [ "$GPU_COUNT" -gt 0 ]; then
+                  echo "✅ Found $GPU_COUNT GPU device(s)"
+                  ls -l /dev/nvidia[0-9]* 2>/dev/null
+                else
+                  echo "⚠️  No GPU devices found"
+                fi
+                echo ""
+                
+                echo "3. Dataset on Host:"
+                if [ -d /srv/datasets ]; then
+                  DATASET_COUNT=$(ls -1 /srv/datasets 2>/dev/null | wc -l)
+                  echo "✅ Found $DATASET_COUNT items in /srv/datasets"
+                else
+                  echo "⚠️  /srv/datasets not found"
+                fi
+                echo ""
+                
+                echo "========================================="
+                echo ""
                 
                 # Start Docker daemon in background
                 echo "🚀 Starting Docker daemon..."
@@ -56,20 +91,30 @@ jobs:
                   --device=/dev/nvidia-uvm:/dev/nvidia-uvm \
                   --device=/dev/nvidia-modeset:/dev/nvidia-modeset \
                   -v /srv/datasets:/srv/datasets:ro \
-                  nvidia/cuda:11.8.0-base-ubuntu22.04 \
-                  bash -c '
+                  busybox \
+                  sh -c '
                     echo "=== GPU + Dataset Integration Test ==="
                     echo ""
-                    echo "1. GPU Availability:"
-                    nvidia-smi -L || echo "⚠️  nvidia-smi not available"
+                    echo "1. GPU Availability (via /proc/driver/nvidia/version):"
+                    if [ -f /proc/driver/nvidia/version ]; then
+                      cat /proc/driver/nvidia/version | head -1
+                    else
+                      echo "⚠️  NVIDIA driver not detected"
+                    fi
                     echo ""
-                    echo "2. Dataset Access:"
+                    echo "2. GPU Device Count:"
+                    GPU_COUNT=$(ls -1 /dev/nvidia[0-9]* 2>/dev/null | wc -l)
+                    if [ "$GPU_COUNT" -gt 0 ]; then
+                      echo "✅ Found $GPU_COUNT GPU device(s)"
+                      ls -l /dev/nvidia[0-9]* 2>/dev/null
+                    else
+                      echo "⚠️  No GPU devices found"
+                    fi
+                    echo ""
+                    echo "3. Dataset Access:"
                     ls -lah /srv/datasets/ 2>/dev/null || echo "⚠️  /srv/datasets not found"
                     echo ""
-                    echo "3. GPU Environment:"
-                    env | grep NVIDIA || echo "No NVIDIA env vars"
-                    echo ""
-                    echo "4. GPU Devices:"
+                    echo "4. GPU Devices (all):"
                     ls -l /dev/nvidia* 2>/dev/null || echo "⚠️  No GPU devices"
                     echo ""
                     echo "5. Dataset Read Test:"
