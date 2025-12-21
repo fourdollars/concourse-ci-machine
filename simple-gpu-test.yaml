@@ -1,132 +1,92 @@
 ---
 jobs:
-  - name: simple-gpu-test
+  - name: cuda-nvidia-smi-test
     plan:
-      - task: run-gpu-container
+      - task: run-nvidia-smi
         tags: [gpu]
-        privileged: true
         config:
           platform: linux
           image_resource:
             type: registry-image
             source:
-              repository: docker
-              tag: dind
+              repository: nvidia/cuda
+              tag: 13.1.0-base-ubuntu24.04
           run:
             path: sh
             args:
               - -c
               - |
-                set -e
+                FAILED=0
                 
                 echo "========================================="
-                echo "GPU + Dataset Test with Docker-in-Docker"
+                echo "NVIDIA CUDA + Dataset Test"
                 echo "========================================="
                 echo ""
                 
-                # Test on host before starting Docker daemon
-                echo "🔍 GPU Detection on Host (Task Container):"
-                echo "-------------------------------------------"
-                
-                echo "1. NVIDIA Driver Version:"
-                if [ -f /proc/driver/nvidia/version ]; then
-                  cat /proc/driver/nvidia/version | head -1
+                echo "1. NVIDIA SMI Test:"
+                if nvidia-smi; then
+                  echo "✅ nvidia-smi passed"
+                  echo "Location: $(which nvidia-smi)"
                 else
-                  echo "⚠️  NVIDIA driver not detected"
+                  echo "❌ nvidia-smi failed"
+                  echo "which nvidia-smi: $(which nvidia-smi 2>&1 || echo 'not found')"
+                  echo "PATH check: $PATH"
+                  FAILED=1
                 fi
                 echo ""
                 
-                echo "2. GPU Device Count:"
-                GPU_COUNT=$(ls -1 /dev/nvidia[0-9]* 2>/dev/null | wc -l)
-                if [ "$GPU_COUNT" -gt 0 ]; then
-                  echo "✅ Found $GPU_COUNT GPU device(s)"
-                  ls -l /dev/nvidia[0-9]* 2>/dev/null
+                echo "2. CUDA Version Check:"
+                if [ -n "$CUDA_VERSION" ]; then
+                  echo "CUDA_VERSION environment variable: $CUDA_VERSION"
+                  echo "✅ CUDA version available"
                 else
-                  echo "⚠️  No GPU devices found"
+                  echo "❌ CUDA_VERSION environment variable not set"
+                  FAILED=1
                 fi
                 echo ""
                 
-                echo "3. Dataset on Host:"
+                echo "Environment Variables:"
+                printenv | sort
+                echo ""
+                
+                echo "3. NVIDIA Driver Version:"
+                if cat /proc/driver/nvidia/version 2>/dev/null; then
+                  echo "✅ Driver info accessible"
+                else
+                  echo "❌ Driver info not accessible"
+                  FAILED=1
+                fi
+                echo ""
+                
+                echo "4. Dataset Access Test:"
                 if [ -d /srv/datasets ]; then
                   DATASET_COUNT=$(ls -1 /srv/datasets 2>/dev/null | wc -l)
                   echo "✅ Found $DATASET_COUNT items in /srv/datasets"
+                  echo ""
+                  echo "First 20 items:"
+                  ls -lah /srv/datasets/ | head -20
                 else
-                  echo "⚠️  /srv/datasets not found"
+                  echo "❌ /srv/datasets not found"
+                  FAILED=1
+                fi
+                echo ""
+                
+                echo "5. Dataset Write Test (should fail - read-only):"
+                if touch /srv/datasets/test-write 2>&1; then
+                  echo "❌ Write succeeded - mount is NOT read-only"
+                  FAILED=1
+                else
+                  echo "✅ Confirmed read-only mount"
                 fi
                 echo ""
                 
                 echo "========================================="
-                echo ""
-                
-                # Start Docker daemon in background
-                echo "🚀 Starting Docker daemon..."
-                dockerd-entrypoint.sh >/dev/null 2>&1 &
-                
-                # Wait for Docker to be ready
-                for i in $(seq 1 30); do
-                  if docker info >/dev/null 2>&1; then
-                    break
-                  fi
-                  sleep 1
-                done
-                
-                echo "✅ Docker daemon ready"
-                echo ""
-                
-                # Show available GPU devices on host
-                echo "📋 Available GPU devices on host:"
-                ls -la /dev/nvidia* /dev/dri 2>/dev/null || echo "⚠️  No GPU devices found"
-                echo ""
-                
-                # Show dataset availability on host
-                echo "📦 Dataset availability on host:"
-                ls -lah /srv/datasets/ 2>/dev/null || echo "⚠️  /srv/datasets not found"
-                echo ""
-                
-                # Run comprehensive GPU + Dataset test container
-                echo "🧪 Running GPU + Dataset integration test..."
-                docker run --rm \
-                  --device=/dev/nvidia0:/dev/nvidia0 \
-                  --device=/dev/nvidiactl:/dev/nvidiactl \
-                  --device=/dev/nvidia-uvm:/dev/nvidia-uvm \
-                  --device=/dev/nvidia-modeset:/dev/nvidia-modeset \
-                  -v /srv/datasets:/srv/datasets:ro \
-                  busybox \
-                  sh -c '
-                    echo "=== GPU + Dataset Integration Test ==="
-                    echo ""
-                    echo "1. GPU Availability (via /proc/driver/nvidia/version):"
-                    if [ -f /proc/driver/nvidia/version ]; then
-                      cat /proc/driver/nvidia/version | head -1
-                    else
-                      echo "⚠️  NVIDIA driver not detected"
-                    fi
-                    echo ""
-                    echo "2. GPU Device Count:"
-                    GPU_COUNT=$(ls -1 /dev/nvidia[0-9]* 2>/dev/null | wc -l)
-                    if [ "$GPU_COUNT" -gt 0 ]; then
-                      echo "✅ Found $GPU_COUNT GPU device(s)"
-                      ls -l /dev/nvidia[0-9]* 2>/dev/null
-                    else
-                      echo "⚠️  No GPU devices found"
-                    fi
-                    echo ""
-                    echo "3. Dataset Access:"
-                    ls -lah /srv/datasets/ 2>/dev/null || echo "⚠️  /srv/datasets not found"
-                    echo ""
-                    echo "4. GPU Devices (all):"
-                    ls -l /dev/nvidia* 2>/dev/null || echo "⚠️  No GPU devices"
-                    echo ""
-                    echo "5. Dataset Read Test:"
-                    cat /srv/datasets/it-works.txt 2>/dev/null && echo "(empty file - expected)" || echo "File exists"
-                    echo ""
-                    echo "6. Dataset Write Test (should fail - read-only):"
-                    touch /srv/datasets/test-write 2>&1 || echo "✓ Confirmed read-only mount"
-                    echo ""
-                    echo "=== Test Complete ==="
-                  '
-                
-                echo ""
-                echo "========================================="
-                echo "✅ All tests completed successfully!"
-                echo "========================================="
+                if [ $FAILED -eq 0 ]; then
+                  echo "✅ CUDA test completed successfully!"
+                  echo "========================================="
+                  exit 0
+                else
+                  echo "❌ CUDA test completed with failures!"
+                  echo "========================================="
+                  exit 1
+                fi

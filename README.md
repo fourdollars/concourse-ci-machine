@@ -464,7 +464,7 @@ jobs:
         type: registry-image
         source:
           repository: nvidia/cuda
-          tag: 12.3.0-runtime-ubuntu22.04
+          tag: 13.1.0-runtime-ubuntu24.04
       run:
         path: sh
         args:
@@ -486,7 +486,7 @@ jobs:
         type: registry-image
         source:
           repository: nvidia/cuda
-          tag: 12.3.0-base-ubuntu22.04
+          tag: 13.1.0-base-ubuntu24.04
       run:
         path: nvidia-smi
 ```
@@ -505,9 +505,9 @@ fly -t local workers
 
 ### Common GPU Images
 
-- `nvidia/cuda:12.3.0-base-ubuntu22.04` - CUDA base (~2.5GB)
-- `nvidia/cuda:12.3.0-runtime-ubuntu22.04` - CUDA runtime (~4GB)
-- `nvidia/cuda:12.3.0-devel-ubuntu22.04` - CUDA development (~8GB)
+- `nvidia/cuda:13.1.0-base-ubuntu24.04` - CUDA base (~174MB)
+- `nvidia/cuda:13.1.0-runtime-ubuntu24.04` - CUDA runtime (~1.38GB)
+- `nvidia/cuda:13.1.0-devel-ubuntu24.04` - CUDA development (~3.39GB)
 - `tensorflow/tensorflow:latest-gpu` - TensorFlow with GPU
 - `pytorch/pytorch:latest` - PyTorch with GPU
 

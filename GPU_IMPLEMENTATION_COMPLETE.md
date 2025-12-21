@@ -181,7 +181,7 @@ jobs:
         type: registry-image
         source:
           repository: nvidia/cuda
-          tag: 12.3.0-runtime-ubuntu22.04
+          tag: 13.1.0-runtime-ubuntu24.04
       run:
         path: sh
         args:
@@ -339,11 +339,11 @@ tags: [gpu, gpu-count=2]
 ```yaml
 # CUDA base (~2.5GB)
 repository: nvidia/cuda
-tag: 12.3.0-base-ubuntu22.04
+tag: 13.1.0-base-ubuntu24.04
 
 # CUDA runtime (~4GB)
 repository: nvidia/cuda
-tag: 12.3.0-runtime-ubuntu22.04
+tag: 13.1.0-runtime-ubuntu24.04
 
 # TensorFlow with GPU
 repository: tensorflow/tensorflow

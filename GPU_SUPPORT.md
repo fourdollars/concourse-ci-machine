@@ -147,43 +147,6 @@ jobs:
 
 For detailed instructions, examples, and troubleshooting, see **[DATASET_MOUNTING.md](DATASET_MOUNTING.md)**.
 
-### Docker-in-Docker with Datasets
-
-When using Docker-in-Docker, mount datasets from the host container:
-
-```yaml
-jobs:
-  - name: dind-training
-    plan:
-      - task: train-with-docker
-        tags: [gpu]
-        privileged: true
-        config:
-          platform: linux
-          image_resource:
-            type: registry-image
-            source:
-              repository: docker
-              tag: dind
-          run:
-            path: sh
-            args:
-              - -c
-              - |
-                # Start Docker daemon
-                dockerd-entrypoint.sh >/dev/null 2>&1 &
-                sleep 10
-                
-                # Run GPU container with dataset mount
-                docker run --rm \
-                  --gpus all \
-                  -v /srv/datasets:/data:ro \
-                  pytorch/pytorch:latest \
-                  python train.py --data /data/training
-```
-
-See the included `simple-gpu-test.yaml` for a complete Docker-in-Docker example with GPU and dataset access.
-
 ### Test GPU Pipeline
 
 Create `gpu-test.yaml`:
@@ -200,7 +163,7 @@ jobs:
         type: registry-image
         source:
           repository: nvidia/cuda
-          tag: 12.3.0-base-ubuntu22.04
+          tag: 13.1.0-base-ubuntu24.04
       run:
         path: nvidia-smi
 ```
@@ -359,7 +322,7 @@ Pipeline can target specific workers:
       type: registry-image
       source:
         repository: nvidia/cuda
-        tag: 12.3.0-devel-ubuntu22.04
+        tag: 13.1.0-devel-ubuntu24.04
     run:
       path: sh
       args:
@@ -417,7 +380,7 @@ sudo systemctl restart concourse-worker
 ```bash
 # Test GPU access manually
 sudo ctr run --rm --runtime io.containerd.runc.v2 \
-  docker.io/nvidia/cuda:12.3.0-base-ubuntu22.04 \
+  docker.io/nvidia/cuda:13.1.0-base-ubuntu24.04 \
   test-gpu nvidia-smi
 
 # If this fails, check:

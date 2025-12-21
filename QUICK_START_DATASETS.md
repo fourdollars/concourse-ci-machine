@@ -80,25 +80,6 @@ jobs:
 ./mount-datasets.sh gpu-worker-b /data/ml-datasets
 ```
 
-### Docker-in-Docker
-
-```yaml
-run:
-  path: sh
-  args:
-    - -c
-    - |
-      dockerd-entrypoint.sh &
-      sleep 10
-      
-      # Mount dataset into nested container
-      docker run --rm \
-        --gpus all \
-        -v /srv/datasets:/data:ro \
-        pytorch/pytorch:latest \
-        python train.py --data /data
-```
-
 ## Troubleshooting
 
 **Dataset not visible?**
@@ -130,4 +111,3 @@ lxc list | grep juju
 ✅ Automatic in all GPU tasks  
 ✅ Read-only and secure
 ✅ Survives restarts
-✅ Works with Docker-in-Docker

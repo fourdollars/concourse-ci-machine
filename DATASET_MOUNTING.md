@@ -116,41 +116,6 @@ jobs:
                     data = f.read()
 ```
 
-### Docker-in-Docker Access
-
-When using Docker-in-Docker, mount the dataset from the host:
-
-```yaml
-jobs:
-  - name: dind-gpu-test
-    plan:
-      - task: run-container
-        tags: [gpu]
-        privileged: true
-        config:
-          platform: linux
-          image_resource:
-            type: registry-image
-            source:
-              repository: docker
-              tag: dind
-          run:
-            path: sh
-            args:
-              - -c
-              - |
-                # Start Docker daemon
-                dockerd-entrypoint.sh &
-                sleep 10
-                
-                # Run container with dataset mount
-                docker run --rm \
-                  --gpus all \
-                  -v /srv/datasets:/data:ro \
-                  pytorch/pytorch:latest \
-                  python -c "import os; print(os.listdir('/data'))"
-```
-
 ## Security Features
 
 - **Read-Only by Default**: Datasets are mounted read-only to prevent accidental modification
