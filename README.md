@@ -11,20 +11,22 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 
 ## Features
 
-✅ **Flexible Deployment Modes**: Deploy as all-in-one, auto-scaled web/workers, or explicit roles
-✅ **Automatic Role Detection**: Leader unit becomes web server, followers become workers
-✅ **Fully Automated Key Distribution**: TSA keys automatically shared via peer relations - zero manual setup!
-✅ **Secure Random Passwords**: Auto-generated admin password stored in Juju peer data
-✅ **Latest Version Detection**: Automatically downloads the latest Concourse release from GitHub
-✅ **PostgreSQL 16+ Integration**: Full support with Juju secrets API for secure credential management
-✅ **Dynamic Port Configuration**: Change web port on-the-fly with automatic service restart
-✅ **Privileged Port Support**: Run on port 80 with proper Linux capabilities (CAP_NET_BIND_SERVICE)
-✅ **Auto External-URL**: Automatically detects unit IP for external-url configuration
-✅ **Ubuntu 24.04 LTS**: Optimized for Ubuntu 24.04 LTS
-✅ **Container Runtime**: Uses containerd with LXD-compatible configuration
-✅ **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
-✅ **Prometheus Metrics**: Optional metrics endpoint for monitoring
-✅ **Download Progress**: Real-time installation progress in Juju status
+- **Flexible Deployment Modes**: Deploy as all-in-one, auto-scaled web/workers, or explicit roles
+- **Automatic Role Detection**: Leader unit becomes web server, followers become workers
+- **Fully Automated Key Distribution**: TSA keys automatically shared via peer relations - zero manual setup!
+- **Secure Random Passwords**: Auto-generated admin password stored in Juju peer data
+- **Latest Version Detection**: Automatically downloads the latest Concourse release from GitHub
+- **PostgreSQL 16+ Integration**: Full support with Juju secrets API for secure credential management
+- **Dynamic Port Configuration**: Change web port on-the-fly with automatic service restart
+- **Privileged Port Support**: Run on port 80 with proper Linux capabilities (CAP_NET_BIND_SERVICE)
+- **Auto External-URL**: Automatically detects unit IP for external-url configuration
+- **Ubuntu 24.04 LTS**: Optimized for Ubuntu 24.04 LTS
+- **Container Runtime**: Uses containerd with LXD-compatible configuration
+- **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
+- **Prometheus Metrics**: Optional metrics endpoint for monitoring
+- **Download Progress**: Real-time installation progress in Juju status
+- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](GPU_SUPPORT.md))
+- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](DATASET_MOUNTING.md))
 
 ## Quick Start
 

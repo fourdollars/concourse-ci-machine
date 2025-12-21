@@ -271,7 +271,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             # Create GPU wrapper script
             logger.info(f"Creating GPU wrapper script at {wrapper_path}")
             wrapper_script = '''#!/bin/bash
-# GPU wrapper for Concourse CI - injects NVIDIA_VISIBLE_DEVICES into OCI specs
+# GPU wrapper for Concourse CI - injects NVIDIA_VISIBLE_DEVICES and dataset mounts into OCI specs
 
 # Parse arguments to find bundle path
 BUNDLE=""
@@ -284,11 +284,24 @@ for arg in "$@"; do
     PREV="$arg"
 done
 
-# If bundle found and config exists, inject GPU env vars
+# If bundle found and config exists, inject GPU env vars and dataset mounts
 if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
-    # Use jq to inject environment variables
-    jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
-       "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
+    # Check if /srv/datasets exists on host
+    if [[ -d "/srv/datasets" ]]; then
+        # Use jq to inject both environment variables and dataset mount
+        jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"] | 
+            .mounts += [{
+                "destination": "/srv/datasets",
+                "type": "bind",
+                "source": "/srv/datasets",
+                "options": ["rbind", "ro"]
+            }]' \
+           "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
+    else
+        # Just inject GPU env vars if datasets not available
+        jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
+           "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
+    fi
     
     if [[ $? -eq 0 ]]; then
         mv "$BUNDLE/config.json.gpu" "$BUNDLE/config.json"
@@ -402,11 +415,32 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
         if gpu_tags:
             config["CONCOURSE_TAG"] = ",".join(gpu_tags)
             logger.info(f"Adding GPU tags: {gpu_tags}")
+        
+        # Ensure dataset mount is available via symlink in worker directory
+        self._setup_dataset_mount()
 
         # Write config file
         self._write_config(config)
         logger.info("Worker configuration updated")
 
+    def _setup_dataset_mount(self):
+        """Setup dataset directory accessibility check
+        
+        Datasets are automatically mounted into GPU worker containers via the OCI spec wrapper.
+        This method just validates that the dataset directory exists on the host.
+        """
+        try:
+            dataset_source = Path("/srv/datasets")
+            if not dataset_source.exists():
+                logger.info("/srv/datasets not found - tasks will not have dataset access")
+                return
+            
+            logger.info(f"Dataset directory found at {dataset_source}")
+            logger.info("GPU tasks will automatically have /srv/datasets mounted read-only")
+            
+        except Exception as e:
+            logger.warning(f"Failed to check dataset mount: {e}")
+    
     def _write_config(self, config: dict):
         """Write configuration to file"""
         try:

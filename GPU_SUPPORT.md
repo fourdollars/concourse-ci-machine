@@ -4,6 +4,12 @@
 
 This implementation adds NVIDIA GPU support to Concourse CI workers, enabling ML/AI workloads, GPU-accelerated builds, and compute-intensive tasks.
 
+## Quick Links
+
+- 📊 **[Dataset Mounting Guide](DATASET_MOUNTING.md)** - Mount datasets for ML training workflows
+- 🚀 **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - General deployment instructions
+- 📘 **[Main README](README.md)** - Charm overview and features
+
 ## What's Been Added
 
 ### 1. Configuration Options (config.yaml)
@@ -85,6 +91,98 @@ fly -t <target> workers
 # Check automation logs if needed
 juju debug-log --include worker/0 | grep -i gpu
 ```
+
+## Dataset Mounting for ML Workflows
+
+GPU workers automatically support dataset mounting for ML training pipelines. The charm includes an OCI runtime wrapper that injects dataset mounts into task containers.
+
+### Quick Setup
+
+```bash
+# 1. Find your GPU worker's LXC container
+juju status gpu-worker
+# Note the machine number (e.g., "4")
+
+# 2. Identify the container name
+CONTAINER=$(lxc list | grep "juju-.*-4" | awk '{print $2}')
+
+# 3. Mount your dataset directory
+lxc config device add $CONTAINER datasets disk \
+  source=/path/to/your/datasets \
+  path=/srv/datasets \
+  readonly=true
+
+# 4. Verify the mount
+lxc exec $CONTAINER -- ls -lah /srv/datasets/
+```
+
+### Automatic Availability in Tasks
+
+Once mounted via LXC, datasets are **automatically available** in all GPU tasks at `/srv/datasets`:
+
+```yaml
+jobs:
+  - name: train-model
+    plan:
+      - task: training
+        tags: [gpu]
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: pytorch/pytorch
+              tag: latest
+          run:
+            path: python
+            args:
+              - -c
+              - |
+                # /srv/datasets automatically available!
+                import os
+                print(f"Datasets: {os.listdir('/srv/datasets')}")
+```
+
+**No pipeline modifications required!** The OCI wrapper automatically injects the mount.
+
+For detailed instructions, examples, and troubleshooting, see **[DATASET_MOUNTING.md](DATASET_MOUNTING.md)**.
+
+### Docker-in-Docker with Datasets
+
+When using Docker-in-Docker, mount datasets from the host container:
+
+```yaml
+jobs:
+  - name: dind-training
+    plan:
+      - task: train-with-docker
+        tags: [gpu]
+        privileged: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: docker
+              tag: dind
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                # Start Docker daemon
+                dockerd-entrypoint.sh >/dev/null 2>&1 &
+                sleep 10
+                
+                # Run GPU container with dataset mount
+                docker run --rm \
+                  --gpus all \
+                  -v /srv/datasets:/data:ro \
+                  pytorch/pytorch:latest \
+                  python train.py --data /data/training
+```
+
+See the included `simple-gpu-test.yaml` for a complete Docker-in-Docker example with GPU and dataset access.
 
 ### Test GPU Pipeline
 

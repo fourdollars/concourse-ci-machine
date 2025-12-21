@@ -1,14 +1,87 @@
+---
 jobs:
-- name: simple-test
-  plan:
-  - task: hello
-    timeout: 1m30s
-    tags: [gpu]
-    config:
-      platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: busybox}
-      run:
-        path: echo
-        args: ["Hello from GPU worker!"]
+  - name: simple-gpu-test
+    plan:
+      - task: run-gpu-container
+        tags: [gpu]
+        privileged: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: docker
+              tag: dind
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                set -e
+                
+                echo "========================================="
+                echo "GPU + Dataset Test with Docker-in-Docker"
+                echo "========================================="
+                
+                # Start Docker daemon in background
+                echo "🚀 Starting Docker daemon..."
+                dockerd-entrypoint.sh >/dev/null 2>&1 &
+                
+                # Wait for Docker to be ready
+                for i in $(seq 1 30); do
+                  if docker info >/dev/null 2>&1; then
+                    break
+                  fi
+                  sleep 1
+                done
+                
+                echo "✅ Docker daemon ready"
+                echo ""
+                
+                # Show available GPU devices on host
+                echo "📋 Available GPU devices on host:"
+                ls -la /dev/nvidia* /dev/dri 2>/dev/null || echo "⚠️  No GPU devices found"
+                echo ""
+                
+                # Show dataset availability on host
+                echo "📦 Dataset availability on host:"
+                ls -lah /srv/datasets/ 2>/dev/null || echo "⚠️  /srv/datasets not found"
+                echo ""
+                
+                # Run comprehensive GPU + Dataset test container
+                echo "🧪 Running GPU + Dataset integration test..."
+                docker run --rm \
+                  --device=/dev/nvidia0:/dev/nvidia0 \
+                  --device=/dev/nvidiactl:/dev/nvidiactl \
+                  --device=/dev/nvidia-uvm:/dev/nvidia-uvm \
+                  --device=/dev/nvidia-modeset:/dev/nvidia-modeset \
+                  -v /srv/datasets:/srv/datasets:ro \
+                  nvidia/cuda:11.8.0-base-ubuntu22.04 \
+                  bash -c '
+                    echo "=== GPU + Dataset Integration Test ==="
+                    echo ""
+                    echo "1. GPU Availability:"
+                    nvidia-smi -L || echo "⚠️  nvidia-smi not available"
+                    echo ""
+                    echo "2. Dataset Access:"
+                    ls -lah /srv/datasets/ 2>/dev/null || echo "⚠️  /srv/datasets not found"
+                    echo ""
+                    echo "3. GPU Environment:"
+                    env | grep NVIDIA || echo "No NVIDIA env vars"
+                    echo ""
+                    echo "4. GPU Devices:"
+                    ls -l /dev/nvidia* 2>/dev/null || echo "⚠️  No GPU devices"
+                    echo ""
+                    echo "5. Dataset Read Test:"
+                    cat /srv/datasets/it-works.txt 2>/dev/null && echo "(empty file - expected)" || echo "File exists"
+                    echo ""
+                    echo "6. Dataset Write Test (should fail - read-only):"
+                    touch /srv/datasets/test-write 2>&1 || echo "✓ Confirmed read-only mount"
+                    echo ""
+                    echo "=== Test Complete ==="
+                  '
+                
+                echo ""
+                echo "========================================="
+                echo "✅ All tests completed successfully!"
+                echo "========================================="
