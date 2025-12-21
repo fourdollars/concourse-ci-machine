@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 CONCOURSE_INSTALL_DIR = "/opt/concourse"
 CONCOURSE_DATA_DIR = "/var/lib/concourse"
 CONCOURSE_CONFIG_FILE = f"{CONCOURSE_DATA_DIR}/config.env"
+CONCOURSE_WORKER_CONFIG_FILE = f"{CONCOURSE_DATA_DIR}/worker-config.env"
 CONCOURSE_BIN = f"{CONCOURSE_INSTALL_DIR}/bin/concourse"
 SYSTEMD_SERVICE_DIR = "/etc/systemd/system"
 KEYS_DIR = f"{CONCOURSE_DATA_DIR}/keys"

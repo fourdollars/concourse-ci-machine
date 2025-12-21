@@ -10,7 +10,7 @@ from pathlib import Path
 
 from concourse_common import (
     CONCOURSE_BIN,
-    CONCOURSE_CONFIG_FILE,
+    CONCOURSE_WORKER_CONFIG_FILE,
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
@@ -41,7 +41,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory={CONCOURSE_DATA_DIR}
-EnvironmentFile={CONCOURSE_CONFIG_FILE}
+EnvironmentFile={CONCOURSE_WORKER_CONFIG_FILE}
 EnvironmentFile=/etc/default/concourse
 ExecStart={CONCOURSE_BIN} worker
 Restart=on-failure
@@ -395,6 +395,8 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
             "CONCOURSE_TSA_PUBLIC_KEY": str(keys_dir / "tsa_host_key.pub"),
             "CONCOURSE_RUNTIME": "containerd",
             "CONCOURSE_BAGGAGECLAIM_DRIVER": "naive",
+            "CONCOURSE_BIND_IP": "127.0.0.1",
+            "CONCOURSE_BIND_PORT": "7777",
             "CONCOURSE_CONTAINERD_DNS_PROXY_ENABLE": str(
                 self.config.get("containerd-dns-proxy-enable", False)
             ).lower(),
@@ -445,14 +447,14 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
         """Write configuration to file"""
         try:
             config_lines = [f"{k}={v}" for k, v in config.items()]
-            Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
-            os.chmod(CONCOURSE_CONFIG_FILE, 0o640)
+            Path(CONCOURSE_WORKER_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
+            os.chmod(CONCOURSE_WORKER_CONFIG_FILE, 0o640)
             subprocess.run(
-                ["chown", "root:root", CONCOURSE_CONFIG_FILE],
+                ["chown", "root:root", CONCOURSE_WORKER_CONFIG_FILE],
                 check=True,
                 capture_output=True,
             )
-            logger.info(f"Configuration written to {CONCOURSE_CONFIG_FILE}")
+            logger.info(f"Configuration written to {CONCOURSE_WORKER_CONFIG_FILE}")
         except Exception as e:
             logger.error(f"Failed to write config: {e}")
             raise

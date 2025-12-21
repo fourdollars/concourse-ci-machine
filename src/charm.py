@@ -83,6 +83,7 @@ class ConcourseCharm(CharmBase):
 
         # Register event handlers
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.update_status, self._on_update_status)
@@ -249,6 +250,33 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             logger.error(f"Installation failed: {e}", exc_info=True)
             self.unit.status = BlockedStatus(f"Installation failed: {e}")
+
+    def _on_upgrade_charm(self, event):
+        """Handle upgrade-charm event"""
+        try:
+            self.unit.status = MaintenanceStatus("Upgrading charm...")
+            logger.info(f"Charm upgrade triggered (mode: {self._get_deployment_mode()})")
+
+            # Ensure directories exist
+            ensure_directories()
+
+            # Recreate systemd services (in case service definitions changed)
+            if self._should_run_web():
+                logger.info("Updating web server service")
+                self.web_helper.setup_systemd_service()
+
+            if self._should_run_worker():
+                logger.info("Updating worker service")
+                self.worker_helper.setup_systemd_service()
+
+            # Trigger config update
+            self._on_config_changed(event)
+
+            logger.info("Charm upgrade completed successfully")
+
+        except Exception as e:
+            logger.error(f"Charm upgrade failed: {e}", exc_info=True)
+            self.unit.status = BlockedStatus(f"Upgrade failed: {e}")
 
     def _on_config_changed(self, event):
         """Handle config-changed event"""
@@ -573,7 +601,7 @@ class ConcourseCharm(CharmBase):
         db_url = self._get_postgresql_url()
 
         # Build merged config manually
-        from concourse_common import CONCOURSE_CONFIG_FILE, KEYS_DIR
+        from concourse_common import CONCOURSE_CONFIG_FILE, CONCOURSE_WORKER_CONFIG_FILE, KEYS_DIR
 
         keys_dir = Path(KEYS_DIR)
         worker_dir = Path("/var/lib/concourse/worker")
@@ -584,8 +612,8 @@ class ConcourseCharm(CharmBase):
         unit_ip = socket.gethostbyname(socket.gethostname())
         web_port = self.config.get("web-port", 8080)
 
-        config = {
-            # Web server config
+        # Web server config
+        web_config = {
             "CONCOURSE_BIND_PORT": str(web_port),
             "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
             "CONCOURSE_ENABLE_METRICS": str(
@@ -601,13 +629,20 @@ class ConcourseCharm(CharmBase):
             ),
             "CONCOURSE_EXTERNAL_URL": self.config.get("external-url")
             or f"http://{unit_ip}:{web_port}",
-            # Worker config
+        }
+        
+        # Worker config - uses separate bind port to avoid conflict
+        worker_config = {
             "CONCOURSE_WORKER_PROCS": str(self.config.get("worker-procs", 1)),
+            "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
             "CONCOURSE_TSA_WORKER_PRIVATE_KEY": str(keys_dir / "worker_key"),
             "CONCOURSE_WORK_DIR": str(worker_dir),
             "CONCOURSE_TSA_HOST": "127.0.0.1:2222",
+            "CONCOURSE_TSA_PUBLIC_KEY": str(keys_dir / "tsa_host_key.pub"),
             "CONCOURSE_RUNTIME": "containerd",
             "CONCOURSE_BAGGAGECLAIM_DRIVER": "naive",
+            "CONCOURSE_BIND_IP": "127.0.0.1",
+            "CONCOURSE_BIND_PORT": "7777",
             "CONCOURSE_CONTAINERD_DNS_PROXY_ENABLE": str(
                 self.config.get("containerd-dns-proxy-enable", False)
             ).lower(),
@@ -616,29 +651,40 @@ class ConcourseCharm(CharmBase):
             ),
         }
 
-        # Add database configuration
+        # Add database configuration to web config
         if db_url:
             from urllib.parse import urlparse
 
             parsed = urlparse(db_url)
-            config["CONCOURSE_POSTGRES_HOST"] = parsed.hostname or "localhost"
-            config["CONCOURSE_POSTGRES_PORT"] = str(parsed.port or 5432)
-            config["CONCOURSE_POSTGRES_USER"] = parsed.username or "postgres"
-            config["CONCOURSE_POSTGRES_PASSWORD"] = parsed.password or ""
-            config["CONCOURSE_POSTGRES_DATABASE"] = (
+            web_config["CONCOURSE_POSTGRES_HOST"] = parsed.hostname or "localhost"
+            web_config["CONCOURSE_POSTGRES_PORT"] = str(parsed.port or 5432)
+            web_config["CONCOURSE_POSTGRES_USER"] = parsed.username or "postgres"
+            web_config["CONCOURSE_POSTGRES_PASSWORD"] = parsed.password or ""
+            web_config["CONCOURSE_POSTGRES_DATABASE"] = (
                 parsed.path.lstrip("/") or "concourse"
             )
 
-        # Write merged config
-        config_lines = [f"{k}={v}" for k, v in config.items()]
-        Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
+        # Write web config
+        web_config_lines = [f"{k}={v}" for k, v in web_config.items()]
+        Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(web_config_lines) + "\n")
         os.chmod(CONCOURSE_CONFIG_FILE, 0o640)
         subprocess.run(
             ["chown", "root:concourse", CONCOURSE_CONFIG_FILE],
             check=True,
             capture_output=True,
         )
-        logger.info(f"Merged configuration written to {CONCOURSE_CONFIG_FILE}")
+        logger.info(f"Web configuration written to {CONCOURSE_CONFIG_FILE}")
+        
+        # Write worker config to separate file
+        worker_config_lines = [f"{k}={v}" for k, v in worker_config.items()]
+        Path(CONCOURSE_WORKER_CONFIG_FILE).write_text("\n".join(worker_config_lines) + "\n")
+        os.chmod(CONCOURSE_WORKER_CONFIG_FILE, 0o640)
+        subprocess.run(
+            ["chown", "root:concourse", CONCOURSE_WORKER_CONFIG_FILE],
+            check=True,
+            capture_output=True,
+        )
+        logger.info(f"Worker configuration written to {CONCOURSE_WORKER_CONFIG_FILE}")
 
     def _restart_concourse_service(self):
         """Restart Concourse service to apply configuration changes"""
