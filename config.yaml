@@ -123,3 +123,11 @@ options:
       Default: all
     default: "all"
     type: string
+
+  tag:
+    description: |
+      Comma-separated list of tags to assign to this worker. These are added to
+      CONCOURSE_TAG and merged with any GPU-generated tags.
+      Example: "gpu,high-mem,ssd"
+    default: ""
+    type: string

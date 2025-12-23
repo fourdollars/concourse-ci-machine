@@ -412,11 +412,29 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
                 config["CONCOURSE_CONTAINERD_CONFIG"] = str(gpu_config_path)
                 logger.info(f"Using GPU containerd config: {gpu_config_path}")
         
-        # Add GPU tags if enabled
+        # Combine user-defined tags and GPU tags
+        user_tag_config = self.config.get("tag", "")
+        user_tags = [t.strip() for t in user_tag_config.split(",") if t.strip()] if user_tag_config else []
+
         gpu_tags = self._get_gpu_tags()
+
+        # Merge tags, preserving order and deduplicating
+        combined_tags = []
+        if user_tags:
+            combined_tags.extend(user_tags)
         if gpu_tags:
-            config["CONCOURSE_TAG"] = ",".join(gpu_tags)
-            logger.info(f"Adding GPU tags: {gpu_tags}")
+            combined_tags.extend(gpu_tags)
+
+        seen = set()
+        dedup_tags = []
+        for t in combined_tags:
+            if t not in seen:
+                seen.add(t)
+                dedup_tags.append(t)
+
+        if dedup_tags:
+            config["CONCOURSE_TAG"] = ",".join(dedup_tags)
+            logger.info(f"Adding CONCOURSE_TAG: {dedup_tags}")
         
         # Ensure dataset mount is available via symlink in worker directory
         self._setup_dataset_mount()
