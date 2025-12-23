@@ -131,3 +131,63 @@ options:
       Example: "gpu,high-mem,ssd"
     default: ""
     type: string
+
+  vault-url:
+    description: "URL of the Vault server. If set, enables Vault credential management. Example: https://vault.example.com:8200"
+    default: ""
+    type: string
+
+  vault-auth-backend:
+    description: "Vault authentication backend (e.g., 'approle', 'token')."
+    default: ""
+    type: string
+
+  vault-auth-backend-max-ttl:
+    description: "Maximum TTL for the Vault authentication backend token. Example: '1h'"
+    default: ""
+    type: string
+
+  vault-auth-param:
+    description: "Comma-separated key-value pairs for the selected auth backend. Example: 'role_id:...,secret_id:...'"
+    default: ""
+    type: string
+
+  vault-ca-cert:
+    description: "Path to a PEM-encoded CA cert file to use for TLS to Vault."
+    default: ""
+    type: string
+
+  vault-client-cert:
+    description: "Path to a PEM-encoded client certificate for TLS authentication to Vault."
+    default: ""
+    type: string
+
+  vault-client-key:
+    description: "Path to an unencrypted, PEM-encoded private key for TLS authentication to Vault."
+    default: ""
+    type: string
+
+  vault-client-token:
+    description: "Vault client token."
+    default: ""
+    type: string
+
+  vault-lookup-templates:
+    description: "Vault lookup templates."
+    default: ""
+    type: string
+
+  vault-namespace:
+    description: "Vault namespace."
+    default: ""
+    type: string
+
+  vault-path-prefix:
+    description: "Prefix for all secret paths in Vault (e.g., '/concourse/my-team')."
+    default: ""
+    type: string
+
+  vault-shared-path:
+    description: "Shared path for Vault."
+    default: ""
+    type: string

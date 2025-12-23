@@ -664,6 +664,33 @@ class ConcourseCharm(CharmBase):
                 parsed.path.lstrip("/") or "concourse"
             )
 
+        # Add Vault configuration to web config if vault-url is set
+        if self.config.get("vault-url"):
+            logger.info("Vault URL is set, enabling Vault credential manager for merged config")
+            web_config["CONCOURSE_VAULT_URL"] = self.config["vault-url"]
+            if self.config.get("vault-auth-backend"):
+                web_config["CONCOURSE_VAULT_AUTH_BACKEND"] = self.config["vault-auth-backend"]
+            if self.config.get("vault-auth-backend-max-ttl"):
+                web_config["CONCOURSE_VAULT_AUTH_BACKEND_MAX_TTL"] = self.config["vault-auth-backend-max-ttl"]
+            if self.config.get("vault-auth-param"):
+                web_config["CONCOURSE_VAULT_AUTH_PARAM"] = self.config["vault-auth-param"]
+            if self.config.get("vault-ca-cert"):
+                web_config["CONCOURSE_VAULT_CA_CERT"] = self.config["vault-ca-cert"]
+            if self.config.get("vault-client-cert"):
+                web_config["CONCOURSE_VAULT_CLIENT_CERT"] = self.config["vault-client-cert"]
+            if self.config.get("vault-client-key"):
+                web_config["CONCOURSE_VAULT_CLIENT_KEY"] = self.config["vault-client-key"]
+            if self.config.get("vault-client-token"):
+                web_config["CONCOURSE_VAULT_CLIENT_TOKEN"] = self.config["vault-client-token"]
+            if self.config.get("vault-lookup-templates"):
+                web_config["CONCOURSE_VAULT_LOOKUP_TEMPLATES"] = self.config["vault-lookup-templates"]
+            if self.config.get("vault-namespace"):
+                web_config["CONCOURSE_VAULT_NAMESPACE"] = self.config["vault-namespace"]
+            if self.config.get("vault-path-prefix"):
+                web_config["CONCOURSE_VAULT_PATH_PREFIX"] = self.config["vault-path-prefix"]
+            if self.config.get("vault-shared-path"):
+                web_config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
+
         # Write web config
         web_config_lines = [f"{k}={v}" for k, v in web_config.items()]
         Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(web_config_lines) + "\n")
@@ -674,7 +701,6 @@ class ConcourseCharm(CharmBase):
             capture_output=True,
         )
         logger.info(f"Web configuration written to {CONCOURSE_CONFIG_FILE}")
-        
         # Write worker config to separate file
         worker_config_lines = [f"{k}={v}" for k, v in worker_config.items()]
         Path(CONCOURSE_WORKER_CONFIG_FILE).write_text("\n".join(worker_config_lines) + "\n")

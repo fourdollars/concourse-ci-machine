@@ -108,6 +108,33 @@ WantedBy=multi-user.target
             web_port = self.config.get("web-port", 8080)
             config["CONCOURSE_EXTERNAL_URL"] = f"http://{unit_ip}:{web_port}"
 
+        # Add Vault configuration if vault-url is set
+        if self.config.get("vault-url"):
+            logger.info("Vault URL is set, enabling Vault credential manager")
+            config["CONCOURSE_VAULT_URL"] = self.config["vault-url"]
+            if self.config.get("vault-auth-backend"):
+                config["CONCOURSE_VAULT_AUTH_BACKEND"] = self.config["vault-auth-backend"]
+            if self.config.get("vault-auth-backend-max-ttl"):
+                config["CONCOURSE_VAULT_AUTH_BACKEND_MAX_TTL"] = self.config["vault-auth-backend-max-ttl"]
+            if self.config.get("vault-auth-param"):
+                config["CONCOURSE_VAULT_AUTH_PARAM"] = self.config["vault-auth-param"]
+            if self.config.get("vault-ca-cert"):
+                config["CONCOURSE_VAULT_CA_CERT"] = self.config["vault-ca-cert"]
+            if self.config.get("vault-client-cert"):
+                config["CONCOURSE_VAULT_CLIENT_CERT"] = self.config["vault-client-cert"]
+            if self.config.get("vault-client-key"):
+                config["CONCOURSE_VAULT_CLIENT_KEY"] = self.config["vault-client-key"]
+            if self.config.get("vault-client-token"):
+                config["CONCOURSE_VAULT_CLIENT_TOKEN"] = self.config["vault-client-token"]
+            if self.config.get("vault-lookup-templates"):
+                config["CONCOURSE_VAULT_LOOKUP_TEMPLATES"] = self.config["vault-lookup-templates"]
+            if self.config.get("vault-namespace"):
+                config["CONCOURSE_VAULT_NAMESPACE"] = self.config["vault-namespace"]
+            if self.config.get("vault-path-prefix"):
+                config["CONCOURSE_VAULT_PATH_PREFIX"] = self.config["vault-path-prefix"]
+            if self.config.get("vault-shared-path"):
+                config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
+
         # Write config file
         self._write_config(config)
         logger.info("Web server configuration updated")
