@@ -27,6 +27,11 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Download Progress**: Real-time installation progress in Juju status
 - **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](GPU_SUPPORT.md))
 - **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](DATASET_MOUNTING.md))
+- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([Deployment Guide](GENERAL_MOUNTING_DEPLOYMENT.md))
+  - ✅ Zero configuration - just mount to `/srv` and go
+  - ✅ Read-only by default, writable with `_writable`/`_rw` suffix
+  - ✅ Multiple concurrent folders supported
+  - ✅ Automatic permission validation
 
 ## Quick Start
 

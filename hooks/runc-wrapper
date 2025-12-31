@@ -1,0 +1,276 @@
+#!/bin/bash
+#
+# OCI Runtime Wrapper for Folder Discovery and Injection
+#
+# This script wraps the actual OCI runtime (runc/crun) to dynamically discover
+# folders under /srv and inject them as bind mounts into task containers.
+#
+# Part of: General Folder Mounting System (Feature 001-general-mount)
+# Protocol: See contracts/oci-wrapper-protocol.md
+#
+# Usage: This script is invoked by containerd, not directly by users.
+#        Configured in /etc/containerd/config.toml as the default runtime.
+#
+# Exit codes:
+#   0: Success - container created with mounts
+#   1: Discovery error (permission/timeout) - task fails
+#   *: OCI runtime error - propagated from underlying runtime
+
+set -e
+set -o pipefail
+
+# Configuration
+ACTUAL_RUNTIME="/usr/bin/runc"
+SRV_BASE_PATH="/srv"
+DISCOVERY_TIMEOUT="${MOUNT_DISCOVERY_TIMEOUT:-180}"
+LOG_LEVEL="${MOUNT_DISCOVERY_LOG_LEVEL:-INFO}"
+
+# Global state
+declare -a MOUNT_ARGS
+DISCOVERY_START_TIME=""
+DISCOVERY_END_TIME=""
+
+#
+# Structured Logging Functions
+# Per OCI wrapper protocol: [TIMESTAMP] LEVEL: MESSAGE
+#
+
+log_info() {
+    local message="$1"
+    echo "[$(date -Iseconds)] INFO: ${message}" >&2
+}
+
+log_error() {
+    local message="$1"
+    echo "[$(date -Iseconds)] ERROR: ${message}" >&2
+}
+
+log_debug() {
+    local message="$1"
+    if [ "${LOG_LEVEL}" = "DEBUG" ]; then
+        echo "[$(date -Iseconds)] DEBUG: ${message}" >&2
+    fi
+}
+
+#
+# Permission Validation
+# Validates folder accessibility based on required permissions
+#
+validate_folder_permissions() {
+    local folder_path="$1"
+    local requires_write="$2"  # "true" or "false"
+    
+    # Check read permission
+    if [ ! -r "${folder_path}" ]; then
+        log_error "Cannot read ${folder_path}"
+        return 1
+    fi
+    
+    # Check write permission for writable folders
+    if [ "${requires_write}" = "true" ]; then
+        if [ ! -w "${folder_path}" ]; then
+            log_error "Cannot write to writable folder ${folder_path}"
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+#
+# Folder Suffix Detection
+# Detects if folder name ends with _writable or _rw suffix
+#
+is_writable_folder() {
+    local folder_path="$1"
+    local basename=$(basename "${folder_path}")
+    
+    # Check if ends with _writable or _rw
+    if [[ "${basename}" =~ _writable$ ]] || [[ "${basename}" =~ _rw$ ]]; then
+        return 0  # true
+    else
+        return 1  # false
+    fi
+}
+
+#
+# Folder Scanning Logic
+# Scans /srv/* for directories and builds list of discovered folders
+#
+scan_folders() {
+    local base_path="$1"
+    local -n folders_array=$2  # nameref to output array
+    
+    log_info "Starting folder discovery in ${base_path}"
+    
+    # Check if base path exists
+    if [ ! -d "${base_path}" ]; then
+        log_error "Base path ${base_path} does not exist"
+        return 1
+    fi
+    
+    # Scan for directories, skip files and hidden folders
+    local folder_count=0
+    for entry in "${base_path}"/*; do
+        # Skip if doesn't exist (empty directory)
+        [ -e "${entry}" ] || continue
+        
+        # Skip if not a directory
+        [ -d "${entry}" ] || continue
+        
+        # Skip hidden folders (starting with .)
+        local basename=$(basename "${entry}")
+        [[ "${basename}" =~ ^\. ]] && continue
+        
+        # Add to folders array
+        folders_array+=("${entry}")
+        folder_count=$((folder_count + 1))
+        log_debug "Discovered folder: ${entry}"
+    done
+    
+    log_info "Folder discovery found ${folder_count} folders"
+    return 0
+}
+
+#
+# Timeout wrapper function
+# Wraps discovery logic in GNU timeout to enforce 3-minute limit
+#
+run_discovery_with_timeout() {
+    local timeout_seconds="$1"
+    
+    # Discovery logic within timeout
+    timeout "${timeout_seconds}" bash -c '
+        # Source the parent script functions
+        SRV_BASE_PATH="'"${SRV_BASE_PATH}"'"
+        
+        # Re-declare functions for the timeout subshell
+        log_info() { echo "[$(date -Iseconds)] INFO: $1" >&2; }
+        log_error() { echo "[$(date -Iseconds)] ERROR: $1" >&2; }
+        log_debug() { [ "${LOG_LEVEL}" = "DEBUG" ] && echo "[$(date -Iseconds)] DEBUG: $1" >&2 || true; }
+        
+        is_writable_folder() {
+            local folder_path="$1"
+            local basename=$(basename "${folder_path}")
+            [[ "${basename}" =~ _writable$ ]] || [[ "${basename}" =~ _rw$ ]]
+        }
+        
+        validate_folder_permissions() {
+            local folder_path="$1"
+            local requires_write="$2"
+            [ -r "${folder_path}" ] || { log_error "Cannot read ${folder_path}"; return 1; }
+            [ "${requires_write}" = "true" ] && { [ -w "${folder_path}" ] || { log_error "Cannot write to writable folder ${folder_path}"; return 1; }; }
+            return 0
+        }
+        
+        # Discover and validate folders
+        declare -a discovered_folders
+        
+        if [ ! -d "${SRV_BASE_PATH}" ]; then
+            log_error "Base path ${SRV_BASE_PATH} does not exist"
+            exit 1
+        fi
+        
+        # Scan for directories
+        for entry in "${SRV_BASE_PATH}"/*; do
+            [ -e "${entry}" ] || continue
+            [ -d "${entry}" ] || continue
+            local basename=$(basename "${entry}")
+            [[ "${basename}" =~ ^\. ]] && continue
+            discovered_folders+=("${entry}")
+        done
+        
+        # Validate and generate mount arguments
+        for folder in "${discovered_folders[@]}"; do
+            local is_writable="false"
+            if is_writable_folder "${folder}"; then
+                is_writable="true"
+            fi
+            
+            # Validate permissions
+            if ! validate_folder_permissions "${folder}" "${is_writable}"; then
+                exit 1
+            fi
+            
+            # Generate mount argument
+            if [ "${is_writable}" = "true" ]; then
+                echo "--mount"
+                echo "type=bind,source=${folder},target=${folder}"
+                log_info "Discovered folder: ${folder} (read-write)"
+            else
+                echo "--mount"
+                echo "type=bind,source=${folder},target=${folder},readonly"
+                log_info "Discovered folder: ${folder} (read-only)"
+            fi
+        done
+        
+        exit 0
+    ' > /tmp/mount-args.$$
+    
+    local exit_code=$?
+    
+    # Check if timeout was triggered (exit code 124)
+    if [ $exit_code -eq 124 ]; then
+        log_error "Folder discovery timeout after ${timeout_seconds} seconds"
+        rm -f /tmp/mount-args.$$
+        return 1
+    fi
+    
+    # Check for other errors
+    if [ $exit_code -ne 0 ]; then
+        log_error "Folder discovery failed with exit code ${exit_code}"
+        rm -f /tmp/mount-args.$$
+        return 1
+    fi
+    
+    # Read mount arguments from temporary file
+    if [ -f /tmp/mount-args.$$ ]; then
+        while IFS= read -r arg; do
+            MOUNT_ARGS+=("${arg}")
+        done < /tmp/mount-args.$$
+        rm -f /tmp/mount-args.$$
+    fi
+    
+    return 0
+}
+
+#
+# Placeholder sections - will be implemented in subsequent tasks:
+#
+# T008: Implement structured logging functions
+# T009: Implement folder scanning logic
+# T010: Implement folder name suffix detection
+# T011: Implement permission validation
+#
+
+# Main execution flow
+main() {
+    # Store original arguments from containerd
+    local original_args=("$@")
+    
+    # Initialize mount arguments array
+    MOUNT_ARGS=()
+    
+    # Record start time
+    DISCOVERY_START_TIME=$(date +%s%3N)
+    
+    log_info "Starting folder discovery in ${SRV_BASE_PATH}"
+    
+    # Discover folders with timeout
+    if ! run_discovery_with_timeout "${DISCOVERY_TIMEOUT}"; then
+        log_error "Folder discovery failed or timed out"
+        exit 1
+    fi
+    
+    # Record end time and calculate duration
+    DISCOVERY_END_TIME=$(date +%s%3N)
+    local duration_ms=$((DISCOVERY_END_TIME - DISCOVERY_START_TIME))
+    
+    log_info "Folder discovery complete: ${#MOUNT_ARGS[@]} mount arguments, ${duration_ms}ms"
+    
+    # Invoke actual OCI runtime with original args + mount args
+    exec "${ACTUAL_RUNTIME}" "${original_args[@]}" "${MOUNT_ARGS[@]}"
+}
+
+# Entry point
+main "$@"

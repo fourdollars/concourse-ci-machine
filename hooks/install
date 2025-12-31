@@ -1,0 +1,51 @@
+#!/bin/bash
+#
+# Charm Install Hook
+# Deploys OCI runtime wrapper and configures containerd
+#
+
+set -e
+
+# Deploy OCI wrapper to system location
+echo "Installing OCI runtime wrapper..."
+
+# Copy wrapper script to system location
+cp hooks/runc-wrapper /usr/local/bin/runc-wrapper
+chmod +x /usr/local/bin/runc-wrapper
+
+echo "OCI runtime wrapper installed at /usr/local/bin/runc-wrapper"
+
+# Configure containerd to use the wrapper
+echo "Configuring containerd to use runc-wrapper..."
+
+CONTAINERD_CONFIG="/etc/containerd/config.toml"
+
+if [ -f "${CONTAINERD_CONFIG}" ]; then
+    # Backup existing config
+    cp "${CONTAINERD_CONFIG}" "${CONTAINERD_CONFIG}.backup-$(date +%Y%m%d%H%M%S)"
+    
+    # Check if wrapper is already configured
+    if grep -q "runc-wrapper" "${CONTAINERD_CONFIG}"; then
+        echo "Containerd already configured to use runc-wrapper"
+    else
+        # Add runtime configuration for runc-wrapper
+        # This modifies the default_runtime to use our wrapper
+        cat >> "${CONTAINERD_CONFIG}" << 'EOF'
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+    BinaryName = "/usr/local/bin/runc-wrapper"
+EOF
+        
+        echo "Containerd configured. Restarting containerd service..."
+        systemctl restart containerd || echo "Warning: Could not restart containerd (may not be running yet)"
+    fi
+else
+    echo "Warning: Containerd config not found at ${CONTAINERD_CONFIG}"
+    echo "Containerd configuration will need to be done manually or by worker deployment"
+fi
+
+echo "Install hook complete"
+
+exit 0

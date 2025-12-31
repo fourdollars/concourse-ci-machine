@@ -38,12 +38,22 @@ from concourse_installer import (
 from concourse_web import ConcourseWebHelper
 from concourse_worker import ConcourseWorkerHelper
 
+# Import folder mount manager for discovery status reporting
+try:
+    from folder_mount_manager import FolderDiscovery
+    HAS_FOLDER_MOUNTS = True
+except ImportError:
+    HAS_FOLDER_MOUNTS = False
+    logger = logging.getLogger("concourse-ci")
+    logger.warning("folder_mount_manager not available, folder discovery status disabled")
+
 # Import data platform library for PostgreSQL 16+ support
 try:
     from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
     HAS_DATA_PLATFORM = True
 except ImportError:
     HAS_DATA_PLATFORM = False
+    logger = logging.getLogger("concourse-ci")
     logger.warning("data_platform_libs not available, PostgreSQL 16+ support disabled")
 
 # Configure logging
@@ -870,6 +880,12 @@ class ConcourseCharm(CharmBase):
                 if not self.worker_helper.is_running():
                     self.unit.status = MaintenanceStatus("Worker starting...")
                     return
+                
+                # Check folder discovery status for workers
+                discovery_ok, discovery_msg = self._check_folder_discovery_status()
+                if not discovery_ok:
+                    self.unit.status = BlockedStatus(discovery_msg)
+                    return
 
             # All good
             if mode == "web":
@@ -883,9 +899,11 @@ class ConcourseCharm(CharmBase):
                 self.unit.status = ActiveStatus("Web server ready")
             elif mode == "worker":
                 gpu_status = self.worker_helper.get_gpu_status_message()
-                self.unit.status = ActiveStatus(f"Worker ready{gpu_status}")
+                _, discovery_status = self._check_folder_discovery_status()
+                self.unit.status = ActiveStatus(f"Worker ready{gpu_status}{discovery_status}")
             else:
                 gpu_status = self.worker_helper.get_gpu_status_message()
+                _, discovery_status = self._check_folder_discovery_status()
                 # Open web port when running both
                 web_port = self.config.get("web-port", 8080)
                 try:
@@ -893,7 +911,7 @@ class ConcourseCharm(CharmBase):
                     logger.info(f"Opened port {web_port}/tcp")
                 except Exception as e:
                     logger.warning(f"Failed to open port {web_port}: {e}")
-                self.unit.status = ActiveStatus(f"Ready{gpu_status}")
+                self.unit.status = ActiveStatus(f"Ready{gpu_status}{discovery_status}")
 
         except Exception as e:
             logger.error(f"Status update failed: {e}", exc_info=True)
@@ -1035,6 +1053,48 @@ class ConcourseCharm(CharmBase):
             except Exception as e:
                 logger.error(f"Failed to handle TSA relation: {e}", exc_info=True)
                 self.unit.status = BlockedStatus(f"TSA relation failed: {e}")
+    
+    def _check_folder_discovery_status(self):
+        """Check folder discovery status and return status message.
+        
+        Returns:
+            tuple: (is_ok: bool, message: str) where is_ok indicates if discovery
+                   is successful, and message contains status details or error info
+        """
+        if not HAS_FOLDER_MOUNTS:
+            return (True, "")  # Feature not available, don't block
+        
+        try:
+            discovery = FolderDiscovery(base_path=Path("/srv"))
+            result = discovery.scan_folders()
+            
+            # Validate discovered folders
+            for folder in result.folders:
+                if not discovery.validate_folder(folder):
+                    error_msg = f"Folder discovery error: {folder.error_message}"
+                    logger.error(error_msg)
+                    return (False, error_msg)
+            
+            # Check for any errors
+            if result.errors:
+                error_msg = f"Folder discovery failed: {'; '.join(result.errors[:2])}"
+                logger.error(error_msg)
+                return (False, error_msg)
+            
+            # Success - return folder count info
+            folder_count = result.get_folder_count()
+            writable_count = result.get_writable_count()
+            
+            if folder_count > 0:
+                status_msg = f" ({folder_count} folders: {folder_count - writable_count} RO, {writable_count} RW)"
+                return (True, status_msg)
+            else:
+                return (True, "")  # No folders is valid
+                
+        except Exception as e:
+            error_msg = f"Folder discovery check failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return (False, error_msg)
 
 
 if __name__ == "__main__":
