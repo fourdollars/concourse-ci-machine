@@ -4,9 +4,11 @@
 
 This guide explains how to mount datasets into Concourse GPU worker tasks using LXC disk devices. The charm automatically makes datasets available to task containers via OCI runtime injection.
 
+> **Note**: This guide focuses on GPU-specific dataset mounting. For general folder mounting (including writable folders, multiple paths, and non-GPU workers), see the [General Folder Mounting Guide](GENERAL_MOUNTING.md).
+
 ## How It Works
 
-The GPU worker charm includes an OCI runtime wrapper that automatically injects `/srv/datasets` mounts into every task container. This provides seamless, transparent access to host datasets without requiring pipeline modifications.
+The GPU worker charm includes an OCI runtime wrapper (`runc-gpu-wrapper`) that automatically discovers and injects **all folders under `/srv`** into every task container. The `/srv/datasets` folder is treated like any other folder in the automatic discovery system—mounted as read-only by default.
 
 ### Architecture
 
@@ -17,11 +19,26 @@ Host Machine
        ├─ LXC Device Mount ──> LXC Container
        │                        └── /srv/datasets/
        │                              │
-       └─────────────────────────────┼─ OCI Wrapper Injection
+       └─────────────────────────────┼─ OCI Wrapper Discovery & Injection
+                                      │   (Automatic for ALL /srv folders)
                                       │
                                       └─> Task Container
                                           └── /srv/datasets/ (read-only)
 ```
+
+### General Mounting System
+
+As of charm revision 38+, the mounting system has been enhanced to support:
+
+- **Automatic discovery** of any folder under `/srv` (not just `/srv/datasets`)
+- **Read-only by default** for data safety
+- **Writable folders** using `_writable` or `_rw` suffix
+- **Works on both GPU and non-GPU workers**
+
+**For non-dataset use cases**, see [GENERAL_MOUNTING.md](GENERAL_MOUNTING.md) for:
+- Mounting multiple folders (models, outputs, caches, etc.)
+- Creating writable folders for task outputs
+- Using the system on non-GPU workers
 
 ## Prerequisites
 
