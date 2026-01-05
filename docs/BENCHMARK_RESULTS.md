@@ -170,7 +170,7 @@ jobs:
 fly -t gpu-test login -c http://10.47.232.53:8080
 
 # Deploy benchmark pipeline
-fly -t gpu-test set-pipeline -p benchmark -c benchmark-cpu-vs-gpu.yaml
+fly -t gpu-test set-pipeline -p benchmark -c ../pipeline/benchmark-cpu-vs-gpu.yaml
 fly -t gpu-test unpause-pipeline -p benchmark
 
 # Run CPU benchmark
@@ -204,7 +204,7 @@ The benchmark demonstrates that **GPU acceleration provides a 12.7x speedup** fo
 
 - [GPU_SUPPORT.md](GPU_SUPPORT.md) - Complete GPU setup guide
 - [GPU_IMPLEMENTATION_COMPLETE.md](GPU_IMPLEMENTATION_COMPLETE.md) - Implementation details
-- [benchmark-cpu-vs-gpu.yaml](benchmark-cpu-vs-gpu.yaml) - Benchmark pipeline
+- [benchmark-cpu-vs-gpu.yaml](../pipeline/benchmark-cpu-vs-gpu.yaml) - Benchmark pipeline
 
 ---
 

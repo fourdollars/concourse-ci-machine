@@ -66,8 +66,8 @@ requires:
 
 ### 6. **Documentation**
 - `README.md` - GPU support section
-- `GPU_SUPPORT.md` - Comprehensive guide
-- `gpu-test-pipeline.yaml` - Test pipeline
+- `docs/GPU_SUPPORT.md` - Comprehensive guide
+- `pipeline/gpu-test-pipeline.yaml` - Test pipeline
 
 ---
 
@@ -296,10 +296,10 @@ $ fly -t gpu trigger-job -j test-devices/check-devices -w
 7. **`GPU_SUPPORT.md`** - Comprehensive GPU guide
 
 **New Files:**
-8. **`gpu-test-pipeline.yaml`** - GPU test pipeline
-9. **`test-gpu-devices.yaml`** - Device verification pipeline
-10. **`simple-gpu-test.yaml`** - Simple test pipeline
-11. **`deploy-gpu-example.sh`** - Deployment script
+8. **`pipeline/gpu-test-pipeline.yaml`** - GPU test pipeline
+9. **`pipeline/test-gpu-devices.yaml`** - Device verification pipeline
+10. **`pipeline/simple-gpu-test.yaml`** - Simple test pipeline
+11. **`scripts/deploy-gpu-example.sh`** - Deployment script
 
 ---
 

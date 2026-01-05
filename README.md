@@ -25,9 +25,9 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
 - **Prometheus Metrics**: Optional metrics endpoint for monitoring
 - **Download Progress**: Real-time installation progress in Juju status
-- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](GPU_SUPPORT.md))
-- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](DATASET_MOUNTING.md))
-- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](GENERAL_MOUNTING.md), [Quick Reference](QUICK_REFERENCE_MOUNTING.md))
+- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/GPU_SUPPORT.md))
+- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/DATASET_MOUNTING.md))
+- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/GENERAL_MOUNTING.md))
   - ✅ Zero configuration - just mount folders to `/srv` and go
   - ✅ Read-only by default for data safety
   - ✅ Writable folders with `_writable` or `_rw` suffix
@@ -694,8 +694,7 @@ Contributions are welcome! Please:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run tests (`pytest`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 

@@ -6,7 +6,7 @@ Mount datasets into GPU worker tasks in 2 commands.
 
 ```bash
 # 1. Mount your dataset
-./mount-datasets.sh gpu-worker /path/to/your/datasets
+../scripts/mount-datasets.sh gpu-worker /path/to/your/datasets
 
 # 2. Restart the worker
 lxc exec juju-<model>-<machine> -- systemctl restart concourse-worker
@@ -18,7 +18,7 @@ lxc exec juju-<model>-<machine> -- systemctl restart concourse-worker
 
 ```bash
 # Mount ML training data
-./mount-datasets.sh gpu-worker /data/imagenet-subset
+../scripts/mount-datasets.sh gpu-worker /data/imagenet-subset
 
 # Output shows restart command:
 #   lxc exec juju-e16396-4 -- systemctl restart concourse-worker
@@ -70,14 +70,14 @@ jobs:
 ### Custom Mount Point
 
 ```bash
-./mount-datasets.sh gpu-worker /data/imagenet /srv/imagenet
+../scripts/mount-datasets.sh gpu-worker /data/imagenet /srv/imagenet
 ```
 
 ### Multiple Applications
 
 ```bash
-./mount-datasets.sh gpu-worker-a /data/ml-datasets
-./mount-datasets.sh gpu-worker-b /data/ml-datasets
+../scripts/mount-datasets.sh gpu-worker-a /data/ml-datasets
+../scripts/mount-datasets.sh gpu-worker-b /data/ml-datasets
 ```
 
 ## Troubleshooting
@@ -103,7 +103,7 @@ lxc list | grep juju
 
 - **Complete Guide**: [DATASET_MOUNTING.md](DATASET_MOUNTING.md)
 - **GPU Support**: [GPU_SUPPORT.md](GPU_SUPPORT.md)
-- **Main README**: [README.md](README.md)
+- **Main README**: [../README.md](../README.md)
 
 ## Summary
 
