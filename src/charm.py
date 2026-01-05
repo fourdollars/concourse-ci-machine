@@ -253,6 +253,10 @@ class ConcourseCharm(CharmBase):
                 if self.config.get("enable-gpu", False):
                     logger.info("Configuring GPU support for worker")
                     self.worker_helper.configure_containerd_for_gpu()
+                else:
+                    # Install folder mounting wrapper for non-GPU workers
+                    logger.info("Installing folder mounting wrapper for worker")
+                    self.worker_helper.install_folder_mount_wrapper()
 
             self.unit.status = MaintenanceStatus("Installation complete")
             logger.info("Concourse installation completed successfully")
@@ -321,6 +325,9 @@ class ConcourseCharm(CharmBase):
                     # Check if GPU config changed and reconfigure if needed
                     if self.config.get("enable-gpu", False):
                         self.worker_helper.configure_containerd_for_gpu()
+                    else:
+                        # Install/update folder mounting wrapper for non-GPU workers
+                        self.worker_helper.install_folder_mount_wrapper()
                     
                     self.worker_helper.update_config(tsa_host=tsa_host)
                     # Restart worker service to apply new config

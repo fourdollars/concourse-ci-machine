@@ -476,6 +476,81 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
         except Exception as e:
             logger.error(f"Failed to write config: {e}")
             raise
+    
+    def install_folder_mount_wrapper(self):
+        """
+        Install folder mounting wrapper for non-GPU workers
+        
+        This installs the OCI wrapper that discovers and injects /srv folder mounts.
+        For GPU workers, this is handled by the GPU wrapper instead.
+        """
+        import subprocess
+        import shutil
+        
+        # Skip if GPU is enabled (GPU wrapper handles both GPU and folders)
+        if self.config.get("enable-gpu", False):
+            logger.info("Skipping non-GPU wrapper installation (GPU wrapper handles folders)")
+            return
+        
+        wrapper_path = Path("/usr/local/bin/runc-wrapper")
+        concourse_runc = Path("/opt/concourse/bin/runc")
+        concourse_runc_real = Path("/opt/concourse/bin/runc.real")
+        runc_real = Path("/usr/bin/runc.real")
+        
+        try:
+            # Install jq if not present (needed for JSON manipulation)
+            logger.info("Ensuring jq is installed...")
+            subprocess.run(
+                ["apt-get", "install", "-y", "jq"],
+                check=False,  # Don't fail if already installed
+                capture_output=True,
+                timeout=60
+            )
+            
+            # Copy folder mounting wrapper from charm hooks directory
+            logger.info(f"Installing folder mounting wrapper at {wrapper_path}")
+            charm_wrapper = self.charm.charm_dir / "hooks" / "runc-wrapper"
+            
+            if not charm_wrapper.exists():
+                raise FileNotFoundError(f"Folder mounting wrapper not found at {charm_wrapper}")
+            
+            shutil.copy2(str(charm_wrapper), str(wrapper_path))
+            os.chmod(wrapper_path, 0o755)
+            logger.info("Folder mounting wrapper installed successfully")
+            
+            # Backup original runc if not already backed up
+            if not runc_real.exists():
+                logger.info(f"Backing up original runc to {runc_real}")
+                subprocess.run(
+                    ["cp", "/usr/bin/runc", str(runc_real)],
+                    check=True
+                )
+            
+            # Backup concourse runc if not already backed up
+            if concourse_runc.exists() and not concourse_runc_real.exists():
+                logger.info(f"Backing up concourse runc to {concourse_runc_real}")
+                subprocess.run(
+                    ["mv", str(concourse_runc), str(concourse_runc_real)],
+                    check=True
+                )
+            
+            # Create symlink from concourse runc to wrapper
+            if not concourse_runc.exists():
+                logger.info(f"Creating symlink: {concourse_runc} -> {wrapper_path}")
+                subprocess.run(
+                    ["ln", "-sf", str(wrapper_path), str(concourse_runc)],
+                    check=True
+                )
+                logger.info("Folder mounting wrapper symlinked successfully")
+            else:
+                logger.info("Concourse runc already configured")
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout while installing dependencies")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to install folder mounting wrapper: {e}")
+            raise
 
     def start_service(self):
         """Start Concourse worker service"""
