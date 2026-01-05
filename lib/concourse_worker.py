@@ -245,12 +245,13 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
     
     def _install_gpu_wrapper(self):
         """
-        Install GPU wrapper script that injects NVIDIA_VISIBLE_DEVICES into OCI specs
+        Install GPU wrapper script that injects NVIDIA_VISIBLE_DEVICES and folder mounts
         
-        The wrapper intercepts runc calls, injects GPU env vars into the OCI spec,
+        The wrapper intercepts runc calls, injects GPU env vars and folder mounts into the OCI spec,
         and then calls nvidia-container-runtime which handles device injection.
         """
         import subprocess
+        import shutil
         
         wrapper_path = Path("/usr/local/bin/runc-gpu-wrapper")
         concourse_runc = Path("/opt/concourse/bin/runc")
@@ -268,53 +269,16 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 timeout=60
             )
             
-            # Create GPU wrapper script
-            logger.info(f"Creating GPU wrapper script at {wrapper_path}")
-            wrapper_script = '''#!/bin/bash
-# GPU wrapper for Concourse CI - injects NVIDIA_VISIBLE_DEVICES and dataset mounts into OCI specs
-
-# Parse arguments to find bundle path
-BUNDLE=""
-PREV=""
-for arg in "$@"; do
-    if [[ "$PREV" == "--bundle" ]]; then
-        BUNDLE="$arg"
-        break
-    fi
-    PREV="$arg"
-done
-
-# If bundle found and config exists, inject GPU env vars and dataset mounts
-if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
-    # Check if /srv/datasets exists on host
-    if [[ -d "/srv/datasets" ]]; then
-        # Use jq to inject both environment variables and dataset mount
-        jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"] | 
-            .mounts += [{
-                "destination": "/srv/datasets",
-                "type": "bind",
-                "source": "/srv/datasets",
-                "options": ["rbind", "ro"]
-            }]' \
-           "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
-    else
-        # Just inject GPU env vars if datasets not available
-        jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
-           "$BUNDLE/config.json" > "$BUNDLE/config.json.gpu" 2>/dev/null
-    fi
-    
-    if [[ $? -eq 0 ]]; then
-        mv "$BUNDLE/config.json.gpu" "$BUNDLE/config.json"
-    fi
-fi
-
-# Call nvidia-container-runtime which will inject GPU devices
-exec /usr/bin/nvidia-container-runtime.real "$@"
-'''
+            # Copy GPU wrapper script from charm hooks directory
+            logger.info(f"Installing GPU wrapper script at {wrapper_path}")
+            charm_wrapper = self.charm.charm_dir / "hooks" / "runc-gpu-wrapper"
             
-            wrapper_path.write_text(wrapper_script)
+            if not charm_wrapper.exists():
+                raise FileNotFoundError(f"GPU wrapper not found at {charm_wrapper}")
+            
+            shutil.copy2(str(charm_wrapper), str(wrapper_path))
             os.chmod(wrapper_path, 0o755)
-            logger.info("GPU wrapper script created successfully")
+            logger.info("GPU wrapper script installed successfully")
             
             # Backup nvidia-container-runtime if not already backed up
             if nvidia_runtime.exists() and not nvidia_runtime_real.exists():
@@ -324,7 +288,7 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
                     check=True
                 )
             
-            # Backup original runc if not already backed up
+            # Backup original runc if not already backed up  
             if concourse_runc.exists() and not concourse_runc_real.exists():
                 logger.info(f"Backing up original runc to {concourse_runc_real}")
                 subprocess.run(
@@ -332,16 +296,18 @@ exec /usr/bin/nvidia-container-runtime.real "$@"
                     check=True
                 )
             
-            # Create symlink from concourse runc to wrapper
-            if not concourse_runc.exists():
-                logger.info(f"Creating symlink: {concourse_runc} -> {wrapper_path}")
-                subprocess.run(
-                    ["ln", "-sf", str(wrapper_path), str(concourse_runc)],
-                    check=True
-                )
-                logger.info("GPU wrapper installed successfully")
-            else:
-                logger.info("Concourse runc already configured")
+            # Force-replace symlink to point to GPU wrapper (even if it already exists)
+            # This ensures GPU wrapper takes precedence over non-GPU wrapper
+            if concourse_runc.exists() and concourse_runc.is_symlink():
+                logger.info(f"Replacing existing symlink to point to GPU wrapper")
+                concourse_runc.unlink()
+            
+            logger.info(f"Creating symlink: {concourse_runc} -> {wrapper_path}")
+            subprocess.run(
+                ["ln", "-sf", str(wrapper_path), str(concourse_runc)],
+                check=True
+            )
+            logger.info("GPU wrapper installed and symlinked successfully")
                 
         except subprocess.TimeoutExpired:
             logger.error("Timeout while installing dependencies")
