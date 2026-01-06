@@ -947,18 +947,12 @@ class ConcourseCharm(CharmBase):
         if self._should_run_web():
             # Web side: publish TSA info
             try:
-                # Get web IP
-                import subprocess
-                result = subprocess.run(["hostname", "-I"], capture_output=True, text=True)
-                ips = result.stdout.strip().split()
-                web_ip = None
-                for ip in ips:
-                    if "." in ip and not ip.startswith("127."):
-                        web_ip = ip
-                        break
-                
-                if not web_ip:
-                    logger.warning("Could not determine web IP")
+                # Get web IP from Juju network binding
+                binding = self.model.get_binding("web-tsa")
+                if binding and binding.network and binding.network.bind_address:
+                    web_ip = str(binding.network.bind_address)
+                else:
+                    logger.warning("Could not determine web IP from binding")
                     return
                 
                 # Read TSA public key
