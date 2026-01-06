@@ -38,7 +38,7 @@ jobs:
         run: |
           sudo snap install charmcraft --classic
           sudo charmcraft pack
-          sudo chmod 644 concourse-ci-machine_amd64.charm
+          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
 
       - name: Deploy charms
         run: |
@@ -143,7 +143,7 @@ jobs:
         run: |
           sudo snap install charmcraft --classic
           sudo charmcraft pack
-          sudo chmod 644 concourse-ci-machine_amd64.charm
+          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
 
       - name: Deploy charms (3 units in auto mode)
         run: |
@@ -250,7 +250,7 @@ jobs:
         run: |
           sudo snap install charmcraft --classic
           sudo charmcraft pack
-          sudo chmod 644 concourse-ci-machine_amd64.charm
+          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
 
       - name: Deploy server and worker separately
         run: |
