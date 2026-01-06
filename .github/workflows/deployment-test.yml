@@ -42,7 +42,7 @@ jobs:
 
       - name: Deploy charms
         run: |
-          sudo juju deploy $PWD/concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
+          sudo juju deploy concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
           sudo juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -147,7 +147,7 @@ jobs:
 
       - name: Deploy charms (3 units in auto mode)
         run: |
-          sudo juju deploy $PWD/concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
+          sudo juju deploy concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
           sudo juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -254,8 +254,8 @@ jobs:
 
       - name: Deploy server and worker separately
         run: |
-          sudo juju deploy $PWD/concourse-ci-machine_amd64.charm web --config deployment-mode=web
-          sudo juju deploy $PWD/concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
+          sudo juju deploy concourse-ci-machine_amd64.charm web --config deployment-mode=web
+          sudo juju deploy concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
           sudo juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
