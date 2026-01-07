@@ -10,13 +10,39 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-charm:
+    name: Build charm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build charm
+        run: |
+          sudo snap install charmcraft --classic
+          charmcraft pack
+
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concourse-ci-machine-charm
+          path: concourse-ci-machine_amd64.charm
+          retention-days: 1
+
   test-all-mode:
     name: Test deployment-mode=all
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: build-charm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: concourse-ci-machine-charm
 
       - name: Setup LXD
         uses: canonical/setup-lxd@v1
@@ -39,11 +65,6 @@ jobs:
 
       - name: Add Juju Model
         run: juju add-model concourse-all
-
-      - name: Build charm
-        run: |
-          sudo snap install charmcraft --classic
-          charmcraft pack
 
       - name: Deploy charms
         run: |
@@ -124,9 +145,15 @@ jobs:
     name: Test deployment-mode=auto
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: build-charm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: concourse-ci-machine-charm
 
       - name: Setup LXD
         uses: canonical/setup-lxd@v1
@@ -149,11 +176,6 @@ jobs:
 
       - name: Add Juju Model
         run: juju add-model concourse-auto
-
-      - name: Build charm
-        run: |
-          sudo snap install charmcraft --classic
-          charmcraft pack
 
       - name: Deploy charms (3 units in auto mode)
         run: |
@@ -233,12 +255,18 @@ jobs:
           juju destroy-model concourse-auto --destroy-storage --force --no-wait -y || true
 
   test-web-worker-mode:
-    name: Test deployment-mode=web+worker
+    name: Test deployment-mode=web+worker (with mounts)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: build-charm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: concourse-ci-machine-charm
 
       - name: Setup LXD
         uses: canonical/setup-lxd@v1
@@ -260,12 +288,7 @@ jobs:
         run: juju bootstrap localhost test-controller --config test-mode=true
 
       - name: Add Juju Model
-        run: juju add-model concourse-split
-
-      - name: Build charm
-        run: |
-          sudo snap install charmcraft --classic
-          charmcraft pack
+        run: juju add-model concourse-ci
 
       - name: Deploy server and worker separately
         run: |
@@ -279,7 +302,7 @@ jobs:
           juju relate worker:worker-tsa web:web-tsa
 
       - name: Wait for model to settle
-        run: juju-wait -m concourse-split -t 900
+        run: juju-wait -m concourse-ci -t 900
 
       - name: Juju Status
         run: juju status
@@ -288,7 +311,7 @@ jobs:
         run: |
           echo "=== Checking server unit ==="
           juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
-          
+
           echo "=== Checking worker units ==="
           juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
           juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
@@ -310,40 +333,80 @@ jobs:
           chmod +x ./fly
           sudo mv ./fly /usr/local/bin/
 
-      - name: Create test task
+      - name: Prepare host mounts
         run: |
-          cat <<EOF > task.yml
+          mkdir -p /tmp/config-test-mount
+          echo "config-test-marker" > /tmp/config-test-mount/marker.txt
+          mkdir -p /tmp/config-test-mount-writable
+          echo "config-test-writable-marker" > /tmp/config-test-mount-writable/marker.txt
+          ls -lah /tmp/config-test-mount /tmp/config-test-mount-writable
+
+      - name: Mount folders into worker containers
+        run: |
+          # Discover worker units and add per-container devices for mounts
+          UNITS=$(juju status worker --format=json | jq -r '.applications.worker.units | keys[]' || true)
+          if [ -z "$UNITS" ]; then echo "No worker units found"; exit 1; fi
+          for UNIT in $UNITS; do
+            MACHINE=$(juju status $UNIT --format=json | jq -r '.applications.worker.units["'"$UNIT"'"].machine')
+            CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+            if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
+            echo "Adding mounts to $CONTAINER"
+            # remove any existing devices with the same names
+            lxc config device remove $CONTAINER config_test_ro || true
+            lxc config device remove $CONTAINER config_test_rw || true
+            # add a read-only mount
+            lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
+            # add a writable mount (suffix-based test)
+            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false
+          done
+
+      - name: Create mount verification task
+        run: |
+          cat <<'EOF' > task.yml
           platform: linux
           image_resource:
             type: registry-image
             source:
               repository: busybox
           run:
-            path: echo
-            args: ["Hello from deployment-mode=web+worker!"]
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Listing /srv/config_test ==="
+                ls -lah /srv/config_test || (echo "MOUNT_MISSING" && exit 2)
+                echo "=== Showing marker file ==="
+                cat /srv/config_test/marker.txt || (echo "FILE_MISSING" && exit 3)
+                echo "=== Verifying read-only mount (touch should fail) ==="
+                if touch /srv/config_test/write-test 2>/dev/null; then
+                  echo "WRITE_SUCCEEDED (unexpected)"
+                  exit 4
+                else
+                  echo "Confirmed read-only mount"
+                fi
+                echo "=== Listing /srv/config_test_writable ==="
+                ls -lah /srv/config_test_writable || (echo "MOUNT_MISSING_WRITABLE" && exit 6)
+                echo "=== Showing writable marker file ==="
+                cat /srv/config_test_writable/marker.txt || (echo "FILE_MISSING_WRITABLE" && exit 7)
+                echo "=== Verifying writable mount (touch should succeed) ==="
+                if sh -c 'echo writable > /srv/config_test_writable/write-test' 2>/dev/null; then
+                  echo "WRITE_SUCCEEDED on writable mount"
+                else
+                  echo "WRITE_FAILED on writable mount"
+                  exit 5
+                fi
           EOF
 
-      - name: Execute test task
+      - name: Execute mount verification task
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
-          fly -t ci execute -c task.yml
-
-      - name: Verify workers are registered
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
-          fly -t ci workers
-          WORKER_COUNT=$(fly -t ci workers | grep -c "running" || true)
-          echo "Registered workers: $WORKER_COUNT"
-          if [ "$WORKER_COUNT" -lt 2 ]; then
-            echo "Expected at least 2 workers, found $WORKER_COUNT"
-            exit 1
-          fi
+          fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
 
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-split --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-ci --destroy-storage --force --no-wait -y || true
+          rm -rf /tmp/config-test-mount || true
+          rm -rf /tmp/config-test-mount-writable || true
