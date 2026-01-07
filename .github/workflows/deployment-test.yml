@@ -37,8 +37,7 @@ jobs:
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
-          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
+          charmcraft pack
 
       - name: Deploy charms
         run: |
@@ -142,8 +141,7 @@ jobs:
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
-          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
+          charmcraft pack
 
       - name: Deploy charms (3 units in auto mode)
         run: |
@@ -249,8 +247,7 @@ jobs:
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
-          sudo chown $USER:$USER concourse-ci-machine_amd64.charm
+          charmcraft pack
 
       - name: Deploy server and worker separately
         run: |
