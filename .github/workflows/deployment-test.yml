@@ -23,6 +23,12 @@ jobs:
         with:
           channel: 5.21/stable
 
+      - name: Configure LXD IPv6
+        run: |
+          lxc network set lxdbr0 ipv6.address none
+          lxc network set lxdbr0 ipv6.dhcp false
+          lxc network set lxdbr0 ipv6.nat false
+
       - name: Install Juju
         run: |
           sudo snap install juju --channel 3.6/stable
@@ -126,6 +132,12 @@ jobs:
         uses: canonical/setup-lxd@v1
         with:
           channel: 5.21/stable
+
+      - name: Configure LXD IPv6
+        run: |
+          lxc network set lxdbr0 ipv6.address none
+          lxc network set lxdbr0 ipv6.dhcp false
+          lxc network set lxdbr0 ipv6.nat false
 
       - name: Install Juju
         run: |
@@ -232,6 +244,12 @@ jobs:
         uses: canonical/setup-lxd@v1
         with:
           channel: 5.21/stable
+
+      - name: Configure LXD IPv6
+        run: |
+          lxc network set lxdbr0 ipv6.address none
+          lxc network set lxdbr0 ipv6.dhcp false
+          lxc network set lxdbr0 ipv6.nat false
 
       - name: Install Juju
         run: |
