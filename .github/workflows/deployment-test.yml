@@ -41,7 +41,7 @@ jobs:
 
       - name: Deploy charms
         run: |
-          juju deploy --debug ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -66,7 +66,7 @@ jobs:
 
       - name: Get Concourse IP
         run: |
-          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[0].value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
@@ -145,7 +145,7 @@ jobs:
 
       - name: Deploy charms (3 units in auto mode)
         run: |
-          juju deploy --debug ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -172,7 +172,7 @@ jobs:
 
       - name: Get Concourse IP
         run: |
-          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
@@ -251,8 +251,8 @@ jobs:
 
       - name: Deploy server and worker separately
         run: |
-          juju deploy --debug ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
-          juju deploy --debug ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
+          juju deploy ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
+          juju deploy ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -282,7 +282,7 @@ jobs:
 
       - name: Get Concourse server IP
         run: |
-          juju status --format=json | jq -r '.applications.web.units | to_entries[0].value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications.web.units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
