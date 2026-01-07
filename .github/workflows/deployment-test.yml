@@ -362,7 +362,7 @@ jobs:
             # add a read-only mount
             lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
             # add a writable mount (suffix-based test)
-            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false
+            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
           done
 
       - name: Create mount verification task
