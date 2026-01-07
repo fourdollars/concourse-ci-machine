@@ -1,0 +1,167 @@
+name: Config Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-general-mount:
+    name: Test deployment-mode=web+worker (general mount)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@v1
+        with:
+          channel: 5.21/stable
+
+      - name: Configure LXD IPv6
+        run: |
+          lxc network set lxdbr0 ipv6.address none
+          lxc network set lxdbr0 ipv6.dhcp false
+          lxc network set lxdbr0 ipv6.nat false
+
+      - name: Install Juju
+        run: |
+          sudo snap install juju --channel 3.6/stable
+          sudo snap install juju-wait --classic
+
+      - name: Bootstrap Juju
+        run: juju bootstrap localhost test-controller --config test-mode=true
+
+      - name: Add Juju Model
+        run: juju add-model concourse-ci
+
+      - name: Build charm
+        run: |
+          sudo snap install charmcraft --classic
+          charmcraft pack
+
+      - name: Deploy server and worker separately
+        run: |
+          juju deploy ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
+          juju deploy ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
+          juju deploy postgresql --channel 16/stable
+
+      - name: Relate charms
+        run: |
+          juju relate web:postgresql postgresql:database
+          juju relate worker:worker-tsa web:web-tsa
+
+      - name: Wait for model to settle
+        run: juju-wait -m concourse-ci -t 900
+
+      - name: Juju Status
+        run: juju status
+
+      - name: Verify deployment
+        run: |
+          echo "=== Checking server unit ==="
+          juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
+
+          echo "=== Checking worker units ==="
+          juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
+          juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+
+      - name: Get admin password
+        run: |
+          juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          cat admin-password.txt
+
+      - name: Get Concourse server IP
+        run: |
+          juju status --format=json | jq -r '.applications.web.units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
+          cat concourse-ip.txt
+
+      - name: Install fly CLI
+        run: |
+          CONCOURSE_IP=$(cat concourse-ip.txt)
+          curl -Lo fly "http://${CONCOURSE_IP}:8080/api/v1/cli?arch=amd64&platform=linux"
+          chmod +x ./fly
+          sudo mv ./fly /usr/local/bin/
+
+      - name: Prepare host mounts
+        run: |
+          mkdir -p /tmp/config-test-mount
+          echo "config-test-marker" > /tmp/config-test-mount/marker.txt
+          mkdir -p /tmp/config-test-mount-writable
+          echo "config-test-writable-marker" > /tmp/config-test-mount-writable/marker.txt
+          ls -lah /tmp/config-test-mount /tmp/config-test-mount-writable
+
+      - name: Mount folders into worker containers
+        run: |
+          # Discover worker units and add per-container devices for mounts
+          UNITS=$(juju status worker --format=json | jq -r '.applications.worker.units | keys[]' || true)
+          if [ -z "$UNITS" ]; then echo "No worker units found"; exit 1; fi
+          for UNIT in $UNITS; do
+            MACHINE=$(juju status $UNIT --format=json | jq -r '.applications.worker.units["'"$UNIT"'"].machine')
+            CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+            if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
+            echo "Adding mounts to $CONTAINER"
+            # remove any existing devices with the same names
+            lxc config device remove $CONTAINER config_test_ro || true
+            lxc config device remove $CONTAINER config_test_rw || true
+            # add a read-only mount
+            lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config-test" readonly=true
+            # add a writable mount (suffix-based test)
+            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config-test-writable" readonly=false
+          done
+
+      - name: Create mount verification task
+        run: |
+          cat <<'EOF' > task.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Listing /srv/config-test ==="
+                ls -lah /srv/config-test || (echo "MOUNT_MISSING" && exit 2)
+                echo "=== Showing marker file ==="
+                cat /srv/config-test/marker.txt || (echo "FILE_MISSING" && exit 3)
+                echo "=== Verifying read-only mount (touch should fail) ==="
+                if touch /srv/config-test/write-test 2>/dev/null; then
+                  echo "WRITE_SUCCEEDED (unexpected)"
+                  exit 4
+                else
+                  echo "Confirmed read-only mount"
+                fi
+                echo "=== Listing /srv/config-test-writable ==="
+                ls -lah /srv/config-test-writable || (echo "MOUNT_MISSING_WRITABLE" && exit 6)
+                echo "=== Showing writable marker file ==="
+                cat /srv/config-test-writable/marker.txt || (echo "FILE_MISSING_WRITABLE" && exit 7)
+                echo "=== Verifying writable mount (touch should succeed) ==="
+                if sh -c 'echo writable > /srv/config-test-writable/write-test' 2>/dev/null; then
+                  echo "WRITE_SUCCEEDED on writable mount"
+                else
+                  echo "WRITE_FAILED on writable mount"
+                  exit 5
+                fi
+          EOF
+
+      - name: Execute mount verification task
+        run: |
+          export CONCOURSE_URL=$(cat concourse-ip.txt)
+          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
+          fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
+
+      - name: Cleanup
+        if: always()
+        run: |
+          juju destroy-model concourse-ci --destroy-storage --force --no-wait -y || true
+          rm -rf /tmp/config-test-mount || true
+          rm -rf /tmp/config-test-mount-writable || true
