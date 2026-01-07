@@ -29,44 +29,44 @@ jobs:
           sudo snap install juju-wait --classic
 
       - name: Bootstrap Juju
-        run: sudo juju bootstrap localhost test-controller --config test-mode=true
+        run: juju bootstrap localhost test-controller --config test-mode=true
 
       - name: Add Juju Model
-        run: sudo juju add-model concourse-all
+        run: juju add-model concourse-all
 
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
+          charmcraft pack
 
       - name: Deploy charms
         run: |
-          sudo juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
-          sudo juju deploy postgresql --channel 16/stable
+          juju deploy --debug ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
+          juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
-        run: sudo juju relate concourse-ci:postgresql postgresql:database
+        run: juju relate concourse-ci:postgresql postgresql:database
 
       - name: Wait for model to settle
-        run: sudo juju-wait -m concourse-all -t 900
+        run: juju-wait -m concourse-all -t 900
 
       - name: Juju Status
-        run: sudo juju status
+        run: juju status
 
       - name: Verify deployment
         run: |
           echo "=== Checking unit (should run both server and worker) ==="
-          sudo juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running (unexpected)"
-          sudo juju run concourse-ci/leader systemctl status concourse-worker || echo "Worker not running (unexpected)"
+          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju run concourse-ci/leader systemctl status concourse-worker || echo "Worker not running (unexpected)"
 
       - name: Get admin password
         run: |
-          sudo juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse IP
         run: |
-          sudo juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[0].value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[0].value.address' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
@@ -112,7 +112,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          sudo juju destroy-model concourse-all --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-all --destroy-storage --force --no-wait -y || true
 
   test-auto-mode:
     name: Test deployment-mode=auto
@@ -133,46 +133,46 @@ jobs:
           sudo snap install juju-wait --classic
 
       - name: Bootstrap Juju
-        run: sudo juju bootstrap localhost test-controller --config test-mode=true
+        run: juju bootstrap localhost test-controller --config test-mode=true
 
       - name: Add Juju Model
-        run: sudo juju add-model concourse-auto
+        run: juju add-model concourse-auto
 
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
+          charmcraft pack
 
       - name: Deploy charms (3 units in auto mode)
         run: |
-          sudo juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
-          sudo juju deploy postgresql --channel 16/stable
+          juju deploy --debug ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
+          juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
-        run: sudo juju relate concourse-ci:postgresql postgresql:database
+        run: juju relate concourse-ci:postgresql postgresql:database
 
       - name: Wait for model to settle
-        run: sudo juju-wait -m concourse-auto -t 900
+        run: juju-wait -m concourse-auto -t 900
 
       - name: Juju Status
-        run: sudo juju status
+        run: juju status
 
       - name: Verify deployment
         run: |
           echo "=== Checking leader (should run server) ==="
-          sudo juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running on leader (unexpected)"
+          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running on leader (unexpected)"
           
           echo "=== Checking non-leader unit (should run worker) ==="
-          sudo juju run concourse-ci/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju run concourse-ci/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
 
       - name: Get admin password
         run: |
-          sudo juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse IP
         run: |
-          sudo juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value.address' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
@@ -218,7 +218,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          sudo juju destroy-model concourse-auto --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-auto --destroy-storage --force --no-wait -y || true
 
   test-web-worker-mode:
     name: Test deployment-mode=web+worker
@@ -239,50 +239,50 @@ jobs:
           sudo snap install juju-wait --classic
 
       - name: Bootstrap Juju
-        run: sudo juju bootstrap localhost test-controller --config test-mode=true
+        run: juju bootstrap localhost test-controller --config test-mode=true
 
       - name: Add Juju Model
-        run: sudo juju add-model concourse-split
+        run: juju add-model concourse-split
 
       - name: Build charm
         run: |
           sudo snap install charmcraft --classic
-          sudo charmcraft pack
+          charmcraft pack
 
       - name: Deploy server and worker separately
         run: |
-          sudo juju deploy ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
-          sudo juju deploy ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
-          sudo juju deploy postgresql --channel 16/stable
+          juju deploy --debug ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
+          juju deploy --debug ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
+          juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
         run: |
-          sudo juju relate web:postgresql postgresql:database
-          sudo juju relate worker:worker-tsa web:web-tsa
+          juju relate web:postgresql postgresql:database
+          juju relate worker:worker-tsa web:web-tsa
 
       - name: Wait for model to settle
-        run: sudo juju-wait -m concourse-split -t 900
+        run: juju-wait -m concourse-split -t 900
 
       - name: Juju Status
-        run: sudo juju status
+        run: juju status
 
       - name: Verify deployment
         run: |
           echo "=== Checking server unit ==="
-          sudo juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
           
           echo "=== Checking worker units ==="
-          sudo juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
-          sudo juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
+          juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
 
       - name: Get admin password
         run: |
-          sudo juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse server IP
         run: |
-          sudo juju status --format=json | jq -r '.applications.web.units | to_entries[0].value.address' > concourse-ip.txt
+          juju status --format=json | jq -r '.applications.web.units | to_entries[0].value.address' > concourse-ip.txt
           cat concourse-ip.txt
 
       - name: Install fly CLI
@@ -328,4 +328,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          sudo juju destroy-model concourse-split --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-split --destroy-storage --force --no-wait -y || true
