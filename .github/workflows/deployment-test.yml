@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build-charm:
     name: Build charm
@@ -34,6 +38,9 @@ jobs:
           name: concourse-ci-machine-charm
           path: concourse-ci-machine_amd64.charm
           retention-days: 1
+
+      - name: Remove charm file
+        run: rm concourse-ci-machine_amd64.charm
 
   test-all-mode:
     name: Test mode=all
@@ -75,6 +82,9 @@ jobs:
         run: |
           juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=all --config version=7.14.2
           juju deploy postgresql --channel 16/stable
+
+      - name: Remove charm file
+        run: rm concourse-ci-machine_amd64.charm
 
       - name: Relate charms
         run: juju relate concourse-ci:postgresql postgresql:database
@@ -222,6 +232,9 @@ jobs:
         run: |
           juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.14.2 -n 3
           juju deploy postgresql --channel 16/stable
+
+      - name: Remove charm file
+        run: rm concourse-ci-machine_amd64.charm
 
       - name: Relate charms
         run: juju relate concourse-ci:postgresql postgresql:database
@@ -382,6 +395,9 @@ jobs:
           juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2 -n 2
           juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.14.2 --config tag=special-worker
           juju deploy postgresql --channel 16/stable
+
+      - name: Remove charm file
+        run: rm concourse-ci-machine_amd64.charm
 
       - name: Relate charms
         run: |
@@ -604,3 +620,25 @@ jobs:
           juju destroy-model concourse-ci --destroy-storage --force --no-wait -y || true
           rm -rf /tmp/config-test-mount || true
           rm -rf /tmp/config-test-mount-writable || true
+
+  cleanup-artifacts:
+    name: Cleanup artifacts
+    runs-on: ubuntu-latest
+    needs: [test-all-mode, test-auto-mode, test-web-worker-mode]
+    if: always()
+    steps:
+      - name: Delete charm artifact
+        run: |
+          # Find artifact ID
+          ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name == "concourse-ci-machine-charm") | .id')
+          
+          # Delete artifact if found
+          if [ -n "$ARTIFACT_ID" ]; then
+            echo "Deleting artifact ID: $ARTIFACT_ID"
+            gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID"
+          else
+            echo "Artifact not found"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
