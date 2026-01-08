@@ -1,9 +1,11 @@
 jobs:
 - name: benchmark-cpu
   plan:
+  - get: benchmark-cpu-trigger
+    trigger: true
   - task: matrix-multiply-cpu
     timeout: 5m
-    tags: [gpu]  # Run on GPU worker but only use CPU
+    tags: [gpu]
     config:
       platform: linux
       image_resource:
@@ -50,15 +52,27 @@ jobs:
               print(f"Iteration {i+1}: {elapsed:.3f} seconds")
           
           avg_time = sum(times) / len(times)
+          gflops = (2 * 5000**3) / avg_time / 1e9
           print()
           print(f"Average time: {avg_time:.3f} seconds")
-          print(f"Performance: {(2 * 5000**3) / avg_time / 1e9:.2f} GFLOPS")
+          print(f"Performance: {gflops:.2f} GFLOPS")
           print()
+          
+          # Write results to shared folder
+          try:
+              with open("/srv/benchmark_rw_writable/cpu_result.txt", "w") as f:
+                  f.write(f"{avg_time:.3f},{gflops:.2f}")
+              print("✓ Results saved to shared folder")
+          except Exception as e:
+              print(f"⚠ Failed to save results: {e}")
+              
           print("✓ CPU benchmark complete")
           EOF
 
 - name: benchmark-gpu
   plan:
+  - get: benchmark-gpu-trigger
+    trigger: true
   - task: matrix-multiply-gpu
     timeout: 5m
     tags: [gpu]
@@ -118,42 +132,99 @@ jobs:
               print(f"Iteration {i+1}: {elapsed:.3f} seconds")
           
           avg_time = sum(times) / len(times)
+          gflops = (2 * 5000**3) / avg_time / 1e9
           print()
           print(f"Average time: {avg_time:.3f} seconds")
-          print(f"Performance: {(2 * 5000**3) / avg_time / 1e9:.2f} GFLOPS")
+          print(f"Performance: {gflops:.2f} GFLOPS")
           print()
+          
+          # Write results to shared folder
+          try:
+              with open("/srv/benchmark_rw_writable/gpu_result.txt", "w") as f:
+                  f.write(f"{avg_time:.3f},{gflops:.2f}")
+              print("✓ Results saved to shared folder")
+          except Exception as e:
+              print(f"⚠ Failed to save results: {e}")
+              
           print("✓ GPU benchmark complete")
           EOF
 
 - name: benchmark-comparison
   plan:
+  - get: benchmark-cpu-trigger
+    trigger: true
+    passed: [benchmark-cpu]
+  - get: benchmark-gpu-trigger
+    trigger: true
+    passed: [benchmark-gpu]
   - task: summary
+    tags: [gpu]
     timeout: 1m
     config:
       platform: linux
       image_resource:
         type: registry-image
         source:
-          repository: busybox
-          tag: latest
+          repository: python
+          tag: 3.11-slim
       run:
-        path: sh
+        path: python3
         args:
         - -c
         - |
-          echo "============================================"
-          echo "     CPU vs GPU Benchmark Comparison"
-          echo "============================================"
-          echo
-          echo "To compare results:"
-          echo "1. Run 'fly -t gpu-test trigger-job -j benchmark/benchmark-cpu -w'"
-          echo "2. Run 'fly -t gpu-test trigger-job -j benchmark/benchmark-gpu -w'"
-          echo "3. Compare the average times and GFLOPS"
-          echo
-          echo "Expected Results:"
-          echo "  - CPU: ~10-30 seconds (depending on CPU)"
-          echo "  - GPU: ~0.1-1 seconds (10-100x faster)"
-          echo
-          echo "The GPU should show significantly higher GFLOPS"
-          echo "and much faster execution time for matrix operations."
-          echo
+          import os
+          
+          print("============================================")
+          print("     CPU vs GPU Benchmark Comparison")
+          print("============================================")
+          print()
+          
+          cpu_file = "/srv/benchmark_rw_writable/cpu_result.txt"
+          gpu_file = "/srv/benchmark_rw_writable/gpu_result.txt"
+          
+          cpu_data = None
+          gpu_data = None
+          
+          if os.path.exists(cpu_file):
+              try:
+                  with open(cpu_file, "r") as f:
+                      parts = f.read().strip().split(",")
+                      if len(parts) == 2:
+                          cpu_data = {"time": float(parts[0]), "gflops": float(parts[1])}
+              except Exception as e:
+                  print(f"Error reading CPU results: {e}")
+          
+          if os.path.exists(gpu_file):
+              try:
+                  with open(gpu_file, "r") as f:
+                      parts = f.read().strip().split(",")
+                      if len(parts) == 2:
+                          gpu_data = {"time": float(parts[0]), "gflops": float(parts[1])}
+              except Exception as e:
+                  print(f"Error reading GPU results: {e}")
+          
+          print(f"{'Metric':<15} {'CPU':<15} {'GPU':<15} {'Speedup':<15}")
+          print("-" * 60)
+          
+          if cpu_data and gpu_data:
+              print(f"{'Time (s)':<15} {cpu_data['time']:<15.3f} {gpu_data['time']:<15.3f} {cpu_data['time']/gpu_data['time']:.1f}x")
+              print(f"{'GFLOPS':<15} {cpu_data['gflops']:<15.2f} {gpu_data['gflops']:<15.2f} {gpu_data['gflops']/cpu_data['gflops']:.1f}x")
+          else:
+              if cpu_data:
+                  print(f"{'Time (s)':<15} {cpu_data['time']:<15.3f} {'-':<15} {'-':<15}")
+                  print(f"{'GFLOPS':<15} {cpu_data['gflops']:<15.2f} {'-':<15} {'-':<15}")
+              
+              if not cpu_data:
+                  print("Missing CPU benchmark results.")
+              if not gpu_data:
+                  print("Missing GPU benchmark results.")
+              
+          print()
+
+resources:
+- name: benchmark-cpu-trigger
+  type: time
+  source: {interval: 24h}
+- name: benchmark-gpu-trigger
+  type: time
+  source: {interval: 24h}
