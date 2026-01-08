@@ -100,7 +100,7 @@ jobs:
 
       - name: Get admin password
         run: |
-          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run concourse-ci/leader get-admin-password --wait=5m | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse IP
