@@ -36,7 +36,7 @@ jobs:
           retention-days: 1
 
   test-all-mode:
-    name: Test deployment-mode=all
+    name: Test mode=all
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-charm
@@ -73,7 +73,7 @@ jobs:
 
       - name: Deploy charms
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=all
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=all
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -118,7 +118,7 @@ jobs:
               repository: busybox
           run:
             path: echo
-            args: ["Hello from deployment-mode=all!"]
+            args: ["Hello from mode=all!"]
           EOF
 
       - name: Execute test task
@@ -147,7 +147,7 @@ jobs:
           juju destroy-model concourse-all --destroy-storage --force --no-wait -y || true
 
   test-auto-mode:
-    name: Test deployment-mode=auto
+    name: Test mode=auto
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-charm
@@ -184,7 +184,7 @@ jobs:
 
       - name: Deploy charms (3 units in auto mode)
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config deployment-mode=auto -n 3
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto -n 3
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -231,7 +231,7 @@ jobs:
               repository: busybox
           run:
             path: echo
-            args: ["Hello from deployment-mode=auto!"]
+            args: ["Hello from mode=auto!"]
           EOF
 
       - name: Execute test task
@@ -260,7 +260,7 @@ jobs:
           juju destroy-model concourse-auto --destroy-storage --force --no-wait -y || true
 
   test-web-worker-mode:
-    name: Test deployment-mode=web+worker (with mounts)
+    name: Test mode=web+worker (with mounts)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-charm
@@ -297,8 +297,8 @@ jobs:
 
       - name: Deploy server and worker separately
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm web --config deployment-mode=web
-          juju deploy ./concourse-ci-machine_amd64.charm worker --config deployment-mode=worker -n 2
+          juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web
+          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker -n 2
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms

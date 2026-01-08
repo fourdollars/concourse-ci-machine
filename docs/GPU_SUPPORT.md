@@ -62,11 +62,11 @@ juju deploy postgresql --channel 14/stable
 
 # Deploy web server
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm web \
-  --config deployment-mode=web
+  --config mode=web
 
 # Deploy GPU-enabled worker
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # Create relations
@@ -252,7 +252,7 @@ Worker tags: `gpu`, `gpu-type=nvidia`, `gpu-count=2`, `gpu-devices=0,2`
 ```bash
 # Deploy 3 GPU workers
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker -n 3 \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 ```
 
@@ -261,12 +261,12 @@ juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker -n 3 \
 ```bash
 # 2 GPU workers
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm gpu-worker -n 2 \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # 4 regular workers
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm cpu-worker -n 4 \
-  --config deployment-mode=worker
+  --config mode=worker
 ```
 
 Pipeline can target specific workers:
@@ -406,7 +406,7 @@ sudo ctr run --rm --runtime io.containerd.runc.v2 \
 1. **Deploy and Test**
    ```bash
    juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
-     --config deployment-mode=worker \
+     --config mode=worker \
      --config enable-gpu=true
    ```
 
@@ -467,7 +467,7 @@ juju add-machine ssh:user@gpu-host
 # Deploy worker to specific machine
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
   --to 1 \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 ```
 

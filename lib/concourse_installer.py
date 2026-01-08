@@ -41,7 +41,7 @@ def download_and_install_concourse(charm, version: str):
     import tarfile
 
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
-    logger.info(f"Downloading Concourse {version} from {url}")
+    logger.info(f"Downloading Concourse CI {version} from {url}")
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -57,7 +57,7 @@ def download_and_install_concourse(charm, version: str):
                     # Only update when percentage actually changes
                     if pct != last_pct[0]:
                         charm.unit.status = MaintenanceStatus(
-                            f"Downloading Concourse {version}... {pct}%"
+                            f"Downloading Concourse CI {version}... {pct}%"
                         )
                         logger.debug(f"Download progress: {pct}%")
                         last_pct[0] = pct

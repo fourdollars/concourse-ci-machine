@@ -54,7 +54,7 @@ juju add-model concourse
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI charm as application "concourse-ci"
-juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
+juju deploy concourse-ci-machine concourse-ci --config mode=all
 
 # Relate to database (uses PostgreSQL 16 client interface with Juju secrets)
 juju integrate concourse-ci:postgresql postgresql:database
@@ -88,7 +88,7 @@ Deploy multiple units with automatic role assignment and key distribution:
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse charm (named "concourse-ci") with 1 web + 2 workers
-juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 
 # Relate to database (using application name "concourse-ci")
 juju relate concourse-ci:postgresql postgresql:database
@@ -113,10 +113,10 @@ For maximum flexibility with separate applications:
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy web server (1 unit)
-juju deploy concourse-ci-machine web --config deployment-mode=web
+juju deploy concourse-ci-machine web --config mode=web
 
 # Deploy workers (2 units)  
-juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 
 # Relate web to database
 juju relate web:postgresql postgresql:database
@@ -136,13 +136,13 @@ juju status
 
 ## Deployment Modes
 
-The charm supports four deployment modes via the `deployment-mode` configuration:
+The charm supports four deployment modes via the `mode` configuration:
 
 ### 1. `all` (Single Unit - Fully Automated)
 Both web and worker run on the same unit. **Fully automated, no manual setup required.**
 
 ```bash
-juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all
+juju deploy concourse-ci-machine concourse-ci --config mode=all
 juju relate concourse-ci:postgresql postgresql:database
 ```
 
@@ -153,7 +153,7 @@ juju relate concourse-ci:postgresql postgresql:database
 Leader unit runs web server, non-leader units run workers. **Keys automatically distributed via peer relations!**
 
 ```bash
-juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 juju relate concourse-ci:postgresql postgresql:database
 ```
 
@@ -165,10 +165,10 @@ Deploy web and workers as separate applications for independent scaling.
 
 ```bash
 # Web application
-juju deploy concourse-ci-machine web --config deployment-mode=web
+juju deploy concourse-ci-machine web --config mode=web
 
 # Worker application (scalable)
-juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 
 # Relate web to PostgreSQL
 juju relate web:postgresql postgresql:database
@@ -184,8 +184,8 @@ juju relate web:web-tsa worker:worker-tsa
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `deployment-mode` | string | `auto` | Deployment mode: auto, all, web, or worker |
-| `concourse-version` | string | `latest` | Concourse version to install (auto-detects latest from GitHub) |
+| `mode` | string | `auto` | Deployment mode: auto, all, web, or worker |
+| `version` | string | `latest` | Concourse version to install (auto-detects latest from GitHub) |
 | `web-port` | int | `8080` | Web UI and API port |
 | `worker-procs` | int | `1` | Number of worker processes per unit |
 | `log-level` | string | `info` | Log level: debug, info, warn, error |
@@ -208,15 +208,29 @@ juju config concourse-ci web-port=9090
 # Change to privileged port 80 (requires CAP_NET_BIND_SERVICE - already configured)
 juju config concourse-ci web-port=80
 
-# Set specific Concourse version
-juju config concourse-ci concourse-version=7.14.3
-
 # Enable debug logging
 juju config concourse-ci log-level=debug
 
 # Set external URL (auto-detects unit IP if not set)
 juju config concourse-ci external-url=https://ci.example.com
 ```
+
+### Upgrading Concourse Version
+
+Use the `upgrade` action to change Concourse CI version:
+
+```bash
+# Upgrade to specific version (automatically upgrades all workers)
+juju run concourse-ci/leader upgrade version=7.14.3
+
+# Upgrade/downgrade is supported bidirectionally
+juju run concourse-ci/leader upgrade version=7.12.1
+```
+
+**Auto-upgrade behavior:**
+- When the web server (leader in mode=auto) is upgraded, all workers automatically upgrade to match
+- Works across separate applications connected via TSA relations
+- Workers show "Auto-upgrading Concourse CI to X.X.X..." during automatic upgrades
 
 **Note**: The `web-port` configuration supports dynamic changes including privileged ports (< 1024) thanks to `AmbientCapabilities=CAP_NET_BIND_SERVICE` in the systemd service.
 
@@ -393,11 +407,11 @@ Complete deployment from scratch:
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # 2. Deploy web server
-juju deploy concourse-ci-machine web --config deployment-mode=web
+juju deploy concourse-ci-machine web --config mode=web
 
 # 3. Deploy GPU-enabled worker
 juju deploy concourse-ci-machine worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # 4. Add GPU to LXD container (only manual step for localhost cloud)

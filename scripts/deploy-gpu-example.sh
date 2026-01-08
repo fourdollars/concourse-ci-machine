@@ -24,12 +24,12 @@ juju deploy postgresql --channel 14/stable
 # Deploy web server
 echo "Deploying Concourse web server..."
 juju deploy "$CHARM_FILE" web \
-  --config deployment-mode=web
+  --config mode=web
 
 # Deploy GPU worker
 echo "Deploying GPU-enabled worker..."
 juju deploy "$CHARM_FILE" worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true \
   --config gpu-device-ids=all
 

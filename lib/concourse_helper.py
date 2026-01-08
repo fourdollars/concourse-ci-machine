@@ -86,7 +86,7 @@ class ConcourseHelper:
 
     def get_concourse_version(self) -> str:
         """Get configured or latest Concourse version"""
-        configured = self.config.get("concourse-version")
+        configured = self.config.get("version")
         if configured:
             return configured
 
@@ -113,7 +113,7 @@ class ConcourseHelper:
         from ops.model import MaintenanceStatus
 
         url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
-        logger.info(f"Downloading Concourse {version} from {url}")
+        logger.info(f"Downloading Concourse CI {version} from {url}")
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -129,7 +129,7 @@ class ConcourseHelper:
                         # Only update when percentage actually changes
                         if pct != last_pct[0]:
                             self.charm.unit.status = MaintenanceStatus(
-                                f"Downloading Concourse {version}... {pct}%"
+                                f"Downloading Concourse CI {version}... {pct}%"
                             )
                             logger.debug(f"Download progress: {pct}%")
                             last_pct[0] = pct

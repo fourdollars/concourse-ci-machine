@@ -53,7 +53,7 @@ As of charm revision 38+, the mounting system has been enhanced to support:
 ```bash
 # Deploy GPU worker with the charm
 juju deploy concourse-ci-machine gpu-worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 ```
 
@@ -298,7 +298,7 @@ cp your-data.csv /data/ml-datasets/training/
 
 # 2. Deploy GPU worker
 juju deploy concourse-ci-machine gpu-worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # 3. Wait for deployment

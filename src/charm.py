@@ -10,6 +10,7 @@ import secrets
 import string
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add lib to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
@@ -30,6 +31,7 @@ from concourse_common import (
     create_concourse_user,
     get_concourse_version,
     KEYS_DIR,
+    CONCOURSE_BIN,
 )
 from concourse_installer import (
     download_and_install_concourse,
@@ -133,6 +135,9 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(
             self.on.get_admin_password_action, self._on_get_admin_password_action
         )
+        self.framework.observe(
+            self.on.upgrade_action, self._on_update_concourse_version_action
+        )
 
     def _get_deployment_mode(self) -> str:
         """
@@ -141,7 +146,7 @@ class ConcourseCharm(CharmBase):
         Returns:
             'web', 'worker', or 'both'
         """
-        config_mode = self.config.get("deployment-mode", "auto")
+        config_mode = self.config.get("mode", "auto")
 
         if config_mode == "web":
             return "web"
@@ -157,7 +162,7 @@ class ConcourseCharm(CharmBase):
                 return "worker"
         else:
             logger.warning(
-                f"Unknown deployment-mode: {config_mode}, defaulting to 'both'"
+                f"Unknown mode: {config_mode}, defaulting to 'both'"
             )
             return "both"
 
@@ -298,6 +303,28 @@ class ConcourseCharm(CharmBase):
             logger.info("Config changed event triggered")
             mode = self._get_deployment_mode()
             logger.info(f"Deployment mode: {mode}")
+
+            # Check for version change and upgrade if needed
+            desired_version = self.config.get("version")
+            if desired_version:
+                installed_version = self._get_installed_concourse_version()
+                if installed_version != desired_version:
+                    logger.info(f"Upgrading Concourse CI from {installed_version} to {desired_version}")
+                    self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {desired_version}...")
+                    
+                    # Stop services before upgrading to avoid "text file busy" error
+                    if self._should_run_web():
+                        self.web_helper.stop_service()
+                    if self._should_run_worker():
+                        self.worker_helper.stop_service()
+                    
+                    download_and_install_concourse(self, desired_version)
+                    self._restart_concourse_service()
+                    
+                    # If web server, publish version to relations
+                    if self._should_run_web():
+                        self._publish_version_to_tsa_relations()
+                        self._publish_version_to_peer_relation()
 
             # Update configuration based on role
             if mode == "both":
@@ -514,6 +541,12 @@ class ConcourseCharm(CharmBase):
                 logger.info("Published TSA public key to peers")
             else:
                 logger.warning(f"TSA public key not found at {tsa_pub_key_path}")
+            
+            # Publish version for upgrade coordination
+            installed_version = self._get_installed_concourse_version()
+            if installed_version:
+                peer_relation.data[self.unit]["concourse-version"] = installed_version
+                logger.info(f"Published version {installed_version} to peers")
 
         except Exception as e:
             logger.error(f"Failed to publish keys to peers: {e}", exc_info=True)
@@ -575,17 +608,34 @@ class ConcourseCharm(CharmBase):
                 event.relation.data[self.unit]["worker-public-key"] = worker_pub_key
                 logger.info("Published worker public key to peers")
 
-            # Retrieve TSA configuration from web server
+            # Retrieve TSA configuration and version from web server
             tsa_pub_key = None
             web_ip = None
+            web_version = None
 
             for unit in event.relation.units:
                 data = event.relation.data.get(unit, {})
                 if "tsa-public-key" in data and "web-ip" in data:
                     tsa_pub_key = data.get("tsa-public-key")
                     web_ip = data.get("web-ip")
+                    web_version = data.get("concourse-version")
                     logger.info(f"Retrieved TSA configuration from {unit}")
                     break
+            
+            # Check if worker version matches web version and upgrade if needed
+            if web_version:
+                worker_version = self._get_installed_concourse_version()
+                if worker_version and worker_version != web_version:
+                    logger.info(f"Web version ({web_version}) differs from worker version ({worker_version}), upgrading...")
+                    self.unit.status = MaintenanceStatus(f"Auto-upgrading Concourse CI to {web_version}...")
+                    
+                    # Stop worker before upgrade
+                    self.worker_helper.stop_service()
+                    
+                    # Download and install new version
+                    download_and_install_concourse(self, web_version)
+                    
+                    logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
 
             if tsa_pub_key and web_ip:
                 # Write TSA public key
@@ -894,7 +944,10 @@ class ConcourseCharm(CharmBase):
                     self.unit.status = BlockedStatus(discovery_msg)
                     return
 
-            # All good
+            # All good - get version info
+            installed_version = self._get_installed_concourse_version()
+            version_info = f" (v{installed_version})" if installed_version else ""
+            
             if mode == "web":
                 # Open the web port for external access
                 web_port = self.config.get("web-port", 8080)
@@ -903,11 +956,11 @@ class ConcourseCharm(CharmBase):
                     logger.info(f"Opened port {web_port}/tcp")
                 except Exception as e:
                     logger.warning(f"Failed to open port {web_port}: {e}")
-                self.unit.status = ActiveStatus("Web server ready")
+                self.unit.status = ActiveStatus(f"Web server ready{version_info}")
             elif mode == "worker":
                 gpu_status = self.worker_helper.get_gpu_status_message()
                 _, discovery_status = self._check_folder_discovery_status()
-                self.unit.status = ActiveStatus(f"Worker ready{gpu_status}{discovery_status}")
+                self.unit.status = ActiveStatus(f"Worker ready{version_info}{gpu_status}{discovery_status}")
             else:
                 gpu_status = self.worker_helper.get_gpu_status_message()
                 _, discovery_status = self._check_folder_discovery_status()
@@ -918,7 +971,7 @@ class ConcourseCharm(CharmBase):
                     logger.info(f"Opened port {web_port}/tcp")
                 except Exception as e:
                     logger.warning(f"Failed to open port {web_port}: {e}")
-                self.unit.status = ActiveStatus(f"Ready{gpu_status}{discovery_status}")
+                self.unit.status = ActiveStatus(f"Ready{version_info}{gpu_status}{discovery_status}")
 
         except Exception as e:
             logger.error(f"Status update failed: {e}", exc_info=True)
@@ -941,6 +994,77 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             event.fail(f"Failed to retrieve admin password: {e}")
             logger.error(f"Get admin password action failed: {e}", exc_info=True)
+    
+    def _get_installed_concourse_version(self) -> Optional[str]:
+        """Detect installed Concourse version from binary output"""
+        try:
+            import subprocess
+            import re
+            result = subprocess.run([CONCOURSE_BIN, "-v"], capture_output=True, text=True)
+            output = (result.stdout or result.stderr or "").strip()
+            match = re.search(r"v?(\d+\.\d+\.\d+)", output)
+            if match:
+                return match.group(1)
+        except Exception as e:
+            logger.debug(f"Could not detect installed version: {e}")
+        return None
+
+    def _on_update_concourse_version_action(self, event):
+        """Handle upgrade action"""
+        try:
+            version = event.params.get("version") or self.config.get("version") or get_concourse_version(self.config)
+            self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {version}...")
+            
+            # Stop services before upgrading to avoid "text file busy" error
+            if self._should_run_web():
+                self.web_helper.stop_service()
+            if self._should_run_worker():
+                self.worker_helper.stop_service()
+            
+            download_and_install_concourse(self, version)
+            self._restart_concourse_service()
+            
+            # If web server, publish version to relations to trigger worker upgrades
+            if self._should_run_web():
+                self._publish_version_to_tsa_relations()
+                self._publish_version_to_peer_relation()
+            
+            event.set_results({"version": version, "message": "Concourse upgraded"})
+            logger.info(f"Concourse upgraded to {version} via action")
+            self._update_status()
+        except Exception as e:
+            event.fail(f"Upgrade failed: {e}")
+            logger.error(f"Upgrade action failed: {e}", exc_info=True)
+    
+    def _publish_version_to_peer_relation(self):
+        """Publish current version to peer relation to trigger worker upgrades"""
+        try:
+            installed_version = self._get_installed_concourse_version()
+            if not installed_version:
+                logger.warning("Could not detect installed version to publish to peers")
+                return
+            
+            peer_relation = self.model.get_relation("concourse-peer")
+            if peer_relation:
+                peer_relation.data[self.unit]["concourse-version"] = installed_version
+                logger.info(f"Published version {installed_version} to peer relation")
+        except Exception as e:
+            logger.error(f"Failed to publish version to peer relation: {e}", exc_info=True)
+    
+    def _publish_version_to_tsa_relations(self):
+        """Publish current version to all TSA relations to trigger worker upgrades"""
+        try:
+            installed_version = self._get_installed_concourse_version()
+            if not installed_version:
+                logger.warning("Could not detect installed version to publish")
+                return
+            
+            tsa_relation = self.model.get_relation("web-tsa")
+            if tsa_relation:
+                tsa_relation.data[self.unit]["concourse-version"] = installed_version
+                logger.info(f"Published version {installed_version} to TSA relation")
+        except Exception as e:
+            logger.error(f"Failed to publish version to TSA relations: {e}", exc_info=True)
     
     def _on_tsa_relation_joined(self, event):
         """Handle TSA relation joined - bidirectional: web publishes TSA info, worker publishes worker key"""
@@ -966,6 +1090,11 @@ class ConcourseCharm(CharmBase):
                 # Publish to relation
                 event.relation.data[self.unit]["tsa-host"] = f"{web_ip}:2222"
                 event.relation.data[self.unit]["tsa-public-key"] = tsa_pub_key
+                
+                # Publish version for upgrade coordination
+                installed_version = self._get_installed_concourse_version()
+                if installed_version:
+                    event.relation.data[self.unit]["concourse-version"] = installed_version
                 
                 logger.info(f"Published TSA info: {web_ip}:2222")
                 
@@ -1021,10 +1150,12 @@ class ConcourseCharm(CharmBase):
                 # Get TSA info from relation
                 tsa_host = None
                 tsa_pub_key = None
+                web_version = None
                 
                 for unit in event.relation.units:
                     tsa_host = event.relation.data[unit].get("tsa-host")
                     tsa_pub_key = event.relation.data[unit].get("tsa-public-key")
+                    web_version = event.relation.data[unit].get("concourse-version")
                     if tsa_host and tsa_pub_key:
                         break
                 
@@ -1034,6 +1165,21 @@ class ConcourseCharm(CharmBase):
                     return
                 
                 logger.info(f"Received TSA info: {tsa_host}")
+                
+                # Check if worker version matches web version and upgrade if needed
+                if web_version:
+                    worker_version = self._get_installed_concourse_version()
+                    if worker_version and worker_version != web_version:
+                        logger.info(f"Web version ({web_version}) differs from worker version ({worker_version}), upgrading...")
+                        self.unit.status = MaintenanceStatus(f"Auto-upgrading Concourse CI to {web_version}...")
+                        
+                        # Stop worker before upgrade
+                        self.worker_helper.stop_service()
+                        
+                        # Download and install new version
+                        download_and_install_concourse(self, web_version)
+                        
+                        logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
                 
                 # Write TSA public key
                 tsa_pub_key_path = Path(KEYS_DIR) / "tsa_host_key.pub"

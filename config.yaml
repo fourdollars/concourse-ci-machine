@@ -1,5 +1,5 @@
 options:
-  deployment-mode:
+  mode:
     description: |
       Deployment mode for this unit: 
       - 'auto': Leader runs web, non-leaders run workers (recommended for multi-unit)
@@ -10,9 +10,9 @@ options:
     default: "auto"
     type: string
   
-  concourse-version:
+  version:
     description: |
-      Version of Concourse CI to deploy (e.g., 7.14.3).
+      Concourse CI version to deploy (e.g., 7.14.3).
       Leave empty to use the latest stable version.
     default: ""
     type: string

@@ -159,11 +159,11 @@ juju deploy postgresql --channel 14/stable
 
 # 2. Deploy web server
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm web \
-  --config deployment-mode=web
+  --config mode=web
 
 # 3. Deploy worker with GPU enabled
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # 4. Add GPU to LXD container (if using localhost cloud)

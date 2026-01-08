@@ -18,7 +18,7 @@ juju add-model concourse
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI
-juju deploy concourse-ci-machine concourse-ci --config deployment-mode=all --base ubuntu@24.04
+juju deploy concourse-ci-machine concourse-ci --config mode=all --base ubuntu@24.04
 
 # Integrate with database (uses Juju secrets)
 juju integrate concourse-ci:postgresql postgresql:database
@@ -38,9 +38,6 @@ juju config concourse-ci web-port=80
 
 # Set external URL for proper redirects
 juju config concourse-ci external-url=http://your-domain.com
-
-# Set specific Concourse version
-juju config concourse-ci concourse-version=7.14.3
 
 # Enable debug logging
 juju config concourse-ci log-level=debug
@@ -72,7 +69,7 @@ sudo netfilter-persistent save
 
 ```bash
 # Deploy 3 units (1 web + 2 workers automatically)
-juju deploy concourse-ci-machine concourse-ci -n 3 --config deployment-mode=auto --base ubuntu@24.04
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto --base ubuntu@24.04
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 juju integrate concourse-ci:postgresql postgresql:database
 juju expose concourse-ci
@@ -82,12 +79,12 @@ juju expose concourse-ci
 
 ```bash
 # Deploy web
-juju deploy concourse-ci-machine web --config deployment-mode=web --base ubuntu@24.04
+juju deploy concourse-ci-machine web --config mode=web --base ubuntu@24.04
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 juju integrate web:postgresql postgresql:database
 
 # Deploy workers
-juju deploy concourse-ci-machine worker -n 2 --config deployment-mode=worker --base ubuntu@24.04
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker --base ubuntu@24.04
 
 # Connect workers to web
 juju integrate web:web-tsa worker:worker-tsa
@@ -142,6 +139,6 @@ juju run concourse-ci/0 check-status
 # Restart services
 juju run concourse-ci/0 restart-services
 
-# Update Concourse version
-juju run concourse-ci/0 update-concourse-version version=7.14.3
+# Upgrade Concourse version
+juju run concourse-ci/0 upgrade version=7.14.3
 ```

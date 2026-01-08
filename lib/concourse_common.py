@@ -132,7 +132,7 @@ def create_concourse_user():
 
 def get_concourse_version(config) -> str:
     """Get configured or latest Concourse version"""
-    configured = config.get("concourse-version")
+    configured = config.get("version")
     if configured:
         return configured
     # Fetch latest version from GitHub

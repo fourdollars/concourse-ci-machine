@@ -83,11 +83,11 @@ juju deploy postgresql --channel 14/stable
 
 # Deploy web server
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm web \
-  --config deployment-mode=web
+  --config mode=web
 
 # Deploy GPU worker
 juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
-  --config deployment-mode=worker \
+  --config mode=worker \
   --config enable-gpu=true
 
 # Create relations
