@@ -376,12 +376,14 @@ jobs:
         run: |
           juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.12.1
           juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.12.1 -n 2
+          juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.12.1 --config tag=special-worker
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
         run: |
           juju relate web:postgresql postgresql:database
           juju relate worker:worker-tsa web:web-tsa
+          juju relate worker-with-tag:worker-tsa web:web-tsa
 
       - name: Wait for model to settle
         run: juju-wait -m concourse-ci -t 900
@@ -397,6 +399,7 @@ jobs:
           echo "=== Checking worker units ==="
           juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
           juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju run worker-with-tag/0 systemctl status concourse-worker || echo "Worker not running on tagged unit"
 
       - name: Get admin password
         run: |
@@ -491,12 +494,13 @@ jobs:
           echo "=== Current version on all applications ==="
           juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value.message)"'
           juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value.message)"'
+          juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value.message)"'
           
           echo "=== Fetching latest Concourse version from GitHub ==="
           LATEST_VERSION=$(curl -s https://api.github.com/repos/concourse/concourse/releases | jq -r '.[0].tag_name' | sed 's/^v//')
           echo "Latest version: $LATEST_VERSION"
           
-          echo "=== Upgrading web server (workers should auto-upgrade via TSA relation) ==="
+          echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
           juju run web/leader upgrade version=$LATEST_VERSION
           
           echo "=== Waiting for web upgrade to complete ==="
@@ -511,6 +515,7 @@ jobs:
           echo "=== Verifying all units upgraded ==="
           juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value.message)"'
           juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value.message)"'
+          juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value.message)"'
           
           # Verify web server upgraded
           WEB_VERSION_CHECK=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
@@ -523,13 +528,21 @@ jobs:
           WORKER_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | length')
           WORKER_VERSION_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           
-          echo "Total workers: $WORKER_COUNT, Workers at v$LATEST_VERSION: $WORKER_VERSION_COUNT"
+          echo "Regular workers: $WORKER_COUNT, Upgraded: $WORKER_VERSION_COUNT"
           
           if [ "$WORKER_VERSION_COUNT" -ne "$WORKER_COUNT" ]; then
             echo "❌ Auto-upgrade verification failed: not all workers upgraded"
             exit 1
           fi
-          echo "✅ Web and all workers auto-upgraded to $LATEST_VERSION successfully"
+          
+          # Verify tagged worker auto-upgraded
+          TAGGED_VERSION_CHECK=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
+          if [ "$TAGGED_VERSION_CHECK" -lt 1 ]; then
+            echo "❌ Tagged worker auto-upgrade failed"
+            exit 1
+          fi
+          
+          echo "✅ Web and all workers (including tagged) auto-upgraded to $LATEST_VERSION successfully"
 
       - name: Verify upgraded deployment still works
         run: |
@@ -537,6 +550,28 @@ jobs:
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
           fly -t ci execute -c task.yml
+
+      - name: Test worker tag targeting
+        run: |
+          echo "=== Checking registered workers and their tags ==="
+          export CONCOURSE_URL=$(cat concourse-ip.txt)
+          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
+          fly -t ci workers
+          
+          echo "=== Verifying tagged worker exists ==="
+          TAGGED_WORKER_COUNT=$(fly -t ci workers | grep -c "special-worker" || true)
+          echo "Workers with special-worker tag: $TAGGED_WORKER_COUNT"
+          if [ "$TAGGED_WORKER_COUNT" -lt 1 ]; then
+            echo "❌ No worker found with special-worker tag"
+            exit 1
+          fi
+          echo "✅ Tagged worker verified"
+          
+          echo "=== Executing task on worker with special-worker tag ==="
+          fly -t ci execute -c task.yml --tag special-worker || (echo "❌ Failed to run on tagged worker" && exit 1)
+          
+          echo "✅ Worker tag targeting successful"
 
       - name: Cleanup
         if: always()
