@@ -444,6 +444,23 @@ jobs:
             # add a writable mount (suffix-based test)
             lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
           done
+          
+          # Also mount folders into tagged worker container
+          TAGGED_UNITS=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | keys[]' || true)
+          if [ -z "$TAGGED_UNITS" ]; then echo "No tagged worker units found"; exit 1; fi
+          for UNIT in $TAGGED_UNITS; do
+            MACHINE=$(juju status $UNIT --format=json | jq -r '.applications."worker-with-tag".units["'"$UNIT"'"].machine')
+            CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+            if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
+            echo "Adding mounts to tagged worker $CONTAINER"
+            # remove any existing devices with the same names
+            lxc config device remove $CONTAINER config_test_ro || true
+            lxc config device remove $CONTAINER config_test_rw || true
+            # add a read-only mount
+            lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
+            # add a writable mount (suffix-based test)
+            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
+          done
 
       - name: Create mount verification task
         run: |
