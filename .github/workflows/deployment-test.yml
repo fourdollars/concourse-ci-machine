@@ -88,8 +88,8 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking unit (should run both server and worker) ==="
-          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running (unexpected)"
-          juju run concourse-ci/leader systemctl status concourse-worker || echo "Worker not running (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-worker || echo "Worker not running (unexpected)"
 
       - name: Get admin password
         run: |
@@ -235,10 +235,10 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking leader (should run server) ==="
-          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running on leader (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-server || echo "Server not running on leader (unexpected)"
           
           echo "=== Checking non-leader unit (should run worker) ==="
-          juju run concourse-ci/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju exec --unit concourse-ci/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
 
       - name: Get admin password
         run: |
@@ -398,12 +398,12 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking server unit ==="
-          juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju exec --unit web/leader -- systemctl status concourse-server || echo "Server not running (unexpected)"
 
           echo "=== Checking worker units ==="
-          juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
-          juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
-          juju run worker-with-tag/0 systemctl status concourse-worker || echo "Worker not running on tagged unit"
+          juju exec --unit worker/0 -- systemctl status concourse-worker || echo "Worker not running on unit 0"
+          juju exec --unit worker/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju exec --unit worker-with-tag/0 -- systemctl status concourse-worker || echo "Worker not running on tagged unit"
 
       - name: Get admin password
         run: |
