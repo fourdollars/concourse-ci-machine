@@ -190,7 +190,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-all --destroy-storage --force --no-wait || true
+          yes concourse-all | juju destroy-model concourse-all --destroy-storage --force --no-wait || true
 
   test-auto-mode:
     name: Test mode=auto
@@ -351,7 +351,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-auto --destroy-storage --force --no-wait || true
+          yes concourse-auto | juju destroy-model concourse-auto --destroy-storage --force --no-wait || true
 
   test-web-worker-mode:
     name: Test mode=web+worker (with mounts)
@@ -617,7 +617,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-ci --destroy-storage --force --no-wait || true
+          yes concourse-ci | juju destroy-model concourse-ci --destroy-storage --force --no-wait || true
           rm -rf /tmp/config-test-mount || true
           rm -rf /tmp/config-test-mount-writable || true
 
