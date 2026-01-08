@@ -72,23 +72,39 @@ def download_and_install_concourse(charm, version: str):
             if not tar_file.exists() or tar_file.stat().st_size == 0:
                 raise RuntimeError(f"Downloaded file is empty or missing: {tar_file}")
 
-            # Extract to installation directory, stripping the top-level 'concourse' directory
+            # Extract to a temporary directory first to avoid "text file busy" and symlink issues
             charm.unit.status = MaintenanceStatus(f"Extracting Concourse {version}...")
             try:
                 import shutil
-
+                extract_path = Path(tmpdir) / "extract"
+                extract_path.mkdir()
+                
                 with tarfile.open(tar_file, "r:gz") as tar:
-                    # Extract each member, stripping the first path component
-                    for member in tar.getmembers():
-                        # Skip if path doesn't start with 'concourse/'
-                        if not member.name.startswith("concourse/"):
-                            continue
-                        # Strip 'concourse/' prefix
-                        member.name = member.name[len("concourse/") :]
-                        if member.name:  # Skip if it was just 'concourse/' itself
-                            tar.extract(member, CONCOURSE_INSTALL_DIR)
-            except tarfile.TarError as e:
-                logger.error(f"Failed to extract tarball: {e}")
+                    tar.extractall(path=extract_path)
+                
+                # The tarball contains a 'concourse/' top-level directory
+                src_dir = extract_path / "concourse"
+                if not src_dir.exists():
+                    # Fallback if top-level dir is different or missing
+                    first_dir = next(extract_path.iterdir(), None)
+                    if first_dir and first_dir.is_dir():
+                        src_dir = first_dir
+                    else:
+                        src_dir = extract_path
+                
+                # Move files to CONCOURSE_INSTALL_DIR
+                logger.info(f"Moving files from {src_dir} to {CONCOURSE_INSTALL_DIR}")
+                for item in src_dir.iterdir():
+                    dest = Path(CONCOURSE_INSTALL_DIR) / item.name
+                    # If destination exists, remove it first to avoid issues with symlinks or busy files
+                    if dest.exists():
+                        if dest.is_dir() and not dest.is_symlink():
+                            shutil.rmtree(dest)
+                        else:
+                            dest.unlink()
+                    shutil.move(str(item), str(dest))
+            except (tarfile.TarError, OSError) as e:
+                logger.error(f"Failed to extract or move files: {e}")
                 raise
 
             logger.info(f"Concourse {version} installed successfully")

@@ -21,8 +21,8 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                     MOUNT_OPTIONS="rbind,rw"
                 fi
                 
-                TMP_CONFIG="$BUNDLE/config.json.tmp"
-                jq --arg dest "/srv/$FOLDER_NAME" \
+                TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+                if jq --arg dest "/srv/$FOLDER_NAME" \
                    --arg src "$folder" \
                    --arg opts "$MOUNT_OPTIONS" \
                    '.mounts += [{
@@ -30,14 +30,23 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                        "type": "bind",
                        "source": $src,
                        "options": ($opts | split(","))
-                   }]' "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null
-                
-                if [[ $? -eq 0 ]]; then
+                   }]' "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
                     mv "$TMP_CONFIG" "$BUNDLE/config.json"
+                else
+                    rm -f "$TMP_CONFIG"
                 fi
             fi
         done
     fi
 fi
 
-exec /usr/bin/runc.real "$@"
+# Use bundled runc if available, fallback to system runc
+RUNC_BIN="/opt/concourse/bin/runc.real"
+if [[ ! -x "$RUNC_BIN" ]]; then
+    RUNC_BIN="/usr/bin/runc.real"
+fi
+if [[ ! -x "$RUNC_BIN" ]]; then
+    RUNC_BIN="/usr/bin/runc"
+fi
+
+exec "$RUNC_BIN" "$@"

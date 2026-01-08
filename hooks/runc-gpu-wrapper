@@ -15,12 +15,12 @@ done
 # If bundle found and config exists, inject GPU env vars and folder mounts
 if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
     # Start with GPU env vars injection
-    TMP_CONFIG="$BUNDLE/config.json.tmp"
-    jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
-        "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null
-    
-    if [[ $? -eq 0 ]]; then
+    TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+    if jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
+        "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
         mv "$TMP_CONFIG" "$BUNDLE/config.json"
+    else
+        rm -f "$TMP_CONFIG"
     fi
     
     # Discover and inject all /srv folders
@@ -36,7 +36,8 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                 fi
                 
                 # Inject mount into config.json
-                jq --arg dest "/srv/$FOLDER_NAME" \
+                TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+                if jq --arg dest "/srv/$FOLDER_NAME" \
                    --arg src "$folder" \
                    --arg opts "$MOUNT_OPTIONS" \
                    '.mounts += [{
@@ -44,15 +45,20 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                        "type": "bind",
                        "source": $src,
                        "options": ($opts | split(","))
-                   }]' "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null
-                
-                if [[ $? -eq 0 ]]; then
+                   }]' "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
                     mv "$TMP_CONFIG" "$BUNDLE/config.json"
+                else
+                    rm -f "$TMP_CONFIG"
                 fi
             fi
         done
     fi
 fi
 
-# Call nvidia-container-runtime which will inject GPU devices
-exec /usr/bin/nvidia-container-runtime.real "$@"
+# Use real nvidia-container-runtime if available
+NVIDIA_RUNTIME="/usr/bin/nvidia-container-runtime.real"
+if [[ ! -x "$NVIDIA_RUNTIME" ]]; then
+    NVIDIA_RUNTIME="/usr/bin/nvidia-container-runtime"
+fi
+
+exec "$NVIDIA_RUNTIME" "$@"
