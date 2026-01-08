@@ -59,6 +59,13 @@ jobs:
           lxc network set lxdbr0 ipv6.address none
           lxc network set lxdbr0 ipv6.dhcp false
           lxc network set lxdbr0 ipv6.nat false
+          
+      - name: Configure LXD for nested containers
+        run: |
+          # Enable nested containers in LXD profile for Juju
+          lxc profile set default security.nesting=true
+          lxc profile set default security.syscalls.intercept.mknod=true
+          lxc profile set default security.syscalls.intercept.setxattr=true
 
       - name: Install Juju
         run: |
@@ -88,8 +95,8 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking unit (should run both server and worker) ==="
-          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running (unexpected)"
-          juju run concourse-ci/leader systemctl status concourse-worker || echo "Worker not running (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-worker || echo "Worker not running (unexpected)"
 
       - name: Get admin password
         run: |
@@ -151,7 +158,7 @@ jobs:
           echo "Latest version: $LATEST_VERSION"
           
           echo "=== Upgrading to $LATEST_VERSION ==="
-          juju run concourse-ci/leader upgrade version=$LATEST_VERSION
+          juju run concourse-ci/leader upgrade version=$LATEST_VERSION --wait=5m
           
           echo "=== Waiting for upgrade to complete ==="
           sleep 30
@@ -178,7 +185,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-all --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-all --destroy-storage --force --no-wait || true
 
   test-auto-mode:
     name: Test mode=auto
@@ -204,6 +211,13 @@ jobs:
           lxc network set lxdbr0 ipv6.address none
           lxc network set lxdbr0 ipv6.dhcp false
           lxc network set lxdbr0 ipv6.nat false
+          
+      - name: Configure LXD for nested containers
+        run: |
+          # Enable nested containers in LXD profile for Juju
+          lxc profile set default security.nesting=true
+          lxc profile set default security.syscalls.intercept.mknod=true
+          lxc profile set default security.syscalls.intercept.setxattr=true
 
       - name: Install Juju
         run: |
@@ -233,14 +247,14 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking leader (should run server) ==="
-          juju run concourse-ci/leader systemctl status concourse-server || echo "Server not running on leader (unexpected)"
+          juju exec --unit concourse-ci/leader -- systemctl status concourse-server || echo "Server not running on leader (unexpected)"
           
           echo "=== Checking non-leader unit (should run worker) ==="
-          juju run concourse-ci/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju exec --unit concourse-ci/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
 
       - name: Get admin password
         run: |
-          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run concourse-ci/leader get-admin-password --wait=5m | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse IP
@@ -298,7 +312,7 @@ jobs:
           echo "Latest version: $LATEST_VERSION"
           
           echo "=== Upgrading leader (workers should auto-upgrade) ==="
-          juju run concourse-ci/leader upgrade version=$LATEST_VERSION
+          juju run concourse-ci/leader upgrade version=$LATEST_VERSION --wait=5m
           
           echo "=== Waiting for leader upgrade to complete ==="
           sleep 30
@@ -334,7 +348,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-auto --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-auto --destroy-storage --force --no-wait || true
 
   test-web-worker-mode:
     name: Test mode=web+worker (with mounts)
@@ -360,6 +374,13 @@ jobs:
           lxc network set lxdbr0 ipv6.address none
           lxc network set lxdbr0 ipv6.dhcp false
           lxc network set lxdbr0 ipv6.nat false
+          
+      - name: Configure LXD for nested containers
+        run: |
+          # Enable nested containers in LXD profile for Juju
+          lxc profile set default security.nesting=true
+          lxc profile set default security.syscalls.intercept.mknod=true
+          lxc profile set default security.syscalls.intercept.setxattr=true
 
       - name: Install Juju
         run: |
@@ -394,16 +415,16 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Checking server unit ==="
-          juju run web/leader systemctl status concourse-server || echo "Server not running (unexpected)"
+          juju exec --unit web/leader -- systemctl status concourse-server || echo "Server not running (unexpected)"
 
           echo "=== Checking worker units ==="
-          juju run worker/0 systemctl status concourse-worker || echo "Worker not running on unit 0"
-          juju run worker/1 systemctl status concourse-worker || echo "Worker not running on unit 1"
-          juju run worker-with-tag/0 systemctl status concourse-worker || echo "Worker not running on tagged unit"
+          juju exec --unit worker/0 -- systemctl status concourse-worker || echo "Worker not running on unit 0"
+          juju exec --unit worker/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
+          juju exec --unit worker-with-tag/0 -- systemctl status concourse-worker || echo "Worker not running on tagged unit"
 
       - name: Get admin password
         run: |
-          juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
+          juju run web/leader get-admin-password --wait=5m | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
 
       - name: Get Concourse server IP
@@ -518,7 +539,7 @@ jobs:
           echo "Latest version: $LATEST_VERSION"
           
           echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
-          juju run web/leader upgrade version=$LATEST_VERSION
+          juju run web/leader upgrade version=$LATEST_VERSION --wait=5m
           
           echo "=== Waiting for web upgrade to complete ==="
           sleep 30
@@ -593,6 +614,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          juju destroy-model concourse-ci --destroy-storage --force --no-wait -y || true
+          juju destroy-model concourse-ci --destroy-storage --force --no-wait || true
           rm -rf /tmp/config-test-mount || true
           rm -rf /tmp/config-test-mount-writable || true
