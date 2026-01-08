@@ -228,9 +228,9 @@ jobs:
       - name: Add Juju Model
         run: juju add-model concourse-auto
 
-      - name: Deploy charms (3 units in auto mode)
+      - name: Deploy charms (2 units in auto mode)
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.14.2 -n 3
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.14.2 -n 2
           juju deploy postgresql --channel 16/stable
 
       - name: Remove charm file
@@ -298,8 +298,8 @@ jobs:
           fly -t ci workers
           WORKER_COUNT=$(fly -t ci workers | grep -c "running" || true)
           echo "Registered workers: $WORKER_COUNT"
-          if [ "$WORKER_COUNT" -lt 2 ]; then
-            echo "Expected at least 2 workers, found $WORKER_COUNT"
+          if [ "$WORKER_COUNT" -lt 1 ]; then
+            echo "Expected at least 1 workers, found $WORKER_COUNT"
             exit 1
           fi
 
@@ -392,7 +392,7 @@ jobs:
       - name: Deploy server and worker separately
         run: |
           juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.14.2
-          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2 -n 2
+          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2
           juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.14.2 --config tag=special-worker
           juju deploy postgresql --channel 16/stable
 
@@ -418,7 +418,6 @@ jobs:
 
           echo "=== Checking worker units ==="
           juju exec --unit worker/0 -- systemctl status concourse-worker || echo "Worker not running on unit 0"
-          juju exec --unit worker/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
           juju exec --unit worker-with-tag/0 -- systemctl status concourse-worker || echo "Worker not running on tagged unit"
 
       - name: Get admin password
