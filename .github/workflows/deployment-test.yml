@@ -73,7 +73,7 @@ jobs:
 
       - name: Deploy charms
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=all --config version=7.14.2
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=all --config version=7.12.1
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -141,13 +141,17 @@ jobs:
             exit 1
           fi
 
-      - name: Test version upgrade (7.14.2 → 7.14.3)
+      - name: Test version upgrade (7.12.1 → latest)
         run: |
           echo "=== Current version ==="
           juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message'
           
-          echo "=== Upgrading to 7.14.3 ==="
-          juju run concourse-ci/leader upgrade version=7.14.3
+          echo "=== Fetching latest Concourse version from GitHub ==="
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/concourse/concourse/releases | jq -r '.[0].tag_name' | sed 's/^v//')
+          echo "Latest version: $LATEST_VERSION"
+          
+          echo "=== Upgrading to $LATEST_VERSION ==="
+          juju run concourse-ci/leader upgrade version=$LATEST_VERSION
           
           echo "=== Waiting for upgrade to complete ==="
           sleep 30
@@ -157,12 +161,12 @@ jobs:
           juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message'
           
           # Verify version in status message
-          VERSION_CHECK=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message' | grep -c "v7.14.3" || true)
+          VERSION_CHECK=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           if [ "$VERSION_CHECK" -lt 1 ]; then
-            echo "Upgrade verification failed: version not updated to 7.14.3"
+            echo "Upgrade verification failed: version not updated to $LATEST_VERSION"
             exit 1
           fi
-          echo "✅ Upgrade to 7.14.3 successful"
+          echo "✅ Upgrade to $LATEST_VERSION successful"
 
       - name: Verify upgraded deployment still works
         run: |
@@ -214,7 +218,7 @@ jobs:
 
       - name: Deploy charms (3 units in auto mode)
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.14.2 -n 3
+          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.12.1 -n 3
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -284,13 +288,17 @@ jobs:
             exit 1
           fi
 
-      - name: Test version upgrade with auto worker upgrade (7.14.2 → 7.14.3)
+      - name: Test version upgrade with auto worker upgrade (7.12.1 → latest)
         run: |
           echo "=== Current version on all units ==="
           juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | "\(.key): \(.value.message)"'
           
-          echo "=== Upgrading leader to 7.14.3 (workers should auto-upgrade) ==="
-          juju run concourse-ci/leader upgrade version=7.14.3
+          echo "=== Fetching latest Concourse version from GitHub ==="
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/concourse/concourse/releases | jq -r '.[0].tag_name' | sed 's/^v//')
+          echo "Latest version: $LATEST_VERSION"
+          
+          echo "=== Upgrading leader (workers should auto-upgrade) ==="
+          juju run concourse-ci/leader upgrade version=$LATEST_VERSION
           
           echo "=== Waiting for leader upgrade to complete ==="
           sleep 30
@@ -306,15 +314,15 @@ jobs:
           
           # Verify all units show the new version
           UNIT_COUNT=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | length')
-          VERSION_COUNT=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message' | grep -c "v7.14.3" || true)
+          VERSION_COUNT=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           
-          echo "Total units: $UNIT_COUNT, Units at v7.14.3: $VERSION_COUNT"
+          echo "Total units: $UNIT_COUNT, Units at v$LATEST_VERSION: $VERSION_COUNT"
           
           if [ "$VERSION_COUNT" -ne "$UNIT_COUNT" ]; then
             echo "❌ Auto-upgrade verification failed: not all workers upgraded"
             exit 1
           fi
-          echo "✅ All units auto-upgraded to 7.14.3 successfully"
+          echo "✅ All units auto-upgraded to $LATEST_VERSION successfully"
 
       - name: Verify upgraded deployment still works
         run: |
@@ -366,9 +374,9 @@ jobs:
 
       - name: Deploy server and worker separately
         run: |
-          juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.14.2
-          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2 -n 2
-          juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.14.2 --config tag=special-worker
+          juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.12.1
+          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.12.1 -n 2
+          juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.12.1 --config tag=special-worker
           juju deploy postgresql --channel 16/stable
 
       - name: Relate charms
@@ -498,15 +506,19 @@ jobs:
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p $CONCOURSE_PASSWORD
           fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
 
-      - name: Test version upgrade across separate apps (7.14.2 → 7.14.3)
+      - name: Test version upgrade across separate apps (7.12.1 → latest)
         run: |
           echo "=== Current version on all applications ==="
           juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value.message)"'
           juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value.message)"'
           juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value.message)"'
           
-          echo "=== Upgrading web server to 7.14.3 (all workers should auto-upgrade via TSA relation) ==="
-          juju run web/leader upgrade version=7.14.3
+          echo "=== Fetching latest Concourse version from GitHub ==="
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/concourse/concourse/releases | jq -r '.[0].tag_name' | sed 's/^v//')
+          echo "Latest version: $LATEST_VERSION"
+          
+          echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
+          juju run web/leader upgrade version=$LATEST_VERSION
           
           echo "=== Waiting for web upgrade to complete ==="
           sleep 30
@@ -523,7 +535,7 @@ jobs:
           juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value.message)"'
           
           # Verify web server upgraded
-          WEB_VERSION_CHECK=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[].value.message' | grep -c "v7.14.3" || true)
+          WEB_VERSION_CHECK=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           if [ "$WEB_VERSION_CHECK" -lt 1 ]; then
             echo "❌ Web server upgrade failed"
             exit 1
@@ -531,7 +543,7 @@ jobs:
           
           # Verify all workers auto-upgraded
           WORKER_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | length')
-          WORKER_VERSION_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | to_entries[].value.message' | grep -c "v7.14.3" || true)
+          WORKER_VERSION_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           
           echo "Regular workers: $WORKER_COUNT, Upgraded: $WORKER_VERSION_COUNT"
           
@@ -541,13 +553,13 @@ jobs:
           fi
           
           # Verify tagged worker auto-upgraded
-          TAGGED_VERSION_CHECK=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[].value.message' | grep -c "v7.14.3" || true)
+          TAGGED_VERSION_CHECK=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[].value.message' | grep -c "v$LATEST_VERSION" || true)
           if [ "$TAGGED_VERSION_CHECK" -lt 1 ]; then
             echo "❌ Tagged worker auto-upgrade failed"
             exit 1
           fi
           
-          echo "✅ Web and all workers (including tagged) auto-upgraded to 7.14.3 successfully"
+          echo "✅ Web and all workers (including tagged) auto-upgraded to $LATEST_VERSION successfully"
 
       - name: Verify upgraded deployment still works
         run: |
