@@ -635,6 +635,12 @@ class ConcourseCharm(CharmBase):
                     # Download and install new version
                     download_and_install_concourse(self, web_version)
                     
+                    # Re-install wrappers after upgrade
+                    if self.config.get("enable-gpu", False):
+                        self.worker_helper.configure_containerd_for_gpu()
+                    else:
+                        self.worker_helper.install_folder_mount_wrapper()
+                    
                     logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
 
             if tsa_pub_key and web_ip:
@@ -1022,6 +1028,14 @@ class ConcourseCharm(CharmBase):
                 self.worker_helper.stop_service()
             
             download_and_install_concourse(self, version)
+            
+            # Re-install wrappers after upgrade if we are a worker
+            if self._should_run_worker():
+                if self.config.get("enable-gpu", False):
+                    self.worker_helper.configure_containerd_for_gpu()
+                else:
+                    self.worker_helper.install_folder_mount_wrapper()
+            
             self._restart_concourse_service()
             
             # If web server, publish version to relations to trigger worker upgrades
@@ -1059,10 +1073,13 @@ class ConcourseCharm(CharmBase):
                 logger.warning("Could not detect installed version to publish")
                 return
             
-            tsa_relation = self.model.get_relation("web-tsa")
-            if tsa_relation:
-                tsa_relation.data[self.unit]["concourse-version"] = installed_version
-                logger.info(f"Published version {installed_version} to TSA relation")
+            # Handle multiple relations on web-tsa endpoint
+            if "web-tsa" in self.model.relations:
+                for relation in self.model.relations["web-tsa"]:
+                    relation.data[self.unit]["concourse-version"] = installed_version
+                logger.info(f"Published version {installed_version} to all TSA relations")
+            else:
+                logger.info("No TSA relations found to publish version to")
         except Exception as e:
             logger.error(f"Failed to publish version to TSA relations: {e}", exc_info=True)
     
@@ -1178,6 +1195,12 @@ class ConcourseCharm(CharmBase):
                         
                         # Download and install new version
                         download_and_install_concourse(self, web_version)
+                        
+                        # Re-install wrappers after upgrade
+                        if self.config.get("enable-gpu", False):
+                            self.worker_helper.configure_containerd_for_gpu()
+                        else:
+                            self.worker_helper.install_folder_mount_wrapper()
                         
                         logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
                 

@@ -217,13 +217,17 @@ juju config concourse-ci external-url=https://ci.example.com
 
 ### Upgrading Concourse Version
 
-Use the `upgrade` action to change Concourse CI version:
+Use the `upgrade` action to change Concourse CI version (update the `version` configuration first to ensure the change persists across charm refreshes):
 
 ```bash
-# Upgrade to specific version (automatically upgrades all workers)
+# Set version configuration first (essential for persistence)
+juju config concourse-ci version=7.14.3
+
+# Trigger the upgrade action (automatically upgrades all workers)
 juju run concourse-ci/leader upgrade version=7.14.3
 
-# Upgrade/downgrade is supported bidirectionally
+# Downgrade is also supported (update config then run action)
+juju config concourse-ci version=7.12.1
 juju run concourse-ci/leader upgrade version=7.12.1
 ```
 

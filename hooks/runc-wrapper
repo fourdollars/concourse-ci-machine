@@ -22,6 +22,9 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                 fi
                 
                 TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+                # Preserve original ownership and permissions
+                chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+                chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
                 if jq --arg dest "/srv/$FOLDER_NAME" \
                    --arg src "$folder" \
                    --arg opts "$MOUNT_OPTIONS" \

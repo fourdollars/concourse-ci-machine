@@ -149,6 +149,9 @@ jobs:
           UPGRADE_VERSION="7.14.3"
           echo "Upgrade version: $UPGRADE_VERSION"
           
+          echo "=== Setting version configuration for persistence ==="
+          juju config concourse-ci version=$UPGRADE_VERSION
+          
           echo "=== Upgrading to $UPGRADE_VERSION ==="
           juju run concourse-ci/leader upgrade version=$UPGRADE_VERSION
           
@@ -294,6 +297,9 @@ jobs:
           
           UPGRADE_VERSION="7.14.3"
           echo "Upgrade version: $UPGRADE_VERSION"
+          
+          echo "=== Setting version configuration for persistence ==="
+          juju config concourse-ci version=$UPGRADE_VERSION
           
           echo "=== Upgrading leader (workers should auto-upgrade) ==="
           juju run concourse-ci/leader upgrade version=$UPGRADE_VERSION
@@ -513,6 +519,11 @@ jobs:
           
           UPGRADE_VERSION="7.14.3"
           echo "Upgrade version: $UPGRADE_VERSION"
+          
+          echo "=== Setting version configuration for persistence on all applications ==="
+          juju config web version=$UPGRADE_VERSION
+          juju config worker version=$UPGRADE_VERSION
+          juju config worker-with-tag version=$UPGRADE_VERSION
           
           echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
           juju run web/leader upgrade version=$UPGRADE_VERSION

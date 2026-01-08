@@ -16,6 +16,9 @@ done
 if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
     # Start with GPU env vars injection
     TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+    # Preserve original ownership and permissions
+    chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+    chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
     if jq '.process.env += ["NVIDIA_VISIBLE_DEVICES=all", "NVIDIA_DRIVER_CAPABILITIES=all"]' \
         "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
         mv "$TMP_CONFIG" "$BUNDLE/config.json"
@@ -37,6 +40,9 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                 
                 # Inject mount into config.json
                 TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+                # Preserve original ownership and permissions
+                chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+                chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
                 if jq --arg dest "/srv/$FOLDER_NAME" \
                    --arg src "$folder" \
                    --arg opts "$MOUNT_OPTIONS" \
