@@ -127,6 +127,22 @@ juju refresh concourse-ci --path=./concourse-ci-machine_amd64.charm
 juju refresh concourse-ci
 ```
 
+## Removing Applications
+
+```bash
+# Remove application and destroy storage
+juju remove-application concourse-ci --destroy-storage --no-prompt
+
+# Remove without destroying storage (storage will be detached and preserved)
+juju remove-application concourse-ci
+
+# Clean up orphaned storage later if needed
+juju storage  # List all storage
+juju remove-storage concourse-data/14 --force  # Remove specific detached storage
+```
+
+**Note:** By default, `juju remove-application` detaches storage but preserves it. Use `--destroy-storage` to permanently delete storage volumes when removing an application.
+
 ## Useful Actions
 
 ```bash

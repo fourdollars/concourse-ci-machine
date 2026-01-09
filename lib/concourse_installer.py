@@ -39,6 +39,7 @@ def download_and_install_concourse(charm, version: str):
     """Download and install Concourse binaries"""
     import urllib.request
     import tarfile
+    import time
 
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
     logger.info(f"Downloading Concourse CI {version} from {url}")
@@ -47,8 +48,10 @@ def download_and_install_concourse(charm, version: str):
         with tempfile.TemporaryDirectory() as tmpdir:
             tar_file = Path(tmpdir) / "concourse.tar.gz"
 
-            # Download with progress tracking
+            # Download with progress tracking and retry logic
             last_pct = [0]  # Use list to allow mutation in nested function
+            max_retries = 3
+            retry_delay = 5  # seconds
 
             def download_progress(block_num, block_size, total_size):
                 downloaded = block_num * block_size
@@ -62,15 +65,35 @@ def download_and_install_concourse(charm, version: str):
                         logger.debug(f"Download progress: {pct}%")
                         last_pct[0] = pct
 
-            try:
-                urllib.request.urlretrieve(url, tar_file, download_progress)
-            except Exception as e:
-                logger.error(f"Failed to download from {url}: {e}")
-                raise
-
-            # Verify file exists and has content
-            if not tar_file.exists() or tar_file.stat().st_size == 0:
-                raise RuntimeError(f"Downloaded file is empty or missing: {tar_file}")
+            # Retry download on failure
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        logger.info(f"Retrying download (attempt {attempt + 1}/{max_retries})...")
+                        charm.unit.status = MaintenanceStatus(
+                            f"Retrying download (attempt {attempt + 1}/{max_retries})..."
+                        )
+                        time.sleep(retry_delay * attempt)  # Exponential backoff
+                        last_pct[0] = 0  # Reset progress
+                    
+                    urllib.request.urlretrieve(url, tar_file, download_progress)
+                    
+                    # Verify download completed successfully
+                    if not tar_file.exists() or tar_file.stat().st_size == 0:
+                        raise RuntimeError(f"Downloaded file is empty or missing: {tar_file}")
+                    
+                    logger.info(f"Download completed successfully ({tar_file.stat().st_size} bytes)")
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    logger.warning(f"Download attempt {attempt + 1} failed: {e}")
+                    if attempt == max_retries - 1:
+                        # Last attempt failed
+                        logger.error(f"Failed to download from {url} after {max_retries} attempts: {e}")
+                        raise
+                    # Clean up partial download before retry
+                    if tar_file.exists():
+                        tar_file.unlink()
 
             # Extract to a temporary directory first to avoid "text file busy" and symlink issues
             charm.unit.status = MaintenanceStatus(f"Extracting Concourse {version}...")
