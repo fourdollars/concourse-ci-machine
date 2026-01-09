@@ -647,7 +647,7 @@ jobs:
     name: Cleanup artifacts
     runs-on: ubuntu-latest
     needs: [test-all-mode, test-auto-mode, test-web-worker-mode, publish-charm]
-    if: always()
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
       - name: Delete charm artifact
         run: |
