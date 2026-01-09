@@ -1,42 +1,80 @@
 name: concourse-ci-machine
-display-name: Concourse CI
-summary: A Juju charm for Concourse CI deployment and management
+display-name: Concourse CI Machine
+summary: Machine charm for Concourse CI - modern continuous integration and delivery system
 description: |
-  This charm provides automated deployment, configuration, and lifecycle management
-  of Concourse CI on Juju infrastructure. Features include PostgreSQL 16+ integration
-  with Juju secrets support, dynamic port configuration with privileged port support,
-  automatic external-URL detection, and systemd-based service management with operational
-  actions for common tasks. Optimized for Ubuntu 24.04 LTS.
+  **Work in Progress** - A Juju machine charm for deploying Concourse CI, a modern, 
+  scalable continuous integration and delivery system. Supports flexible deployment 
+  patterns including single-unit all-in-one, multi-unit with automatic role assignment, 
+  and dedicated web/worker configurations.
+  
+  Key Features:
+  - Flexible deployment modes (auto, all, web, worker)
+  - Fully automated key distribution via peer relations - zero manual setup
+  - PostgreSQL 16+ integration with Juju secrets for secure credential management
+  - Dynamic port configuration with privileged port support (CAP_NET_BIND_SERVICE)
+  - Containerd runtime with LXD-compatible configuration
+  - GPU support for ML/AI workloads with NVIDIA drivers
+  - Automatic dataset and folder mounting from /srv
+  - Vault integration for credential management
+  - Prometheus metrics endpoint for monitoring
+  - Automatic version detection and upgrades
+  - Optimized for Ubuntu 24.04 LTS
+  
+  This is a machine charm for bare metal, VMs, and LXD deployments. For Kubernetes 
+  deployments, use the concourse-web and concourse-worker charms.
+
+maintainers:
+  - Shih-Yuan Lee (FourDollars) <sylee@canonical.com>
 
 tags:
-  - ci-cd
+  - ai
   - automation
+  - ci-cd
+  - continuous-delivery
+  - continuous-integration
+  - cuda
   - devops
+  - gpu
+  - machine-learning
+  - ml
+  - nvidia
+
+links:
+  documentation: https://fourdollars.github.io/concourse-ci-machine
+  issues: https://github.com/fourdollars/concourse-ci-machine/issues
+  source: https://github.com/fourdollars/concourse-ci-machine
+  website: https://fourdollars.github.io/concourse-ci-machine
 
 provides:
-  # For potential subordinate charms (monitoring, logging, etc.)
   monitoring:
     interface: monitoring
+    description: Prometheus metrics endpoint for monitoring integration
   
-  # TSA (web) provides connection info to workers
   web-tsa:
     interface: concourse-tsa
+    description: TSA endpoint for worker connections (web server provides this)
 
 requires:
   postgresql:
     interface: postgresql_client
     limit: 1
-    description: PostgreSQL 16+ database backend for Concourse (uses Juju secrets for credentials)
+    description: PostgreSQL 16+ database backend for web server (uses Juju secrets)
   
-  # Worker connects to TSA (web)
   worker-tsa:
     interface: concourse-tsa
+    description: TSA endpoint for worker to connect to web server
 
 peers:
   concourse-peer:
     interface: concourse-peer
+    description: Peer relation for sharing keys and configuration between units
 
 storage:
   concourse-data:
     type: filesystem
+    description: Persistent storage for Concourse worker work directory and volumes
     location: /var/lib/concourse
+    minimum-size: 10G
+
+assumes:
+  - juju >= 3.1
