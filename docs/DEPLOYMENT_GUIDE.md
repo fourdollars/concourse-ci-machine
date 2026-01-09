@@ -127,6 +127,22 @@ juju refresh concourse-ci --path=./concourse-ci-machine_amd64.charm
 juju refresh concourse-ci
 ```
 
+### Storage Constraint Issues
+
+If you encounter an error like `validating storage constraints: charm ... minimum storage size is 10 GB, 1.0 GB specified`, it means your existing deployment has a recorded storage size smaller than what the new charm requires (10GB).
+
+To resolve this, explicitly specify the storage configuration during refresh:
+
+```bash
+# Option 1: Use the rootfs pool (works well for LXD/localhost)
+juju refresh concourse-ci --channel latest/edge --storage concourse-data=rootfs
+
+# Option 2: Explicitly update the size constraint
+juju refresh concourse-ci --channel latest/edge --storage concourse-data=10G
+```
+
+This tells Juju to update the application's storage constraints to match the new charm's requirements.
+
 ## Removing Applications
 
 ```bash
