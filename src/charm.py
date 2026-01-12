@@ -214,20 +214,83 @@ class ConcourseCharm(CharmBase):
         return password
 
     def _on_install(self, event):
-        """Handle install event"""
+        """Handle install event with shared storage support (T026-T028, T034)"""
         try:
             self.unit.status = MaintenanceStatus("Installing Concourse CI...")
-            logger.info(
-                f"Starting Concourse installation (mode: {self._get_deployment_mode()})"
-            )
+            deployment_mode = self._get_deployment_mode()
+            logger.info(f"Starting Concourse installation (mode: {deployment_mode})")
 
             # Common setup
             ensure_directories()
             create_concourse_user()
-
-            # Download and install Concourse
+            
+            # Get desired version
             version = get_concourse_version(self.config)
-            download_and_install_concourse(self, version)
+            
+            # Initialize shared storage based on role (T026)
+            storage_coordinator = None
+            if self._should_run_web():
+                # Web/leader initializes shared storage (T027)
+                logger.info("Web/leader unit: initializing shared storage")
+                storage_coordinator = self.web_helper.initialize_shared_storage()
+                
+                if storage_coordinator:
+                    # Download binaries with shared storage support
+                    self.unit.status = MaintenanceStatus(
+                        f"Downloading Concourse v{version}..."  # T034
+                    )
+                    from concourse_installer import download_and_install_concourse_with_storage
+                    download_and_install_concourse_with_storage(
+                        self, version, storage_coordinator
+                    )
+                    self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                else:
+                    # Fallback to local installation
+                    logger.info("No shared storage, using local installation")
+                    download_and_install_concourse(self, version)
+                    
+            elif self._should_run_worker():
+                # Worker initializes shared storage and waits (T028)
+                logger.info("Worker unit: initializing shared storage")
+                storage_coordinator = self.worker_helper.initialize_shared_storage()
+                
+                if storage_coordinator:
+                    # Check if binaries exist, otherwise wait for web/leader
+                    self.unit.status = MaintenanceStatus(
+                        f"Waiting for binaries v{version}..."  # T034
+                    )
+                    from concourse_installer import (
+                        download_and_install_concourse_with_storage,
+                        detect_existing_binaries,
+                    )
+                    
+                    existing = detect_existing_binaries(storage_coordinator, version)
+                    if not existing:
+                        # Wait for web/leader to download
+                        logger.info(f"Waiting for web/leader to download v{version}")
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                    else:
+                        logger.info(f"Binaries v{version} already available")
+                    
+                    self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                else:
+                    # Fallback to local installation
+                    logger.info("No shared storage, using local installation")
+                    download_and_install_concourse(self, version)
+            else:
+                # "both" mode: treat as web/leader
+                storage_coordinator = self.web_helper.initialize_shared_storage()
+                if storage_coordinator:
+                    from concourse_installer import download_and_install_concourse_with_storage
+                    self.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
+                    download_and_install_concourse_with_storage(
+                        self, version, storage_coordinator
+                    )
+                    self.unit.status = MaintenanceStatus("Binaries ready")
+                else:
+                    download_and_install_concourse(self, version)
 
             # Generate keys
             generate_keys()
@@ -235,7 +298,6 @@ class ConcourseCharm(CharmBase):
             # Create /etc/default/concourse
             Path("/etc/default/concourse").touch()
             import os
-
             os.chmod("/etc/default/concourse", 0o644)
 
             # Setup services based on role
