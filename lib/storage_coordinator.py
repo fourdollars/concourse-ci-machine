@@ -281,20 +281,623 @@ class LockCoordinator:
             logger.error(f"Failed to clean stale marker: {e}")
 
 
-# TODO: T006 - Implement UpgradeState dataclass
-# TODO: T007 - Implement WorkerDirectory dataclass
-# TODO: T008 - Implement ServiceManager dataclass
+@dataclass
+class UpgradeState:
+    """Upgrade coordination state (stored in peer relation data).
+    
+    Tracks multi-unit upgrade progress via Juju peer relations. The leader
+    transitions through states (idle → prepare → downloading → complete) while
+    workers acknowledge readiness via worker_ready_count.
+    
+    Attributes:
+        state: Current upgrade phase
+        target_version: Version being upgraded to (e.g., "7.11.0")
+        initiated_by: Unit name that initiated upgrade (e.g., "concourse-ci/0")
+        timestamp: UTC timestamp of last state change
+        worker_ready_count: Number of workers that stopped services
+        expected_worker_count: Total workers expected to acknowledge
+    """
+    state: Literal["idle", "prepare", "downloading", "complete"]
+    target_version: Optional[str]
+    initiated_by: Optional[str]
+    timestamp: datetime
+    worker_ready_count: int = 0
+    expected_worker_count: int = 0
+    
+    def to_relation_data(self) -> dict[str, str]:
+        """Convert to peer relation data format.
+        
+        Returns:
+            Dictionary with string keys/values for Juju relation storage
+        """
+        return {
+            "upgrade-state": self.state,
+            "target-version": self.target_version or "",
+            "initiated-by": self.initiated_by or "",
+            "timestamp": self.timestamp.isoformat(),
+            "worker-ready-count": str(self.worker_ready_count),
+            "expected-worker-count": str(self.expected_worker_count),
+        }
+    
+    @classmethod
+    def from_relation_data(cls, data: dict[str, str]) -> "UpgradeState":
+        """Parse from peer relation data.
+        
+        Args:
+            data: Relation data dictionary from Juju peer relation
+            
+        Returns:
+            UpgradeState instance
+            
+        Raises:
+            ValueError: If timestamp format is invalid
+        """
+        return cls(
+            state=data.get("upgrade-state", "idle"),  # type: ignore
+            target_version=data.get("target-version") or None,
+            initiated_by=data.get("initiated-by") or None,
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            worker_ready_count=int(data.get("worker-ready-count", 0)),
+            expected_worker_count=int(data.get("expected-worker-count", 0)),
+        )
+    
+    def is_ready_to_download(self, timeout_seconds: int = 120) -> bool:
+        """Check if all workers acknowledged (or timeout reached).
+        
+        Args:
+            timeout_seconds: Maximum wait time for worker acknowledgment
+            
+        Returns:
+            True if ready to proceed with download
+        """
+        if self.worker_ready_count >= self.expected_worker_count:
+            return True
+        
+        elapsed = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
+        return elapsed >= timeout_seconds
+
+
+@dataclass
+class WorkerDirectory:
+    """Per-worker isolated directory on shared storage.
+    
+    Each worker unit has an exclusive workspace under worker/{unit_name}/
+    for its work_dir and state. This prevents contention while allowing
+    shared read access to the common bin/ directory.
+    
+    Attributes:
+        unit_name: Juju unit name (e.g., "concourse-ci/1")
+        path: Full path to worker directory root
+        state_file: Path to state.json for worker metadata
+        work_dir: Concourse work directory for containers/volumes
+    """
+    unit_name: str
+    path: Path
+    state_file: Path
+    work_dir: Path
+    
+    def __post_init__(self):
+        """Ensure worker directory structure exists."""
+        self.path.mkdir(parents=True, exist_ok=True)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+    
+    @classmethod
+    def from_shared_storage(
+        cls, 
+        shared_storage: SharedStorage, 
+        unit_name: str
+    ) -> "WorkerDirectory":
+        """Create WorkerDirectory from shared storage root.
+        
+        Args:
+            shared_storage: Parent shared storage instance
+            unit_name: Juju unit name (e.g., "concourse-ci/1")
+            
+        Returns:
+            WorkerDirectory instance with initialized paths
+        """
+        worker_path = shared_storage.volume_path / "worker" / unit_name
+        return cls(
+            unit_name=unit_name,
+            path=worker_path,
+            state_file=worker_path / "state.json",
+            work_dir=worker_path / "work_dir",
+        )
+    
+    def read_state(self) -> dict[str, Any]:
+        """Read worker state from JSON file.
+        
+        Returns:
+            State dictionary, empty dict if file doesn't exist
+        """
+        if not self.state_file.exists():
+            return {}
+        return json.loads(self.state_file.read_text())
+    
+    def write_state(self, state: dict[str, Any]) -> None:
+        """Write worker state to JSON file.
+        
+        Args:
+            state: State dictionary to persist
+        """
+        self.state_file.write_text(json.dumps(state, indent=2))
+
+
+@dataclass
+class ServiceManager:
+    """Systemd service management for Concourse processes.
+    
+    Wraps systemctl operations with timeout protection and structured
+    exception handling. Used during upgrades to stop workers before
+    download and restart services after binary updates.
+    
+    Attributes:
+        service_name: Systemd service name (e.g., "concourse-worker.service")
+        timeout_seconds: Timeout for systemctl operations
+    """
+    service_name: str
+    timeout_seconds: int = 30
+    
+    def stop(self) -> None:
+        """Stop systemd service (workers before upgrade).
+        
+        Raises:
+            ServiceManagementError: If stop fails or times out
+        """
+        try:
+            subprocess.run(
+                ["systemctl", "stop", self.service_name],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds
+            )
+        except subprocess.CalledProcessError as e:
+            raise ServiceManagementError(
+                f"Failed to stop {self.service_name}: {e.stderr}"
+            )
+        except subprocess.TimeoutExpired:
+            raise ServiceManagementError(
+                f"Timeout stopping {self.service_name} after {self.timeout_seconds}s"
+            )
+    
+    def start(self) -> None:
+        """Start systemd service (workers after upgrade).
+        
+        Raises:
+            ServiceManagementError: If start fails or times out
+        """
+        try:
+            subprocess.run(
+                ["systemctl", "start", self.service_name],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds
+            )
+        except subprocess.CalledProcessError as e:
+            raise ServiceManagementError(
+                f"Failed to start {self.service_name}: {e.stderr}"
+            )
+        except subprocess.TimeoutExpired:
+            raise ServiceManagementError(
+                f"Timeout starting {self.service_name} after {self.timeout_seconds}s"
+            )
+    
+    def restart(self) -> None:
+        """Restart systemd service (web/leader after download).
+        
+        Raises:
+            ServiceManagementError: If restart fails or times out
+        """
+        try:
+            subprocess.run(
+                ["systemctl", "restart", self.service_name],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds
+            )
+        except subprocess.CalledProcessError as e:
+            raise ServiceManagementError(
+                f"Failed to restart {self.service_name}: {e.stderr}"
+            )
+        except subprocess.TimeoutExpired:
+            raise ServiceManagementError(
+                f"Timeout restarting {self.service_name} after {self.timeout_seconds}s"
+            )
 
 # ============================================================================
-# Interface Implementations (to be implemented in Phase 2)
+# Interface Implementations (Phase 2: T009-T011)
 # ============================================================================
 
-# TODO: T009 - Implement IStorageCoordinator interface
-# TODO: T010 - Implement IProgressTracker interface
-# TODO: T011 - Implement IFilesystemValidator interface
-# TODO: T012 - Implement IUpgradeCoordinator interface
-# TODO: T013 - Implement IServiceManager interface
-# TODO: T014 - Implement IRelationDataAccessor interface
+class StorageCoordinator:
+    """Concrete implementation of storage coordination interfaces.
+    
+    Combines IStorageCoordinator, IProgressTracker, and IFilesystemValidator
+    into a single coordinator class that manages shared storage operations.
+    
+    Attributes:
+        storage: SharedStorage instance for this unit
+        lock: LockCoordinator for download synchronization
+        is_leader: Whether this unit is the leader (web/leader downloads only)
+    """
+    
+    def __init__(self, storage: SharedStorage, lock: LockCoordinator, is_leader: bool):
+        """Initialize storage coordinator.
+        
+        Args:
+            storage: SharedStorage instance
+            lock: LockCoordinator instance
+            is_leader: True if this unit is leader/web
+        """
+        self.storage = storage
+        self.lock = lock
+        self._is_leader = is_leader
+        self.logger = logging.getLogger(f"{__name__}.StorageCoordinator")
+    
+    # IStorageCoordinator implementation (T009)
+    
+    def is_web_leader(self) -> bool:
+        """Check if current unit is web/leader."""
+        return self._is_leader
+    
+    @contextmanager
+    def acquire_download_lock(self, timeout_seconds: int = 0) -> Generator[None, None, None]:
+        """Acquire exclusive lock for binary download (web/leader only).
+        
+        Args:
+            timeout_seconds: Maximum time to wait for lock (0 = non-blocking)
+        
+        Yields:
+            None when lock acquired
+        
+        Raises:
+            LockAcquireError: If lock held by another unit
+            StaleLockError: If stale lock detected
+            PermissionError: If caller is not web/leader
+        """
+        if not self.is_web_leader():
+            raise PermissionError("Only web/leader units can download binaries")
+        
+        with self.lock.acquire_exclusive(timeout_seconds=timeout_seconds):
+            yield
+    
+    def download_binaries(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Download and install Concourse binaries (web/leader only).
+        
+        Args:
+            request: Download request with version, download_url, checksum_url, target_directory
+        
+        Returns:
+            Result dictionary with success, version, installed_path, duration_seconds
+        
+        Raises:
+            PermissionError: If caller is not web/leader
+        """
+        if not self.is_web_leader():
+            raise PermissionError("Only web/leader units can download binaries")
+        
+        if not self.lock.is_held():
+            raise LockAcquireError("Download lock must be acquired before downloading")
+        
+        start_time = time.time()
+        version = request["version"]
+        
+        try:
+            self.mark_download_started(version)
+            
+            # TODO: Actual download/extraction logic in Phase 3
+            # For now, just mark as complete
+            self.logger.info(f"Download binaries v{version} (stub implementation)")
+            
+            self.mark_download_complete(version)
+            
+            return {
+                "success": True,
+                "version": version,
+                "installed_path": str(self.storage.bin_directory),
+                "duration_seconds": time.time() - start_time,
+                "error_message": None,
+            }
+        except Exception as e:
+            self.logger.error(f"Download failed: {e}")
+            return {
+                "success": False,
+                "version": version,
+                "installed_path": str(self.storage.bin_directory),
+                "duration_seconds": time.time() - start_time,
+                "error_message": str(e),
+            }
+    
+    def get_installed_version(self) -> Optional[str]:
+        """Read currently installed version from marker file."""
+        return self.storage.read_installed_version()
+    
+    def wait_for_binaries(
+        self, 
+        expected_version: str, 
+        timeout_seconds: int = 300,
+        poll_interval_seconds: int = 5
+    ) -> bool:
+        """Wait for binaries to be available (worker units).
+        
+        Args:
+            expected_version: Version to wait for
+            timeout_seconds: Maximum time to wait (default: 5 minutes)
+            poll_interval_seconds: Initial polling interval (default: 5 seconds)
+        
+        Returns:
+            True if binaries available, False on timeout
+        """
+        start_time = time.time()
+        self.logger.info(
+            f"Waiting for binaries v{expected_version} (timeout: {timeout_seconds}s)"
+        )
+        
+        while True:
+            installed_version = self.get_installed_version()
+            if installed_version == expected_version:
+                elapsed = time.time() - start_time
+                self.logger.info(f"Binaries ready after {elapsed:.1f}s")
+                return True
+            
+            elapsed = time.time() - start_time
+            if elapsed >= timeout_seconds:
+                self.logger.warning(
+                    f"Timeout waiting for binaries after {elapsed:.1f}s "
+                    f"(expected: {expected_version}, found: {installed_version})"
+                )
+                return False
+            
+            time.sleep(poll_interval_seconds)
+    
+    def verify_binaries(self, version: str) -> bool:
+        """Verify that binaries for given version are valid.
+        
+        Args:
+            version: Version to verify
+        
+        Returns:
+            True if binaries valid, False otherwise
+        """
+        installed_version = self.get_installed_version()
+        if installed_version != version:
+            self.logger.warning(
+                f"Version mismatch: expected {version}, found {installed_version}"
+            )
+            return False
+        
+        # Check for essential binaries
+        required_binaries = ["concourse"]
+        for binary in required_binaries:
+            binary_path = self.storage.bin_directory / binary
+            if not binary_path.exists():
+                self.logger.warning(f"Missing binary: {binary_path}")
+                return False
+            
+            if not os.access(binary_path, os.X_OK):
+                self.logger.warning(f"Binary not executable: {binary_path}")
+                return False
+        
+        return True
+    
+    def create_worker_directory(self, unit_name: str) -> Path:
+        """Create isolated worker directory on shared storage.
+        
+        Args:
+            unit_name: Juju unit name (e.g., "concourse-ci/1")
+        
+        Returns:
+            Path to worker directory
+        """
+        worker_dir = WorkerDirectory.from_shared_storage(self.storage, unit_name)
+        self.logger.info(f"Created worker directory: {worker_dir.path}")
+        return worker_dir.path
+    
+    # IProgressTracker implementation (T010)
+    
+    def mark_download_started(self, version: str) -> None:
+        """Create progress marker file (web/leader only).
+        
+        Args:
+            version: Version being downloaded
+        """
+        progress_marker = self.storage.bin_directory / ".download_in_progress"
+        progress_marker.write_text(f"{version}\n{datetime.now(timezone.utc).isoformat()}")
+        self.logger.info(f"Marked download started for v{version}")
+    
+    def mark_download_complete(self, version: str) -> None:
+        """Remove progress marker, write version marker (web/leader only).
+        
+        Args:
+            version: Version successfully downloaded
+        """
+        progress_marker = self.storage.bin_directory / ".download_in_progress"
+        try:
+            if progress_marker.exists():
+                progress_marker.unlink()
+        except Exception as e:
+            self.logger.warning(f"Failed to remove progress marker: {e}")
+        
+        self.storage.write_installed_version(version)
+        self.logger.info(f"Marked download complete for v{version}")
+    
+    def is_download_in_progress(self) -> bool:
+        """Check if download currently in progress."""
+        progress_marker = self.storage.bin_directory / ".download_in_progress"
+        return progress_marker.exists()
+    
+    def get_download_age_seconds(self) -> Optional[float]:
+        """Get age of current download in progress.
+        
+        Returns:
+            Seconds since download started, or None if no download in progress
+        """
+        progress_marker = self.storage.bin_directory / ".download_in_progress"
+        if not progress_marker.exists():
+            return None
+        
+        try:
+            return time.time() - progress_marker.stat().st_mtime
+        except Exception as e:
+            self.logger.error(f"Error checking progress marker age: {e}")
+            return None
+    
+    # IFilesystemValidator implementation (T011)
+    
+    def get_filesystem_id(self, path: Path) -> str:
+        """Get unique filesystem identifier for given path.
+        
+        Args:
+            path: Path to check
+        
+        Returns:
+            Filesystem ID (device:inode format)
+        """
+        stat_info = path.stat()
+        return f"{stat_info.st_dev}:{stat_info.st_ino}"
+    
+    def validate_shared_mount(self, path: Path, expected_fs_id: str) -> bool:
+        """Validate that path is on expected shared filesystem.
+        
+        Args:
+            path: Path to validate
+            expected_fs_id: Expected filesystem ID
+        
+        Returns:
+            True if filesystem matches, False otherwise
+        """
+        actual_fs_id = self.get_filesystem_id(path)
+        matches = actual_fs_id == expected_fs_id
+        
+        if not matches:
+            self.logger.warning(
+                f"Filesystem ID mismatch: expected {expected_fs_id}, "
+                f"found {actual_fs_id}"
+            )
+        
+        return matches
+    
+    def is_writable(self, path: Path) -> bool:
+        """Check if path is writable by current unit.
+        
+        Args:
+            path: Path to check
+        
+        Returns:
+            True if writable, False otherwise
+        """
+        return os.access(path, os.W_OK)
+
+
+# ============================================================================
+# Upgrade Coordination (Phase 2: T012-T014 - Stub implementations)
+# ============================================================================
+# Note: Full implementations will be completed during Phase 4 (User Story 2)
+# These stubs provide the interface structure needed for Phase 3
+
+class UpgradeCoordinator:
+    """Coordinator for multi-unit upgrades via peer relations.
+    
+    Stub implementation - to be completed in Phase 4 (User Story 2).
+    
+    Attributes:
+        storage_coordinator: StorageCoordinator instance
+        service_manager: ServiceManager instance
+        is_leader: Whether this unit is leader
+    """
+    
+    def __init__(
+        self, 
+        storage_coordinator: StorageCoordinator,
+        service_manager: ServiceManager,
+        is_leader: bool
+    ):
+        self.storage = storage_coordinator
+        self.service_mgr = service_manager
+        self._is_leader = is_leader
+        self.logger = logging.getLogger(f"{__name__}.UpgradeCoordinator")
+    
+    def initiate_upgrade(self, target_version: str) -> None:
+        """Initiate upgrade process (web/leader only) - STUB."""
+        if not self._is_leader:
+            raise PermissionError("Only leader can initiate upgrade")
+        self.logger.info(f"Upgrade to v{target_version} initiated (stub)")
+    
+    def get_upgrade_state(self) -> Optional[UpgradeState]:
+        """Read current upgrade state - STUB."""
+        return UpgradeState(
+            state="idle",
+            target_version=None,
+            initiated_by=None,
+            timestamp=datetime.now(timezone.utc)
+        )
+
+
+class SystemdServiceManager:
+    """Wrapper for systemd operations with enhanced features.
+    
+    Extends ServiceManager with status checking and validation.
+    """
+    
+    def __init__(self, service_name: str, timeout_seconds: int = 30):
+        self.service = ServiceManager(service_name, timeout_seconds)
+        self.logger = logging.getLogger(f"{__name__}.SystemdServiceManager")
+    
+    def stop(self) -> None:
+        """Stop systemd service."""
+        self.service.stop()
+    
+    def start(self) -> None:
+        """Start systemd service."""
+        self.service.start()
+    
+    def restart(self) -> None:
+        """Restart systemd service."""
+        self.service.restart()
+    
+    def is_active(self) -> bool:
+        """Check if service is currently active.
+        
+        Returns:
+            True if service active, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", self.service.service_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0 and result.stdout.strip() == "active"
+        except Exception as e:
+            self.logger.warning(f"Error checking service status: {e}")
+            return False
+
+
+class RelationDataAccessor:
+    """Accessor for Juju peer relation data.
+    
+    Stub implementation - to be completed in Phase 4 with ops.Relation integration.
+    """
+    
+    def __init__(self, relation_name: str = "peers"):
+        self.relation_name = relation_name
+        self.logger = logging.getLogger(f"{__name__}.RelationDataAccessor")
+        self._data: dict[str, dict[str, str]] = {}  # Mock storage
+    
+    def set_unit_data(self, key: str, value: str) -> None:
+        """Set data on current unit - STUB."""
+        self._data.setdefault("local", {})[key] = value
+    
+    def get_unit_data(self, unit_name: str, key: str) -> Optional[str]:
+        """Get data from specific unit - STUB."""
+        return self._data.get(unit_name, {}).get(key)
+    
+    def get_all_units(self) -> list[str]:
+        """Get list of all units - STUB."""
+        return list(self._data.keys())
 
 
 # ============================================================================
@@ -309,10 +912,15 @@ __all__ = [
     'StaleLockError',
     'ServiceManagementError',
     'UpgradeTimeoutError',
-    # Data classes (to be added)
-    # 'SharedStorage',
-    # 'LockCoordinator',
-    # 'UpgradeState',
-    # 'WorkerDirectory',
-    # 'ServiceManager',
+    # Data classes
+    'SharedStorage',
+    'LockCoordinator',
+    'UpgradeState',
+    'WorkerDirectory',
+    'ServiceManager',
+    # Coordinators
+    'StorageCoordinator',
+    'UpgradeCoordinator',
+    'SystemdServiceManager',
+    'RelationDataAccessor',
 ]

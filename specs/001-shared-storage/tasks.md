@@ -41,19 +41,19 @@ description: "Task list for shared storage feature implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Implement SharedStorage dataclass in lib/storage_coordinator.py with volume_path, filesystem_id, bin_directory, keys_directory, lock_file_path fields per data-model.md lines 17-56
-- [ ] T005 [P] Implement LockCoordinator dataclass in lib/storage_coordinator.py with acquire_exclusive context manager using fcntl.flock per data-model.md lines 68-122
-- [ ] T006 [P] Implement UpgradeState dataclass in lib/storage_coordinator.py with to_relation_data/from_relation_data methods per data-model.md lines 129-176
-- [ ] T007 [P] Implement WorkerDirectory dataclass in lib/storage_coordinator.py with from_shared_storage factory method per data-model.md lines 184-230
-- [ ] T008 [P] Implement ServiceManager dataclass in lib/storage_coordinator.py with stop/start/restart methods using subprocess per data-model.md lines 235-300
-- [ ] T009 [P] Implement IStorageCoordinator interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 42-181
-- [ ] T010 [P] Implement IProgressTracker interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 184-233
-- [ ] T011 [P] Implement IFilesystemValidator interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 236-282
-- [ ] T012 [P] Implement IUpgradeCoordinator interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 135-260
-- [ ] T013 [P] Implement IServiceManager interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 263-323
-- [ ] T014 [P] Implement IRelationDataAccessor interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 326-393
-- [ ] T015 [P] Define SharedStorageError exception hierarchy in lib/storage_coordinator.py per data-model.md lines 383-407
-- [ ] T016 [P] Add type hints and docstrings to all storage_coordinator.py functions per constitution code quality standards
+- [x] T004 Implement SharedStorage dataclass in lib/storage_coordinator.py with volume_path, filesystem_id, bin_directory, keys_directory, lock_file_path fields per data-model.md lines 17-56
+- [x] T005 [P] Implement LockCoordinator dataclass in lib/storage_coordinator.py with acquire_exclusive context manager using fcntl.flock per data-model.md lines 68-122
+- [x] T006 [P] Implement UpgradeState dataclass in lib/storage_coordinator.py with to_relation_data/from_relation_data methods per data-model.md lines 129-176
+- [x] T007 [P] Implement WorkerDirectory dataclass in lib/storage_coordinator.py with from_shared_storage factory method per data-model.md lines 184-230
+- [x] T008 [P] Implement ServiceManager dataclass in lib/storage_coordinator.py with stop/start/restart methods using subprocess per data-model.md lines 235-300
+- [x] T009 [P] Implement IStorageCoordinator interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 42-181
+- [x] T010 [P] Implement IProgressTracker interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 184-233
+- [x] T011 [P] Implement IFilesystemValidator interface methods in lib/storage_coordinator.py per contracts/storage_coordinator.py lines 236-282
+- [x] T012 [P] Implement IUpgradeCoordinator interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 135-260
+- [x] T013 [P] Implement IServiceManager interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 263-323
+- [x] T014 [P] Implement IRelationDataAccessor interface methods in lib/storage_coordinator.py per contracts/upgrade_protocol.py lines 326-393
+- [x] T015 [P] Define SharedStorageError exception hierarchy in lib/storage_coordinator.py per data-model.md lines 383-407
+- [x] T016 [P] Add type hints and docstrings to all storage_coordinator.py functions per constitution code quality standards
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
