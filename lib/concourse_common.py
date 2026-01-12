@@ -200,26 +200,33 @@ def verify_nvidia_container_runtime():
         return False
 
 
-def get_storage_path(storage_name: str = "concourse-shared") -> Optional[Path]:
-    """Get storage mount path from Juju storage-get command.
+def get_storage_path(storage_name: str = "concourse-data") -> Optional[Path]:
+    """Get storage mount path from saved state.
+    
+    The storage location is saved during the storage-attached hook
+    and retrieved here for use in other hooks.
     
     Args:
-        storage_name: Name of storage as defined in metadata.yaml
+        storage_name: Name of storage (for logging only)
     
     Returns:
         Path to storage mount point, or None if storage not attached
-        
-    Raises:
-        RuntimeError: If storage-get command fails unexpectedly
     """
     try:
-        result = subprocess.run(
-            ["storage-get", "-s", storage_name, "location"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        location = result.stdout.strip()
+        # Read storage location from state file saved by storage-attached hook
+        # Pattern: /var/lib/juju/agents/unit-{app-name}-{unit-num}/.storage-location
+        import os
+        unit_name = os.environ.get("JUJU_UNIT_NAME", "")
+        if not unit_name:
+            logger.warning("JUJU_UNIT_NAME not set, cannot get storage path")
+            return None
+            
+        state_file = Path("/var/lib/juju/agents") / f"unit-{unit_name}" / ".storage-location"
+        if not state_file.exists():
+            logger.info(f"Storage '{storage_name}' not attached (no state file)")
+            return None
+            
+        location = state_file.read_text().strip()
         if location:
             path = Path(location)
             logger.info(f"Storage '{storage_name}' mounted at: {path}")
@@ -227,16 +234,39 @@ def get_storage_path(storage_name: str = "concourse-shared") -> Optional[Path]:
         else:
             logger.warning(f"Storage '{storage_name}' location is empty")
             return None
-    except subprocess.CalledProcessError as e:
-        if "not found" in e.stderr or "no storage" in e.stderr.lower():
-            logger.info(f"Storage '{storage_name}' not attached")
-            return None
-        else:
-            logger.error(f"Failed to get storage location: {e.stderr}")
-            raise RuntimeError(f"storage-get command failed: {e.stderr}")
-    except FileNotFoundError:
-        logger.warning("storage-get command not found (not running in Juju?)")
+    except Exception as e:
+        logger.error(f"Failed to get storage location: {e}")
         return None
+
+
+def get_filesystem_id(path: Path) -> str:
+    """Get unique filesystem identifier for a given path.
+    
+    Uses stat to get the filesystem ID, which ensures all units
+    are accessing the same filesystem when using shared storage.
+    
+    Args:
+        path: Path to check filesystem ID for
+    
+    Returns:
+        Filesystem ID as string
+    
+    Raises:
+        RuntimeError: If unable to get filesystem ID
+    """
+    try:
+        result = subprocess.run(
+            ["stat", "-f", "-c", "%i", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        fs_id = result.stdout.strip()
+        logger.info(f"Filesystem ID for {path}: {fs_id}")
+        return fs_id
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to get filesystem ID: {e.stderr}")
+        raise RuntimeError(f"Cannot get filesystem ID for {path}: {e.stderr}")
 
 
 def get_storage_logger(unit_name: str) -> logging.Logger:

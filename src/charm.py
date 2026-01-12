@@ -467,8 +467,7 @@ class ConcourseCharm(CharmBase):
         """Handle storage-attached event for shared storage feature.
         
         This hook is triggered when Juju storage is attached to the unit.
-        The actual shared storage initialization happens in _on_install,
-        so this handler just logs the event and defers if install hasn't run yet.
+        Store the storage location in unit's local state for use in install hook.
         """
         try:
             storage_name = event.storage.name
@@ -477,11 +476,12 @@ class ConcourseCharm(CharmBase):
                 f"Storage attached: {storage_name} at {storage_location}"
             )
             
-            # If install hasn't completed yet, defer this event
-            if not self.unit.is_leader() and not Path("/opt/concourse/bin/concourse").exists():
-                logger.info("Deferring storage-attached until install completes")
-                event.defer()
-                return
+            # Store storage location in unit state for use in install hook
+            # Use unitdata since peer relation may not be available yet
+            state_file = Path("/var/lib/juju/agents") / f"unit-{self.unit.name}" / ".storage-location"
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state_file.write_text(str(storage_location))
+            logger.info(f"Stored storage location: {storage_location}")
             
             # Storage will be used during install/start hooks
             self.unit.status = MaintenanceStatus("Storage attached")

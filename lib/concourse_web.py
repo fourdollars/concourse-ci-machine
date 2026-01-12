@@ -17,6 +17,7 @@ from concourse_common import (
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
     get_storage_path,
+    get_filesystem_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,13 +56,19 @@ class ConcourseWebHelper:
         
         try:
             # Get storage mount path
-            storage_path = get_storage_path("concourse-shared")
+            storage_path = get_storage_path("concourse-data")
             if not storage_path:
                 logger.info("Shared storage not attached, using local installation")
                 return None
             
+            # Get filesystem ID for validation
+            filesystem_id = get_filesystem_id(storage_path)
+            
             # Initialize SharedStorage
-            shared_storage = SharedStorage(volume_path=storage_path)
+            shared_storage = SharedStorage(
+                volume_path=storage_path,
+                filesystem_id=filesystem_id
+            )
             logger.info(f"Initialized shared storage at: {storage_path}")
             logger.info(f"  - Filesystem ID: {shared_storage.filesystem_id}")
             logger.info(f"  - Bin directory: {shared_storage.bin_directory}")
