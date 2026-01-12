@@ -248,6 +248,9 @@ class ConcourseCharm(CharmBase):
                     download_and_install_concourse_with_storage(
                         self, version, storage_coordinator
                     )
+                    # Create symlink from /opt/concourse to shared storage binaries
+                    from concourse_common import create_shared_storage_symlinks
+                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 else:
                     # Fallback to local installation
@@ -279,6 +282,9 @@ class ConcourseCharm(CharmBase):
                     else:
                         logger.info(f"Binaries v{version} already available")
                     
+                    # Create symlink from /opt/concourse to shared storage binaries
+                    from concourse_common import create_shared_storage_symlinks
+                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 else:
                     # Fallback to local installation
@@ -293,6 +299,9 @@ class ConcourseCharm(CharmBase):
                     download_and_install_concourse_with_storage(
                         self, version, storage_coordinator
                     )
+                    # Create symlink from /opt/concourse to shared storage binaries
+                    from concourse_common import create_shared_storage_symlinks
+                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")
                 else:
                     download_and_install_concourse(self, version)
@@ -345,6 +354,20 @@ class ConcourseCharm(CharmBase):
 
             # Ensure directories exist
             ensure_directories()
+            
+            # Ensure /etc/default/concourse exists
+            default_concourse = Path("/etc/default/concourse")
+            if not default_concourse.exists():
+                logger.info("Creating /etc/default/concourse")
+                default_concourse.touch()
+                import os
+                os.chmod(default_concourse, 0o644)
+            
+            # Ensure keys are generated
+            keys_dir = Path(KEYS_DIR)
+            if not (keys_dir / "tsa_host_key").exists():
+                logger.info("Generating missing keys")
+                generate_keys()
 
             # Recreate systemd services (in case service definitions changed)
             if self._should_run_web():

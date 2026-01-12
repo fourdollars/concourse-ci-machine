@@ -30,12 +30,53 @@ def ensure_directories():
     logger.info(f"Ensured directories exist: {', '.join(dirs)}")
 
 
+def create_shared_storage_symlinks(shared_storage_bin_dir: Path):
+    """Create symlinks from /opt/concourse to shared storage binaries.
+    
+    Args:
+        shared_storage_bin_dir: Path to shared storage bin directory (e.g., /var/lib/concourse/bin)
+    """
+    import shutil
+    
+    install_dir = Path(CONCOURSE_INSTALL_DIR)
+    
+    # Remove /opt/concourse if it exists and is not already a symlink to shared storage
+    if install_dir.exists():
+        if install_dir.is_symlink():
+            # Check if it already points to the correct location
+            if install_dir.resolve() == shared_storage_bin_dir.resolve():
+                logger.info(f"Symlink {install_dir} -> {shared_storage_bin_dir} already exists")
+                return
+            else:
+                logger.info(f"Removing incorrect symlink {install_dir}")
+                install_dir.unlink()
+        else:
+            logger.info(f"Removing existing directory {install_dir}")
+            shutil.rmtree(install_dir)
+    
+    # Create symlink from /opt/concourse to shared storage
+    install_dir.symlink_to(shared_storage_bin_dir)
+    logger.info(f"Created symlink: {install_dir} -> {shared_storage_bin_dir}")
+
+
 def generate_keys():
-    """Generate Concourse TSA and session signing keys"""
+    """Generate Concourse TSA and session signing keys with correct ownership"""
+    import pwd
+    import grp
+    
     keys_dir = Path(KEYS_DIR)
     tsa_host_key = keys_dir / "tsa_host_key"
     session_signing_key = keys_dir / "session_signing_key"
     worker_key = keys_dir / "worker_key"
+    
+    # Get concourse user UID/GID
+    try:
+        concourse_user = pwd.getpwnam("concourse")
+        uid = concourse_user.pw_uid
+        gid = concourse_user.pw_gid
+    except KeyError:
+        logger.warning("concourse user not found, keys will be owned by root")
+        uid = gid = 0
 
     # Generate TSA host key if it doesn't exist
     if not tsa_host_key.exists():
@@ -47,6 +88,8 @@ def generate_keys():
         )
         os.chmod(tsa_host_key, 0o600)
         os.chmod(f"{tsa_host_key}.pub", 0o644)
+        os.chown(tsa_host_key, uid, gid)
+        os.chown(f"{tsa_host_key}.pub", uid, gid)
         logger.info("TSA host key generated")
 
     # Generate session signing key if it doesn't exist
@@ -65,6 +108,7 @@ def generate_keys():
             capture_output=True,
         )
         os.chmod(session_signing_key, 0o600)
+        os.chown(session_signing_key, uid, gid)
         logger.info("Session signing key generated")
 
     # Generate worker key if it doesn't exist
@@ -77,6 +121,8 @@ def generate_keys():
         )
         os.chmod(worker_key, 0o600)
         os.chmod(f"{worker_key}.pub", 0o644)
+        os.chown(worker_key, uid, gid)
+        os.chown(f"{worker_key}.pub", uid, gid)
         logger.info("Worker key generated")
 
     # Setup authorized_worker_keys
@@ -85,6 +131,8 @@ def generate_keys():
         with open(f"{worker_key}.pub", "r") as f:
             worker_pub = f.read()
         authorized_keys.write_text(worker_pub)
+        os.chmod(authorized_keys, 0o644)
+        os.chown(authorized_keys, uid, gid)
         os.chmod(authorized_keys, 0o644)
         logger.info("Authorized worker keys configured")
 

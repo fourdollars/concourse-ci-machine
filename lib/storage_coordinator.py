@@ -560,7 +560,7 @@ class StorageCoordinator:
         if not self.is_web_leader():
             raise PermissionError("Only web/leader units can download binaries")
         
-        with self.lock.acquire_exclusive(timeout_seconds=timeout_seconds):
+        with self.lock.acquire_exclusive():
             yield
     
     def download_binaries(self, request: dict[str, Any]) -> dict[str, Any]:
