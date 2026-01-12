@@ -138,6 +138,11 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(
             self.on.upgrade_action, self._on_update_concourse_version_action
         )
+        
+        # Storage events (for shared storage feature)
+        self.framework.observe(
+            self.on.concourse_data_storage_attached, self._on_storage_attached
+        )
 
     def _get_deployment_mode(self) -> str:
         """
@@ -457,6 +462,34 @@ class ConcourseCharm(CharmBase):
                 self.worker_helper.stop_service()
         except Exception as e:
             logger.error(f"Stop failed: {e}", exc_info=True)
+    
+    def _on_storage_attached(self, event):
+        """Handle storage-attached event for shared storage feature.
+        
+        This hook is triggered when Juju storage is attached to the unit.
+        The actual shared storage initialization happens in _on_install,
+        so this handler just logs the event and defers if install hasn't run yet.
+        """
+        try:
+            storage_name = event.storage.name
+            storage_location = event.storage.location
+            logger.info(
+                f"Storage attached: {storage_name} at {storage_location}"
+            )
+            
+            # If install hasn't completed yet, defer this event
+            if not self.unit.is_leader() and not Path("/opt/concourse/bin/concourse").exists():
+                logger.info("Deferring storage-attached until install completes")
+                event.defer()
+                return
+            
+            # Storage will be used during install/start hooks
+            self.unit.status = MaintenanceStatus("Storage attached")
+            logger.info(f"Shared storage ready: {storage_location}")
+            
+        except Exception as e:
+            logger.error(f"Storage-attached hook failed: {e}", exc_info=True)
+            self.unit.status = BlockedStatus(f"Storage attach failed: {e}")
 
     def _on_postgresql_relation_created(self, event):
         """Handle PostgreSQL relation created"""
