@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from concourse_common import (
     CONCOURSE_BIN,
@@ -16,9 +17,23 @@ from concourse_common import (
     KEYS_DIR,
     detect_nvidia_gpus,
     verify_nvidia_container_runtime,
+    get_storage_path,
 )
 
 logger = logging.getLogger(__name__)
+
+# Import storage coordinator (may not be available)
+try:
+    from storage_coordinator import (
+        SharedStorage,
+        LockCoordinator,
+        StorageCoordinator,
+        WorkerDirectory,
+    )
+    HAS_STORAGE_COORDINATOR = True
+except ImportError:
+    HAS_STORAGE_COORDINATOR = False
+    logger.warning("storage_coordinator not available")
 
 
 class ConcourseWorkerHelper:
@@ -28,6 +43,61 @@ class ConcourseWorkerHelper:
         self.charm = charm
         self.model = charm.model
         self.config = charm.model.config
+        self.storage_coordinator = None  # Will be initialized if shared storage available
+        self.worker_directory = None  # Per-unit worker directory on shared storage
+    
+    def initialize_shared_storage(self) -> Optional[object]:
+        """Initialize shared storage for worker unit (T023).
+        
+        Returns:
+            StorageCoordinator instance if shared storage is available, None otherwise
+        """
+        if not HAS_STORAGE_COORDINATOR:
+            logger.info("Storage coordinator not available, skipping shared storage")
+            return None
+        
+        try:
+            # Get storage mount path
+            storage_path = get_storage_path("concourse-shared")
+            if not storage_path:
+                logger.info("Shared storage not attached, using local installation")
+                return None
+            
+            # Initialize SharedStorage
+            shared_storage = SharedStorage(volume_path=storage_path)
+            logger.info(f"Initialized shared storage at: {storage_path}")
+            logger.info(f"  - Filesystem ID: {shared_storage.filesystem_id}")
+            
+            # Initialize LockCoordinator (workers don't acquire, just check)
+            lock_coordinator = LockCoordinator(
+                lock_path=shared_storage.lock_file_path,
+                holder_unit=self.charm.unit.name,
+                timeout_seconds=600  # 10 minutes
+            )
+            
+            # Initialize StorageCoordinator (worker: waits for binaries)
+            self.storage_coordinator = StorageCoordinator(
+                storage=shared_storage,
+                lock=lock_coordinator,
+                is_leader=False  # Workers wait for download
+            )
+            
+            # Create worker-specific directory (T024)
+            self.worker_directory = WorkerDirectory.from_shared_storage(
+                shared_storage,
+                self.charm.unit.name
+            )
+            logger.info(f"Created worker directory: {self.worker_directory.path}")
+            logger.info(f"  - Work dir: {self.worker_directory.work_dir}")
+            logger.info(f"  - State file: {self.worker_directory.state_file}")
+            
+            logger.info(f"Storage coordinator initialized for worker unit")
+            return self.storage_coordinator
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize shared storage: {e}")
+            # Non-fatal: fall back to local installation
+            return None
 
     def setup_systemd_service(self):
         """Create systemd service file for Concourse worker"""
@@ -347,10 +417,17 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             pass
 
     def update_config(self, tsa_host: str = "127.0.0.1:2222"):
-        """Update Concourse worker configuration"""
+        """Update Concourse worker configuration (T025: use shared storage work_dir if available)"""
         keys_dir = Path(KEYS_DIR)
-        worker_dir = Path(CONCOURSE_DATA_DIR) / "worker"
-        worker_dir.mkdir(exist_ok=True)
+        
+        # Use worker-specific directory from shared storage if available (T025)
+        if self.worker_directory:
+            worker_dir = self.worker_directory.work_dir
+            logger.info(f"Using shared storage work_dir: {worker_dir}")
+        else:
+            worker_dir = Path(CONCOURSE_DATA_DIR) / "worker"
+            worker_dir.mkdir(exist_ok=True)
+            logger.info(f"Using local work_dir: {worker_dir}")
 
         config = {
             "CONCOURSE_WORKER_PROCS": str(self.config.get("worker-procs", 1)),

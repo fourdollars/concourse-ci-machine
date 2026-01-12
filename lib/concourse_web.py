@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
+from typing import Optional
 from ops.model import MaintenanceStatus
 
 from concourse_common import (
@@ -15,9 +16,22 @@ from concourse_common import (
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
+    get_storage_path,
 )
 
 logger = logging.getLogger(__name__)
+
+# Import storage coordinator (may not be available)
+try:
+    from storage_coordinator import (
+        SharedStorage,
+        LockCoordinator,
+        StorageCoordinator,
+    )
+    HAS_STORAGE_COORDINATOR = True
+except ImportError:
+    HAS_STORAGE_COORDINATOR = False
+    logger.warning("storage_coordinator not available")
 
 
 class ConcourseWebHelper:
@@ -27,6 +41,53 @@ class ConcourseWebHelper:
         self.charm = charm
         self.model = charm.model
         self.config = charm.model.config
+        self.storage_coordinator = None  # Will be initialized if shared storage available
+    
+    def initialize_shared_storage(self) -> Optional[object]:
+        """Initialize shared storage for web/leader unit (T022).
+        
+        Returns:
+            StorageCoordinator instance if shared storage is available, None otherwise
+        """
+        if not HAS_STORAGE_COORDINATOR:
+            logger.info("Storage coordinator not available, skipping shared storage")
+            return None
+        
+        try:
+            # Get storage mount path
+            storage_path = get_storage_path("concourse-shared")
+            if not storage_path:
+                logger.info("Shared storage not attached, using local installation")
+                return None
+            
+            # Initialize SharedStorage
+            shared_storage = SharedStorage(volume_path=storage_path)
+            logger.info(f"Initialized shared storage at: {storage_path}")
+            logger.info(f"  - Filesystem ID: {shared_storage.filesystem_id}")
+            logger.info(f"  - Bin directory: {shared_storage.bin_directory}")
+            logger.info(f"  - Keys directory: {shared_storage.keys_directory}")
+            
+            # Initialize LockCoordinator
+            lock_coordinator = LockCoordinator(
+                lock_path=shared_storage.lock_file_path,
+                holder_unit=self.charm.unit.name,
+                timeout_seconds=600  # 10 minutes
+            )
+            
+            # Initialize StorageCoordinator (web/leader downloads)
+            self.storage_coordinator = StorageCoordinator(
+                storage=shared_storage,
+                lock=lock_coordinator,
+                is_leader=True  # Web units act as downloaders
+            )
+            
+            logger.info(f"Storage coordinator initialized for web/leader unit")
+            return self.storage_coordinator
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize shared storage: {e}")
+            # Non-fatal: fall back to local installation
+            return None
 
     def setup_systemd_service(self):
         """Create systemd service file for Concourse web server"""

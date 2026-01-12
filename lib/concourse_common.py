@@ -198,3 +198,75 @@ def verify_nvidia_container_runtime():
     except subprocess.CalledProcessError:
         logger.warning("NVIDIA container runtime not found")
         return False
+
+
+def get_storage_path(storage_name: str = "concourse-shared") -> Optional[Path]:
+    """Get storage mount path from Juju storage-get command.
+    
+    Args:
+        storage_name: Name of storage as defined in metadata.yaml
+    
+    Returns:
+        Path to storage mount point, or None if storage not attached
+        
+    Raises:
+        RuntimeError: If storage-get command fails unexpectedly
+    """
+    try:
+        result = subprocess.run(
+            ["storage-get", "-s", storage_name, "location"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        location = result.stdout.strip()
+        if location:
+            path = Path(location)
+            logger.info(f"Storage '{storage_name}' mounted at: {path}")
+            return path
+        else:
+            logger.warning(f"Storage '{storage_name}' location is empty")
+            return None
+    except subprocess.CalledProcessError as e:
+        if "not found" in e.stderr or "no storage" in e.stderr.lower():
+            logger.info(f"Storage '{storage_name}' not attached")
+            return None
+        else:
+            logger.error(f"Failed to get storage location: {e.stderr}")
+            raise RuntimeError(f"storage-get command failed: {e.stderr}")
+    except FileNotFoundError:
+        logger.warning("storage-get command not found (not running in Juju?)")
+        return None
+
+
+def get_storage_logger(unit_name: str) -> logging.Logger:
+    """Get logger with unit name prefix for storage coordination.
+    
+    Creates a logger that prefixes all messages with the unit name
+    for easier debugging in multi-unit deployments.
+    
+    Args:
+        unit_name: Juju unit name (e.g., "concourse-ci/1")
+    
+    Returns:
+        Logger instance with custom formatter
+    
+    Example:
+        logger = get_storage_logger("concourse-ci/1")
+        logger.info("Waiting for binaries...")
+        # Output: [concourse-ci/1] Waiting for binaries...
+    """
+    storage_logger = logging.getLogger(f"concourse-ci.storage.{unit_name}")
+    
+    # Add custom handler with unit prefix if not already present
+    if not storage_logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            f"[{unit_name}] %(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        handler.setFormatter(formatter)
+        storage_logger.addHandler(handler)
+        storage_logger.setLevel(logging.INFO)
+    
+    return storage_logger

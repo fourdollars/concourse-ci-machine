@@ -67,23 +67,23 @@ description: "Task list for shared storage feature implementation"
 
 ### Implementation for User Story 1
 
-- [ ] T017 [P] [US1] Modify lib/concourse_installer.py to add detect_existing_binaries method that checks SharedStorage.version_marker_path before downloading
-- [ ] T018 [P] [US1] Modify lib/concourse_installer.py to add verify_binaries method that validates binary executability and version match
-- [ ] T019 [US1] Update lib/concourse_installer.py download_binaries method to use LockCoordinator.acquire_exclusive before download (web/leader only)
-- [ ] T020 [US1] Update lib/concourse_installer.py download_binaries method to write SharedStorage.version_marker_path after successful download
-- [ ] T021 [US1] Update lib/concourse_installer.py to create .download_in_progress marker at download start, remove on completion
-- [ ] T022 [P] [US1] Modify lib/concourse_web.py to initialize SharedStorage on install hook using storage-get command
-- [ ] T023 [P] [US1] Modify lib/concourse_worker.py to initialize SharedStorage on install hook and call wait_for_binaries if version marker absent
-- [ ] T024 [US1] Update lib/concourse_worker.py to create WorkerDirectory using WorkerDirectory.from_shared_storage method in install hook
-- [ ] T025 [US1] Update lib/concourse_worker.py to configure concourse-worker.service with worker-specific work_dir from WorkerDirectory.work_dir
+- [x] T017 [P] [US1] Modify lib/concourse_installer.py to add detect_existing_binaries method that checks SharedStorage.version_marker_path before downloading
+- [x] T018 [P] [US1] Modify lib/concourse_installer.py to add verify_binaries method that validates binary executability and version match
+- [x] T019 [US1] Update lib/concourse_installer.py download_binaries method to use LockCoordinator.acquire_exclusive before download (web/leader only)
+- [x] T020 [US1] Update lib/concourse_installer.py download_binaries method to write SharedStorage.version_marker_path after successful download
+- [x] T021 [US1] Update lib/concourse_installer.py to create .download_in_progress marker at download start, remove on completion
+- [x] T022 [P] [US1] Modify lib/concourse_web.py to initialize SharedStorage on install hook using storage-get command
+- [x] T023 [P] [US1] Modify lib/concourse_worker.py to initialize SharedStorage on install hook and call wait_for_binaries if version marker absent
+- [x] T024 [US1] Update lib/concourse_worker.py to create WorkerDirectory using WorkerDirectory.from_shared_storage method in install hook
+- [x] T025 [US1] Update lib/concourse_worker.py to configure concourse-worker.service with worker-specific work_dir from WorkerDirectory.work_dir
 - [ ] T026 [US1] Modify src/charm.py _on_install hook to detect unit role (web/leader vs worker) and branch logic accordingly
 - [ ] T027 [US1] Update src/charm.py _on_install hook for web/leader path: acquire lock, download binaries, write marker, start server
 - [ ] T028 [US1] Update src/charm.py _on_install hook for worker path: check existing binaries or wait, create worker directory, start worker service
-- [ ] T029 [US1] Add storage coordination logging in lib/concourse_common.py with unit name prefix (e.g., "[concourse-ci/1] Waiting for binaries...")
-- [ ] T030 [US1] Implement stale lock detection in lib/storage_coordinator.py LockCoordinator._is_stale method checking .download_in_progress age >10 minutes
-- [ ] T031 [US1] Implement stale lock cleanup in lib/storage_coordinator.py LockCoordinator._clean_stale_markers method
-- [ ] T032 [US1] Update lib/concourse_common.py to add get_storage_path helper that returns Path from storage-get command output
-- [ ] T033 [US1] Add filesystem validation in lib/storage_coordinator.py to verify all units mount same filesystem_id
+- [x] T029 [US1] Add storage coordination logging in lib/concourse_common.py with unit name prefix (e.g., "[concourse-ci/1] Waiting for binaries...")
+- [x] T030 [US1] Implement stale lock detection in lib/storage_coordinator.py LockCoordinator._is_stale method checking .download_in_progress age >10 minutes
+- [x] T031 [US1] Implement stale lock cleanup in lib/storage_coordinator.py LockCoordinator._clean_stale_markers method
+- [x] T032 [US1] Update lib/concourse_common.py to add get_storage_path helper that returns Path from storage-get command output
+- [x] T033 [US1] Add filesystem validation in lib/storage_coordinator.py to verify all units mount same filesystem_id
 - [ ] T034 [US1] Update src/charm.py to set charm status messages during storage operations ("Downloading binaries...", "Waiting for binaries...", "Binaries ready")
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - multi-unit deployment shares binaries without duplication

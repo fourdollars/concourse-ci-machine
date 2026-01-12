@@ -9,11 +9,24 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 from ops.model import MaintenanceStatus
 
 from concourse_common import CONCOURSE_INSTALL_DIR, CONCOURSE_BIN
 
 logger = logging.getLogger(__name__)
+
+# Import storage coordinator (may not be available in all contexts)
+try:
+    from storage_coordinator import (
+        SharedStorage,
+        LockCoordinator,
+        StorageCoordinator,
+    )
+    HAS_STORAGE_COORDINATOR = True
+except ImportError:
+    HAS_STORAGE_COORDINATOR = False
+    logger.warning("storage_coordinator not available, shared storage disabled")
 
 
 def get_latest_concourse_version():
@@ -33,6 +46,289 @@ def get_latest_concourse_version():
     except Exception as e:
         logger.error(f"Failed to fetch latest version from GitHub: {e}")
         raise RuntimeError(f"Cannot determine latest Concourse version: {e}")
+
+
+def detect_existing_binaries(
+    storage_coordinator: Optional[object] = None,
+    expected_version: Optional[str] = None
+) -> Optional[str]:
+    """Check if binaries already exist on shared storage (T017).
+    
+    Args:
+        storage_coordinator: StorageCoordinator instance (optional)
+        expected_version: Expected version to check for (optional)
+    
+    Returns:
+        Installed version if binaries exist and are valid, None otherwise
+    """
+    if not storage_coordinator:
+        # No shared storage, check local installation
+        if Path(CONCOURSE_BIN).exists():
+            logger.info("Local Concourse binary found")
+            return "unknown"  # Version unknown without shared storage
+        return None
+    
+    try:
+        installed_version = storage_coordinator.get_installed_version()
+        if installed_version:
+            logger.info(f"Found existing binaries: v{installed_version}")
+            
+            # Verify if expected version matches
+            if expected_version and installed_version != expected_version:
+                logger.warning(
+                    f"Version mismatch: expected {expected_version}, "
+                    f"found {installed_version}"
+                )
+                return None
+            
+            # Verify binaries are valid
+            if verify_binaries(storage_coordinator, installed_version):
+                logger.info(f"Existing binaries v{installed_version} are valid")
+                return installed_version
+            else:
+                logger.warning(f"Existing binaries v{installed_version} are invalid")
+                return None
+        else:
+            logger.info("No existing binaries found on shared storage")
+            return None
+    except Exception as e:
+        logger.error(f"Error detecting existing binaries: {e}")
+        return None
+
+
+def verify_binaries(
+    storage_coordinator: Optional[object] = None,
+    version: Optional[str] = None
+) -> bool:
+    """Verify that binaries are valid and executable (T018).
+    
+    Args:
+        storage_coordinator: StorageCoordinator instance (optional)
+        version: Version to verify (optional, uses installed version if not provided)
+    
+    Returns:
+        True if binaries are valid, False otherwise
+    """
+    if not storage_coordinator:
+        # No shared storage, check local installation
+        binary_path = Path(CONCOURSE_BIN)
+        if not binary_path.exists():
+            logger.warning(f"Binary not found: {binary_path}")
+            return False
+        
+        if not os.access(binary_path, os.X_OK):
+            logger.warning(f"Binary not executable: {binary_path}")
+            return False
+        
+        logger.info("Local binary is valid")
+        return True
+    
+    try:
+        # Use storage coordinator's verify method
+        if version is None:
+            version = storage_coordinator.get_installed_version()
+            if not version:
+                logger.warning("No installed version found")
+                return False
+        
+        is_valid = storage_coordinator.verify_binaries(version)
+        if is_valid:
+            logger.info(f"Binaries v{version} verified successfully")
+        else:
+            logger.warning(f"Binaries v{version} failed verification")
+        
+        return is_valid
+    except Exception as e:
+        logger.error(f"Error verifying binaries: {e}")
+        return False
+
+
+def download_and_install_concourse_with_storage(
+    charm,
+    version: str,
+    storage_coordinator: Optional[object] = None
+):
+    """Download and install Concourse binaries with shared storage support (T019-T021).
+    
+    This function extends the original download_and_install_concourse with:
+    - Lock acquisition for exclusive download (web/leader only)
+    - Progress marker creation (.download_in_progress)
+    - Version marker writing after successful download
+    - Worker waiting support
+    
+    Args:
+        charm: Charm instance for status updates
+        version: Version to download (e.g., "7.14.3")
+        storage_coordinator: StorageCoordinator instance (optional)
+    
+    Returns:
+        Downloaded version string
+    
+    Raises:
+        RuntimeError: If download fails or lock cannot be acquired
+    """
+    # If no storage coordinator, fall back to original function
+    if not storage_coordinator:
+        logger.info("No storage coordinator, using local installation")
+        return download_and_install_concourse(charm, version)
+    
+    # Check if binaries already exist
+    existing_version = detect_existing_binaries(storage_coordinator, version)
+    if existing_version == version:
+        logger.info(f"Binaries v{version} already installed, skipping download")
+        charm.unit.status = MaintenanceStatus(f"Binaries v{version} already available")
+        return version
+    
+    # Web/leader downloads, workers wait
+    if not storage_coordinator.is_web_leader():
+        logger.info("Worker unit: waiting for web/leader to download binaries")
+        charm.unit.status = MaintenanceStatus(f"Waiting for binaries v{version}...")
+        
+        # Wait for binaries with timeout
+        success = storage_coordinator.wait_for_binaries(
+            expected_version=version,
+            timeout_seconds=300,  # 5 minutes
+            poll_interval_seconds=5
+        )
+        
+        if not success:
+            raise RuntimeError(
+                f"Timeout waiting for binaries v{version} from web/leader"
+            )
+        
+        logger.info(f"Binaries v{version} are now available")
+        charm.unit.status = MaintenanceStatus(f"Binaries v{version} ready")
+        return version
+    
+    # Web/leader: acquire lock and download (T019)
+    logger.info("Web/leader unit: acquiring download lock")
+    try:
+        with storage_coordinator.acquire_download_lock(timeout_seconds=0):
+            logger.info("Download lock acquired, starting download")
+            
+            # Create progress marker (T021)
+            storage_coordinator.mark_download_started(version)
+            charm.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
+            
+            try:
+                # Perform actual download
+                _download_and_extract_binaries(
+                    charm,
+                    version,
+                    storage_coordinator.storage.bin_directory
+                )
+                
+                # Write version marker (T020)
+                storage_coordinator.mark_download_complete(version)
+                logger.info(f"Successfully downloaded and marked v{version} as complete")
+                
+                charm.unit.status = MaintenanceStatus(f"Binaries v{version} installed")
+                return version
+                
+            except Exception as e:
+                # Clean up progress marker on failure
+                try:
+                    progress_marker = storage_coordinator.storage.bin_directory / ".download_in_progress"
+                    if progress_marker.exists():
+                        progress_marker.unlink()
+                except Exception:
+                    pass
+                raise
+                
+    except Exception as e:
+        logger.error(f"Failed to download binaries with lock: {e}")
+        raise RuntimeError(f"Download failed: {e}")
+
+
+def _download_and_extract_binaries(charm, version: str, target_dir: Path):
+    """Internal function to download and extract Concourse binaries.
+    
+    Args:
+        charm: Charm instance for status updates
+        version: Version to download
+        target_dir: Directory to extract binaries to
+    """
+    import urllib.request
+    import tarfile
+    import time
+    import shutil
+    
+    url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
+    logger.info(f"Downloading Concourse CI {version} from {url}")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tar_file = Path(tmpdir) / "concourse.tar.gz"
+        
+        # Download with progress tracking
+        last_pct = [0]
+        max_retries = 3
+        retry_delay = 5
+        
+        def download_progress(block_num, block_size, total_size):
+            downloaded = block_num * block_size
+            if total_size > 0:
+                pct = min(100, int(downloaded * 100 / total_size))
+                if pct != last_pct[0]:
+                    charm.unit.status = MaintenanceStatus(
+                        f"Downloading Concourse CI {version}... {pct}%"
+                    )
+                    last_pct[0] = pct
+        
+        # Retry download on failure
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.info(f"Retrying download (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(retry_delay * attempt)
+                    last_pct[0] = 0
+                
+                urllib.request.urlretrieve(url, tar_file, download_progress)
+                
+                if not tar_file.exists() or tar_file.stat().st_size == 0:
+                    raise RuntimeError(f"Downloaded file is empty: {tar_file}")
+                
+                logger.info(f"Download completed ({tar_file.stat().st_size} bytes)")
+                break
+                
+            except Exception as e:
+                logger.warning(f"Download attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                if tar_file.exists():
+                    tar_file.unlink()
+        
+        # Extract binaries
+        charm.unit.status = MaintenanceStatus(f"Extracting Concourse {version}...")
+        extract_path = Path(tmpdir) / "extract"
+        extract_path.mkdir()
+        
+        with tarfile.open(tar_file, "r:gz") as tar:
+            tar.extractall(path=extract_path)
+        
+        # Find source directory
+        src_dir = extract_path / "concourse"
+        if not src_dir.exists():
+            first_dir = next(extract_path.iterdir(), None)
+            if first_dir and first_dir.is_dir():
+                src_dir = first_dir
+            else:
+                src_dir = extract_path
+        
+        # Ensure target directory exists
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Move files to target
+        logger.info(f"Installing binaries from {src_dir} to {target_dir}")
+        for item in src_dir.iterdir():
+            dest = target_dir / item.name
+            if dest.exists():
+                if dest.is_dir() and not dest.is_symlink():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            shutil.move(str(item), str(dest))
+        
+        logger.info(f"Concourse {version} installed to {target_dir}")
 
 
 def download_and_install_concourse(charm, version: str):
