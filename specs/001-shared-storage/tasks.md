@@ -29,9 +29,9 @@ description: "Task list for shared storage feature implementation"
 
 **Purpose**: Project initialization and basic structure (no code changes required for this feature)
 
-- [ ] T001 Verify metadata.yaml storage configuration supports shared volumes (existing config at lines 72-77)
-- [ ] T002 [P] Verify Python 3.11+ environment and ops framework ≥2.0.0 dependencies in requirements.txt
-- [ ] T003 [P] Create lib/storage_coordinator.py module structure (empty skeleton with copyright header)
+- [x] T001 Verify metadata.yaml storage configuration supports shared volumes (existing config at lines 72-77)
+- [x] T002 [P] Verify Python 3.11+ environment and ops framework ≥2.0.0 dependencies in requirements.txt
+- [x] T003 [P] Create lib/storage_coordinator.py module structure (empty skeleton with copyright header)
 
 ---
 
