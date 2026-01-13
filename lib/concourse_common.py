@@ -56,6 +56,11 @@ def generate_keys():
     import grp
     
     keys_dir = Path(KEYS_DIR)
+    
+    # Ensure keys directory exists
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Ensured keys directory exists: {keys_dir}")
+    
     tsa_host_key = keys_dir / "tsa_host_key"
     session_signing_key = keys_dir / "session_signing_key"
     worker_key = keys_dir / "worker_key"
