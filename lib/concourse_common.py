@@ -14,19 +14,39 @@ logger = logging.getLogger(__name__)
 # Installation and configuration paths
 CONCOURSE_INSTALL_DIR = "/opt/concourse"
 CONCOURSE_DATA_DIR = "/var/lib/concourse"
+CONCOURSE_WORKER_DATA_DIR = "/var/lib/concourse-worker"
 CONCOURSE_CONFIG_FILE = f"{CONCOURSE_DATA_DIR}/config.env"
-CONCOURSE_WORKER_CONFIG_FILE = f"{CONCOURSE_DATA_DIR}/worker-config.env"
+CONCOURSE_WORKER_CONFIG_FILE = f"{CONCOURSE_WORKER_DATA_DIR}/worker-config.env"
 CONCOURSE_BIN = f"{CONCOURSE_INSTALL_DIR}/bin/concourse"
 SYSTEMD_SERVICE_DIR = "/etc/systemd/system"
 KEYS_DIR = f"{CONCOURSE_DATA_DIR}/keys"
+WORKER_KEYS_DIR = f"{CONCOURSE_WORKER_DATA_DIR}/keys"
 
 
-def ensure_directories():
-    """Ensure required directories exist"""
-    dirs = [CONCOURSE_INSTALL_DIR, CONCOURSE_DATA_DIR, KEYS_DIR]
+def ensure_directories(skip_shared_storage: bool = False):
+    """Ensure required directories exist.
+    
+    Args:
+        skip_shared_storage: If True, create worker directories instead of web directories
+    """
+    if skip_shared_storage:
+        # Worker: create writable worker directories, skip shared storage
+        dirs = [CONCOURSE_INSTALL_DIR, CONCOURSE_WORKER_DATA_DIR, WORKER_KEYS_DIR]
+    else:
+        # Web: create shared storage directories
+        dirs = [CONCOURSE_INSTALL_DIR, CONCOURSE_DATA_DIR, KEYS_DIR]
+    
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
-        os.chmod(dir_path, 0o755)
+        # Skip chmod on shared storage if it's readonly (workers accessing shared mount)
+        if skip_shared_storage and dir_path in [CONCOURSE_DATA_DIR, KEYS_DIR]:
+            logger.debug(f"Skipping chmod on readonly directory: {dir_path}")
+            continue
+        try:
+            os.chmod(dir_path, 0o755)
+        except OSError as e:
+            # If chmod fails on shared storage, it's likely readonly - that's okay
+            logger.debug(f"Cannot chmod {dir_path}: {e}")
     logger.info(f"Ensured directories exist: {', '.join(dirs)}")
 
 

@@ -138,11 +138,6 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(
             self.on.upgrade_action, self._on_update_concourse_version_action
         )
-        
-        # Storage events (for shared storage feature)
-        self.framework.observe(
-            self.on.concourse_data_storage_attached, self._on_storage_attached
-        )
 
     def _get_deployment_mode(self) -> str:
         """
@@ -225,8 +220,9 @@ class ConcourseCharm(CharmBase):
             deployment_mode = self._get_deployment_mode()
             logger.info(f"Starting Concourse installation (mode: {deployment_mode})")
 
-            # Common setup
-            ensure_directories()
+            # Common setup - skip chmod on shared storage for workers (readonly mount)
+            skip_shared = not self._should_run_web()
+            ensure_directories(skip_shared_storage=skip_shared)
             create_concourse_user()
             
             # Get desired version
@@ -486,34 +482,6 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             logger.error(f"Stop failed: {e}", exc_info=True)
     
-    def _on_storage_attached(self, event):
-        """Handle storage-attached event for shared storage feature.
-        
-        This hook is triggered when Juju storage is attached to the unit.
-        Store the storage location in unit's local state for use in install hook.
-        """
-        try:
-            storage_name = event.storage.name
-            storage_location = event.storage.location
-            logger.info(
-                f"Storage attached: {storage_name} at {storage_location}"
-            )
-            
-            # Store storage location in unit state for use in install hook
-            # Use unitdata since peer relation may not be available yet
-            state_file = Path("/var/lib/juju/agents") / f"unit-{self.unit.name}" / ".storage-location"
-            state_file.parent.mkdir(parents=True, exist_ok=True)
-            state_file.write_text(str(storage_location))
-            logger.info(f"Stored storage location: {storage_location}")
-            
-            # Storage will be used during install/start hooks
-            self.unit.status = MaintenanceStatus("Storage attached")
-            logger.info(f"Shared storage ready: {storage_location}")
-            
-        except Exception as e:
-            logger.error(f"Storage-attached hook failed: {e}", exc_info=True)
-            self.unit.status = BlockedStatus(f"Storage attach failed: {e}")
-
     def _on_postgresql_relation_created(self, event):
         """Handle PostgreSQL relation created"""
         logger.info("PostgreSQL relation created")
@@ -719,7 +687,8 @@ class ConcourseCharm(CharmBase):
             from pathlib import Path
 
             # Publish our worker public key
-            keys_dir = Path(KEYS_DIR)
+            from concourse_common import WORKER_KEYS_DIR
+            keys_dir = Path(WORKER_KEYS_DIR)
             worker_pub_key_path = keys_dir / "worker_key.pub"
             if worker_pub_key_path.exists():
                 worker_pub_key = worker_pub_key_path.read_text().strip()

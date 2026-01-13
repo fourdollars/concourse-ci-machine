@@ -65,11 +65,18 @@ class ConcourseWorkerHelper:
                 logger.info("Shared storage disabled (shared-storage=none)")
                 return None
             
-            # For LXC mode, always use /var/lib/concourse
+            # For LXC mode, workers use /var/lib/concourse-worker/ for their own data
+            # and access shared binaries/keys from /var/lib/concourse/
             if shared_storage_mode == "lxc":
+                # Worker's own writable directory
+                worker_base_path = Path("/var/lib/concourse-worker")
+                worker_base_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Worker base directory: {worker_base_path}")
+                
+                # Shared storage path (for binaries and keys)
                 storage_path = Path("/var/lib/concourse")
                 if not storage_path.exists():
-                    logger.warning(f"LXC storage path {storage_path} does not exist")
+                    logger.warning(f"LXC shared storage path {storage_path} does not exist")
                     return None
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
@@ -100,10 +107,18 @@ class ConcourseWorkerHelper:
                 is_leader=False  # Workers wait for download
             )
             
-            # Create worker-specific directory (T024)
-            self.worker_directory = WorkerDirectory.from_shared_storage(
-                shared_storage,
-                self.charm.unit.name
+            # Create worker-specific directory under /var/lib/concourse-worker/
+            # (not under shared storage to avoid write conflicts)
+            worker_path = worker_base_path / self.charm.unit.name
+            worker_path.mkdir(parents=True, exist_ok=True)
+            work_dir = worker_path / "work_dir"
+            work_dir.mkdir(parents=True, exist_ok=True)
+            
+            self.worker_directory = WorkerDirectory(
+                unit_name=self.charm.unit.name,
+                path=worker_path,
+                state_file=worker_path / "state.json",
+                work_dir=work_dir
             )
             logger.info(f"Created worker directory: {self.worker_directory.path}")
             logger.info(f"  - Work dir: {self.worker_directory.work_dir}")
