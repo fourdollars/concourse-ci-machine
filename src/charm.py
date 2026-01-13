@@ -411,10 +411,17 @@ class ConcourseCharm(CharmBase):
             logger.info(f"Deployment mode: {mode}")
 
             # Check for version change and upgrade if needed
+            # Only leader should download binaries in shared storage mode
             desired_version = self.config.get("version")
             if desired_version:
                 installed_version = self._get_installed_concourse_version()
                 if installed_version != desired_version:
+                    # In shared storage mode, only leader downloads
+                    if self.config.get("shared-storage", "none") != "none" and not self.unit.is_leader():
+                        logger.info(f"Worker unit: waiting for leader to upgrade to {desired_version}")
+                        self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse {desired_version}")
+                        return
+                    
                     logger.info(f"Upgrading Concourse CI from {installed_version} to {desired_version}")
                     self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {desired_version}...")
                     
