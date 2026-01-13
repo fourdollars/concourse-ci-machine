@@ -415,6 +415,15 @@ class ConcourseCharm(CharmBase):
             desired_version = self.config.get("version")
             if desired_version:
                 installed_version = self._get_installed_concourse_version()
+                
+                # Also check shared storage for version if configured
+                if not installed_version and self.config.get("shared-storage", "none") == "lxc":
+                    from pathlib import Path
+                    version_marker = Path("/var/lib/concourse/.installed_version")
+                    if version_marker.exists():
+                        installed_version = version_marker.read_text().strip()
+                        logger.info(f"Found version {installed_version} in shared storage")
+                
                 if installed_version != desired_version:
                     # In shared storage mode, only leader downloads
                     if self.config.get("shared-storage", "none") != "none" and not self.unit.is_leader():
