@@ -281,3 +281,46 @@ WantedBy=multi-user.target
             return result.returncode == 0 and result.stdout.strip() == "active"
         except:
             return False
+    
+    def upgrade_with_shared_storage(self, target_version: str) -> None:
+        """Perform coordinated upgrade with shared storage (T050).
+        
+        Steps:
+        1. Acquire exclusive lock
+        2. Download new binaries to shared storage
+        3. Update version marker
+        4. Restart web server service
+        
+        Args:
+            target_version: Target Concourse version (e.g., "7.14.3")
+            
+        Raises:
+            LockAcquireError: If another unit holds the download lock
+            Exception: If download or installation fails
+        """
+        if not self.storage_coordinator:
+            raise Exception("Storage coordinator not initialized for upgrade")
+        
+        logger.info(f"Starting coordinated upgrade to v{target_version}")
+        
+        # Step 1: Acquire exclusive lock (T050)
+        logger.info("Acquiring exclusive lock for binary download")
+        with self.storage_coordinator.lock.acquire_exclusive():
+            logger.info("Lock acquired, downloading binaries")
+            
+            # Step 2: Download new version to shared storage (T050)
+            from concourse_installer import download_and_install_concourse_with_storage
+            download_and_install_concourse_with_storage(
+                self.charm, target_version, self.storage_coordinator
+            )
+            
+            # Step 3: Update version marker (T050)
+            logger.info(f"Writing version marker: {target_version}")
+            self.storage_coordinator.storage.write_installed_version(target_version)
+            
+        logger.info("Lock released, binaries installed")
+        
+        # Step 4: Restart web server (T050)
+        logger.info("Restarting web server with new binaries")
+        self.restart_service()
+        logger.info(f"Web server upgraded to v{target_version} successfully")

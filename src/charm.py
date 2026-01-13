@@ -680,8 +680,12 @@ class ConcourseCharm(CharmBase):
             logger.error(f"Failed to authorize worker key: {e}", exc_info=True)
 
     def _on_peer_relation_changed(self, event):
-        """Handle peer relation changed - share TSA keys and worker keys"""
+        """Handle peer relation changed - share TSA keys, worker keys, and upgrade signals (T046)"""
         logger.info("Peer relation changed")
+        
+        # T046: Check for upgrade signals first (for worker units)
+        if not self.unit.is_leader() and self.config.get("shared-storage", "none") != "none":
+            self._handle_upgrade_signals(event)
 
         # Web server: publish keys and authorize workers
         if self._should_run_web():
@@ -723,7 +727,8 @@ class ConcourseCharm(CharmBase):
                     break
             
             # Check if worker version matches web version and upgrade if needed
-            if web_version:
+            # Only for non-coordinated upgrades (simple auto-upgrade)
+            if web_version and self.config.get("shared-storage", "none") == "none":
                 worker_version = self._get_installed_concourse_version()
                 if worker_version and worker_version != web_version:
                     logger.info(f"Web version ({web_version}) differs from worker version ({worker_version}), upgrading...")
@@ -1116,39 +1121,191 @@ class ConcourseCharm(CharmBase):
         return None
 
     def _on_update_concourse_version_action(self, event):
-        """Handle upgrade action"""
+        """Handle upgrade action with coordinated multi-unit upgrade support (T043-T045)"""
         try:
             version = event.params.get("version") or self.config.get("version") or get_concourse_version(self.config)
-            self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {version}...")
             
-            # Stop services before upgrading to avoid "text file busy" error
-            if self._should_run_web():
-                self.web_helper.stop_service()
-            if self._should_run_worker():
-                self.worker_helper.stop_service()
+            # Check if we should use coordinated upgrade (shared storage mode)
+            shared_storage_mode = self.config.get("shared-storage", "none")
+            use_coordinated_upgrade = (shared_storage_mode != "none" and 
+                                      self.model.get_relation("concourse-peer") is not None)
             
-            download_and_install_concourse(self, version)
-            
-            # Re-install wrappers after upgrade if we are a worker
-            if self._should_run_worker():
-                if self.config.get("enable-gpu", False):
-                    self.worker_helper.configure_containerd_for_gpu()
-                else:
-                    self.worker_helper.install_folder_mount_wrapper()
-            
-            self._restart_concourse_service()
-            
-            # If web server, publish version to relations to trigger worker upgrades
-            if self._should_run_web():
-                self._publish_version_to_tsa_relations()
-                self._publish_version_to_peer_relation()
-            
-            event.set_results({"version": version, "message": "Concourse upgraded"})
-            logger.info(f"Concourse upgraded to {version} via action")
-            self._update_status()
+            if use_coordinated_upgrade and self.unit.is_leader():
+                # T044: Web/leader orchestrates coordinated upgrade
+                self._orchestrate_coordinated_upgrade(event, version)
+            elif use_coordinated_upgrade and not self.unit.is_leader():
+                # Workers should not trigger upgrade action
+                event.fail("Only the leader unit can trigger coordinated upgrades. "
+                          "Run this action on the leader unit.")
+                return
+            else:
+                # T044: Fallback to simple upgrade for single-unit or no shared storage
+                self._perform_simple_upgrade(event, version)
+                
         except Exception as e:
             event.fail(f"Upgrade failed: {e}")
             logger.error(f"Upgrade action failed: {e}", exc_info=True)
+    
+    def _orchestrate_coordinated_upgrade(self, event, version: str):
+        """Orchestrate coordinated upgrade across multiple units (T045)"""
+        try:
+            from storage_coordinator import UpgradeCoordinator, RelationDataAccessor, ServiceManager
+            
+            # T053: Set status messages
+            self.unit.status = MaintenanceStatus(f"Upgrading to v{version}...")
+            logger.info(f"Initiating coordinated upgrade to v{version}")  # T052
+            
+            # Initialize upgrade coordinator
+            storage_coordinator = self.web_helper.storage_coordinator
+            if not storage_coordinator:
+                raise Exception("Storage coordinator not initialized for coordinated upgrade")
+            
+            peer_relation = self.model.get_relation("concourse-peer")
+            relation_accessor = RelationDataAccessor(peer_relation)
+            service_manager = ServiceManager("concourse-server.service")
+            
+            upgrade_coordinator = UpgradeCoordinator(
+                storage_coordinator=storage_coordinator,
+                service_manager=service_manager,
+                relation_accessor=relation_accessor,
+                is_leader=True
+            )
+            
+            # Get expected worker count
+            worker_count = len([u for u in peer_relation.units if u != self.unit])
+            
+            # T045: Orchestration sequence
+            # Step 1: Initiate upgrade (sets PREPARE phase)
+            logger.info(f"Step 1: Initiating upgrade, expecting {worker_count} workers")  # T052
+            upgrade_coordinator.initiate_upgrade(version, worker_count)
+            self.unit.status = MaintenanceStatus(f"Waiting for {worker_count} workers...")  # T053
+            
+            # Step 2: Wait for workers to stop and acknowledge
+            try:
+                logger.info("Step 2: Waiting for workers to stop services...")  # T052
+                upgrade_coordinator.wait_for_workers_ready(timeout_seconds=120)
+                logger.info("All workers ready, proceeding with download")  # T052
+            except Exception as e:
+                logger.warning(f"Worker wait timeout or error: {e}")  # T052
+                # Continue anyway after timeout
+            
+            # Step 3: Mark download phase
+            upgrade_coordinator.mark_download_phase()
+            self.unit.status = MaintenanceStatus(f"Downloading v{version}...")  # T053
+            
+            # Step 4: Stop web service, download binaries, restart
+            logger.info("Step 3: Stopping web service for upgrade")  # T052
+            self.web_helper.stop_service()
+            
+            from concourse_installer import download_and_install_concourse_with_storage
+            logger.info(f"Step 4: Downloading Concourse v{version}")  # T052
+            download_and_install_concourse_with_storage(self, version, storage_coordinator)
+            
+            logger.info("Step 5: Restarting web service")  # T052
+            self.web_helper.start_service()
+            
+            # Step 5: Mark upgrade complete (signals workers to restart)
+            logger.info("Step 6: Upgrade complete, signaling workers")  # T052
+            upgrade_coordinator.complete_upgrade()
+            self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
+            
+            # Step 6: Reset state after a short delay
+            import time
+            time.sleep(5)
+            upgrade_coordinator.reset_upgrade_state()
+            
+            event.set_results({
+                "version": version,
+                "message": f"Coordinated upgrade to v{version} completed",
+                "workers": worker_count
+            })
+            logger.info(f"Coordinated upgrade to v{version} completed successfully")  # T052
+            self._update_status()
+            
+        except Exception as e:
+            logger.error(f"Coordinated upgrade failed: {e}", exc_info=True)  # T052
+            raise
+    
+    def _perform_simple_upgrade(self, event, version: str):
+        """Perform simple single-unit upgrade without coordination"""
+        self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {version}...")
+        
+        # Stop services before upgrading to avoid "text file busy" error
+        if self._should_run_web():
+            self.web_helper.stop_service()
+        if self._should_run_worker():
+            self.worker_helper.stop_service()
+        
+        download_and_install_concourse(self, version)
+        
+        # Re-install wrappers after upgrade if we are a worker
+        if self._should_run_worker():
+            if self.config.get("enable-gpu", False):
+                self.worker_helper.configure_containerd_for_gpu()
+            else:
+                self.worker_helper.install_folder_mount_wrapper()
+        
+        self._restart_concourse_service()
+        
+        # If web server, publish version to relations to trigger worker upgrades
+        if self._should_run_web():
+            self._publish_version_to_tsa_relations()
+            self._publish_version_to_peer_relation()
+        
+        event.set_results({"version": version, "message": "Concourse upgraded"})
+        logger.info(f"Concourse upgraded to {version} via action")
+        self._update_status()
+    
+    def _handle_upgrade_signals(self, event):
+        """Handle upgrade coordination signals from leader (T046, T047, T048)"""
+        try:
+            from storage_coordinator import (
+                UpgradeCoordinator, RelationDataAccessor,
+                ServiceManager, UpgradeState
+            )
+            
+            # Get upgrade state from app data
+            relation_accessor = RelationDataAccessor(event.relation)
+            app_data = relation_accessor.get_app_data()
+            
+            if not app_data or "upgrade-state" not in app_data:
+                return  # No upgrade in progress
+            
+            upgrade_state = UpgradeState.from_relation_data(app_data)
+            logger.info(f"Detected upgrade state: {upgrade_state.state} to v{upgrade_state.target_version}")
+            
+            # Initialize coordinators
+            storage_coordinator = self.worker_helper.storage_coordinator
+            if not storage_coordinator:
+                logger.warning("Storage coordinator not available for upgrade coordination")
+                return
+            
+            service_manager = ServiceManager("concourse-worker.service")
+            upgrade_coordinator = UpgradeCoordinator(
+                storage_coordinator=storage_coordinator,
+                service_manager=service_manager,
+                relation_accessor=relation_accessor,
+                is_leader=False
+            )
+            
+            # Handle upgrade signals based on state
+            if upgrade_state.state == "prepare":
+                # T047: Handle PREPARE signal
+                logger.info("Handling PREPARE signal from leader")  # T052
+                self.unit.status = MaintenanceStatus("Preparing for upgrade...")  # T053
+                upgrade_coordinator.handle_prepare_signal()
+                self.unit.status = MaintenanceStatus("Ready for upgrade")  # T053
+                
+            elif upgrade_state.state == "complete":
+                # T048: Handle COMPLETE signal
+                logger.info("Handling COMPLETE signal from leader")  # T052
+                self.unit.status = MaintenanceStatus(f"Upgrading to v{upgrade_state.target_version}...")  # T053
+                upgrade_coordinator.handle_complete_signal()
+                self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
+                self._update_status()
+                
+        except Exception as e:
+            logger.error(f"Failed to handle upgrade signal: {e}", exc_info=True)
     
     def _publish_version_to_peer_relation(self):
         """Publish current version to peer relation to trigger worker upgrades"""
