@@ -452,6 +452,17 @@ class ConcourseCharm(CharmBase):
                     self._restart_concourse_service()
 
                 if self._should_run_worker():
+                    from pathlib import Path
+                    from concourse_common import CONCOURSE_BIN
+                    
+                    # Check if Concourse binaries are installed before configuring
+                    if not Path(CONCOURSE_BIN).exists() and not Path("/var/lib/concourse/bin/concourse").exists():
+                        logger.info("Concourse not installed yet, skipping worker configuration")
+                        # Set waiting status if we're waiting for shared storage
+                        if self.config.get("shared-storage", "none") != "none":
+                            self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                        return
+                    
                     logger.info("Updating worker configuration")
                     tsa_host = self._get_tsa_host()
                     
