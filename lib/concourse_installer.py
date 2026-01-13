@@ -247,9 +247,11 @@ def download_and_install_concourse_with_storage(
             except Exception as e:
                 # Clean up progress marker on failure
                 try:
-                    progress_marker = storage_coordinator.storage.bin_directory / ".download_in_progress"
-                    if progress_marker.exists():
-                        progress_marker.unlink()
+                    bin_dir = storage_coordinator.storage.bin_directory
+                    if bin_dir.exists():
+                        progress_marker = bin_dir / ".download_in_progress"
+                        if progress_marker.exists():
+                            progress_marker.unlink()
                 except Exception:
                     pass
                 raise
