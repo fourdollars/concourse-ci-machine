@@ -716,6 +716,8 @@ class StorageCoordinator:
         Args:
             version: Version being downloaded
         """
+        # Ensure bin_directory exists before creating marker
+        self.storage.bin_directory.mkdir(parents=True, exist_ok=True)
         progress_marker = self.storage.bin_directory / ".download_in_progress"
         progress_marker.write_text(f"{version}\n{datetime.now(timezone.utc).isoformat()}")
         self.logger.info(f"Marked download started for v{version}")
@@ -813,11 +815,13 @@ class StorageCoordinator:
 class UpgradeCoordinator:
     """Coordinator for multi-unit upgrades via peer relations.
     
-    Stub implementation - to be completed in Phase 4 (User Story 2).
+    Coordinates rolling upgrades across multiple Concourse units using Juju peer
+    relations. Leader orchestrates the upgrade, workers respond to signals.
     
     Attributes:
         storage_coordinator: StorageCoordinator instance
         service_manager: ServiceManager instance
+        relation_accessor: RelationDataAccessor for peer relation data
         is_leader: Whether this unit is leader
     """
     
@@ -825,27 +829,306 @@ class UpgradeCoordinator:
         self, 
         storage_coordinator: StorageCoordinator,
         service_manager: ServiceManager,
+        relation_accessor: 'RelationDataAccessor',
         is_leader: bool
     ):
         self.storage = storage_coordinator
         self.service_mgr = service_manager
+        self.relation = relation_accessor
         self._is_leader = is_leader
         self.logger = logging.getLogger(f"{__name__}.UpgradeCoordinator")
     
-    def initiate_upgrade(self, target_version: str) -> None:
-        """Initiate upgrade process (web/leader only) - STUB."""
+    def initiate_upgrade(self, target_version: str, expected_workers: int = 0) -> None:
+        """Initiate upgrade process (web/leader only).
+        
+        Sets phase=PREPARE in peer relation data and triggers relation-changed
+        on all units.
+        
+        Args:
+            target_version: Version to upgrade to (e.g., "7.14.3")
+            expected_workers: Number of workers expected to acknowledge
+            
+        Raises:
+            PermissionError: If caller is not web/leader
+        """
         if not self._is_leader:
             raise PermissionError("Only leader can initiate upgrade")
-        self.logger.info(f"Upgrade to v{target_version} initiated (stub)")
+        
+        # Get current state and verify no upgrade in progress
+        current_state = self.get_upgrade_state()
+        if current_state and current_state.state != "idle":
+            raise SharedStorageError(
+                f"Upgrade already in progress (state={current_state.state})"
+            )
+        
+        unit_name = os.environ.get('JUJU_UNIT_NAME', 'unknown')
+        
+        upgrade_state = UpgradeState(
+            state="prepare",
+            target_version=target_version,
+            initiated_by=unit_name,
+            timestamp=datetime.now(timezone.utc),
+            worker_ready_count=0,
+            expected_worker_count=expected_workers
+        )
+        
+        # Write state to peer relation
+        for key, value in upgrade_state.to_relation_data().items():
+            self.relation.set_app_data(key, value)
+        
+        self.logger.info(
+            f"Upgrade to v{target_version} initiated by {unit_name}, "
+            f"expecting {expected_workers} workers"
+        )
     
-    def get_upgrade_state(self) -> Optional[UpgradeState]:
-        """Read current upgrade state - STUB."""
-        return UpgradeState(
+    def wait_for_workers_ready(self, timeout_seconds: int = 120) -> bool:
+        """Wait for all workers to acknowledge prepare signal (web/leader only).
+        
+        Polls peer relation data for worker acknowledgments with exponential backoff.
+        
+        Args:
+            timeout_seconds: Maximum time to wait (default: 2 minutes)
+            
+        Returns:
+            True if all workers ready, False on timeout
+            
+        Raises:
+            PermissionError: If caller is not web/leader
+            UpgradeTimeoutError: If workers don't acknowledge within timeout
+        """
+        if not self._is_leader:
+            raise PermissionError("Only leader can wait for workers")
+        
+        start_time = time.time()
+        poll_interval = 2  # Start with 2-second intervals
+        
+        while (time.time() - start_time) < timeout_seconds:
+            state = self.get_upgrade_state()
+            if not state:
+                raise SharedStorageError("Upgrade state lost during wait")
+            
+            ready_count = state.worker_ready_count
+            expected_count = state.expected_worker_count
+            
+            self.logger.debug(
+                f"Workers ready: {ready_count}/{expected_count} "
+                f"(elapsed: {int(time.time() - start_time)}s)"
+            )
+            
+            if ready_count >= expected_count:
+                self.logger.info(f"All {expected_count} workers ready")
+                return True
+            
+            time.sleep(poll_interval)
+            poll_interval = min(poll_interval * 1.5, 10)  # Max 10s intervals
+        
+        # Timeout reached
+        state = self.get_upgrade_state()
+        ready_count = state.worker_ready_count if state else 0
+        expected_count = state.expected_worker_count if state else 0
+        
+        self.logger.warning(
+            f"Timeout waiting for workers: {ready_count}/{expected_count} ready "
+            f"after {timeout_seconds}s"
+        )
+        
+        raise UpgradeTimeoutError(
+            f"Only {ready_count}/{expected_count} workers acknowledged after "
+            f"{timeout_seconds}s timeout"
+        )
+    
+    def mark_download_phase(self) -> None:
+        """Set phase=DOWNLOADING in peer relation (web/leader only).
+        
+        Called before starting binary download to signal workers that
+        download is in progress.
+        
+        Raises:
+            PermissionError: If caller is not web/leader
+        """
+        if not self._is_leader:
+            raise PermissionError("Only leader can mark download phase")
+        
+        state = self.get_upgrade_state()
+        if not state:
+            raise SharedStorageError("No upgrade in progress")
+        
+        state.state = "downloading"
+        state.timestamp = datetime.now(timezone.utc)
+        
+        for key, value in state.to_relation_data().items():
+            self.relation.set_app_data(key, value)
+        
+        self.logger.info("Marked upgrade phase: DOWNLOADING")
+    
+    def complete_upgrade(self) -> None:
+        """Set phase=COMPLETE in peer relation (web/leader only).
+        
+        Called after binaries downloaded and web/leader service restarted.
+        Workers will detect this signal and restart their services.
+        
+        Raises:
+            PermissionError: If caller is not web/leader
+        """
+        if not self._is_leader:
+            raise PermissionError("Only leader can complete upgrade")
+        
+        state = self.get_upgrade_state()
+        if not state:
+            raise SharedStorageError("No upgrade in progress")
+        
+        state.state = "complete"
+        state.timestamp = datetime.now(timezone.utc)
+        
+        for key, value in state.to_relation_data().items():
+            self.relation.set_app_data(key, value)
+        
+        self.logger.info(
+            f"Upgrade to v{state.target_version} completed, "
+            f"workers can now restart"
+        )
+    
+    def reset_upgrade_state(self) -> None:
+        """Reset to phase=IDLE (web/leader only).
+        
+        Called after all workers have restarted and upgrade is fully complete.
+        
+        Raises:
+            PermissionError: If caller is not web/leader
+        """
+        if not self._is_leader:
+            raise PermissionError("Only leader can reset upgrade state")
+        
+        idle_state = UpgradeState(
             state="idle",
             target_version=None,
             initiated_by=None,
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
+            worker_ready_count=0,
+            expected_worker_count=0
         )
+        
+        for key, value in idle_state.to_relation_data().items():
+            self.relation.set_app_data(key, value)
+        
+        self.logger.info("Upgrade state reset to IDLE")
+    
+    def get_upgrade_state(self) -> Optional[UpgradeState]:
+        """Read current upgrade state from peer relation.
+        
+        Safe to call from any unit (leader or worker).
+        
+        Returns:
+            Current upgrade state, or None if no state exists
+        """
+        try:
+            data = self.relation.get_app_data()
+            if not data or "upgrade-state" not in data:
+                return None
+            
+            # Handle missing timestamp
+            if "timestamp" not in data:
+                data["timestamp"] = datetime.now(timezone.utc).isoformat()
+            
+            return UpgradeState.from_relation_data(data)
+        except (KeyError, ValueError) as e:
+            self.logger.warning(f"Failed to parse upgrade state: {e}")
+            return None
+    
+    def handle_prepare_signal(self) -> None:
+        """Handle PREPARE signal from web/leader (worker units only).
+        
+        Steps:
+        1. Stop concourse-worker.service
+        2. Increment worker_ready_count in peer relation
+        3. Wait for COMPLETE signal
+        
+        Raises:
+            PermissionError: If caller is web/leader
+            ServiceManagementError: If service stop fails
+        """
+        if self._is_leader:
+            raise PermissionError("Leader cannot handle prepare signal")
+        
+        state = self.get_upgrade_state()
+        if not state or state.state != "prepare":
+            self.logger.warning("No PREPARE signal detected")
+            return
+        
+        unit_name = os.environ.get('JUJU_UNIT_NAME', 'unknown')
+        
+        self.logger.info(f"Handling PREPARE signal for upgrade to v{state.target_version}")
+        
+        # Stop worker service
+        try:
+            self.service_mgr.stop()
+            self.logger.info("Worker service stopped successfully")
+        except ServiceManagementError as e:
+            self.logger.error(f"Failed to stop worker service: {e}")
+            raise
+        
+        # Increment ready count
+        state.worker_ready_count += 1
+        state.timestamp = datetime.now(timezone.utc)
+        
+        for key, value in state.to_relation_data().items():
+            self.relation.set_app_data(key, value)
+        
+        # Set unit-specific flag
+        self.relation.set_unit_data("upgrade-ready", "true")
+        self.relation.set_unit_data("upgrade-ready-timestamp", 
+                                   datetime.now(timezone.utc).isoformat())
+        
+        self.logger.info(
+            f"Acknowledged PREPARE signal "
+            f"({state.worker_ready_count}/{state.expected_worker_count} ready)"
+        )
+    
+    def handle_complete_signal(self) -> None:
+        """Handle COMPLETE signal from web/leader (worker units only).
+        
+        Steps:
+        1. Verify new binaries are installed
+        2. Start concourse-worker.service
+        3. Clear upgrade-ready flag
+        
+        Raises:
+            PermissionError: If caller is web/leader
+            ServiceManagementError: If service start fails
+            SharedStorageError: If new binaries invalid
+        """
+        if self._is_leader:
+            raise PermissionError("Leader cannot handle complete signal")
+        
+        state = self.get_upgrade_state()
+        if not state or state.state != "complete":
+            self.logger.warning("No COMPLETE signal detected")
+            return
+        
+        unit_name = os.environ.get('JUJU_UNIT_NAME', 'unknown')
+        
+        self.logger.info(f"Handling COMPLETE signal for upgrade to v{state.target_version}")
+        
+        # Verify new binaries
+        if not self.storage.verify_binaries(state.target_version):
+            raise SharedStorageError(
+                f"Binary verification failed for v{state.target_version}"
+            )
+        
+        self.logger.info("New binaries verified successfully")
+        
+        # Start worker service
+        try:
+            self.service_mgr.start()
+            self.logger.info("Worker service started successfully")
+        except ServiceManagementError as e:
+            self.logger.error(f"Failed to start worker service: {e}")
+            raise
+        
+        # Clear unit flags
+        self.relation.set_unit_data("upgrade-ready", "false")
+        
+        self.logger.info(f"Upgrade to v{state.target_version} completed on {unit_name}")
 
 
 class SystemdServiceManager:
@@ -892,25 +1175,116 @@ class SystemdServiceManager:
 class RelationDataAccessor:
     """Accessor for Juju peer relation data.
     
-    Stub implementation - to be completed in Phase 4 with ops.Relation integration.
+    Provides interface to read/write peer relation data for upgrade coordination.
+    Can work with ops.Relation objects or fallback to mock storage for testing.
+    
+    Attributes:
+        relation: Optional ops.Relation object
+        relation_name: Name of peer relation (default: "peers")
     """
     
-    def __init__(self, relation_name: str = "peers"):
+    def __init__(self, relation: Optional[Any] = None, relation_name: str = "peers"):
+        self.relation = relation
         self.relation_name = relation_name
         self.logger = logging.getLogger(f"{__name__}.RelationDataAccessor")
-        self._data: dict[str, dict[str, str]] = {}  # Mock storage
+        self._mock_app_data: dict[str, str] = {}  # Fallback for testing
+        self._mock_unit_data: dict[str, dict[str, str]] = {}  # Fallback for testing
+    
+    def set_app_data(self, key: str, value: str) -> None:
+        """Set application-level data in peer relation.
+        
+        Args:
+            key: Data key
+            value: Data value (must be string)
+        """
+        if self.relation and hasattr(self.relation, 'data'):
+            try:
+                # Try to use ops.Relation API
+                self.relation.data[self.relation.app][key] = value
+            except Exception as e:
+                self.logger.warning(f"Failed to set app data via relation: {e}")
+                self._mock_app_data[key] = value
+        else:
+            self._mock_app_data[key] = value
+    
+    def get_app_data(self) -> dict[str, str]:
+        """Get all application-level data from peer relation.
+        
+        Returns:
+            Dictionary of all app-level key-value pairs
+        """
+        if self.relation and hasattr(self.relation, 'data'):
+            try:
+                # Try to use ops.Relation API
+                app_data = dict(self.relation.data[self.relation.app])
+                return app_data
+            except Exception as e:
+                self.logger.warning(f"Failed to get app data via relation: {e}")
+                return dict(self._mock_app_data)
+        else:
+            return dict(self._mock_app_data)
     
     def set_unit_data(self, key: str, value: str) -> None:
-        """Set data on current unit - STUB."""
-        self._data.setdefault("local", {})[key] = value
+        """Set data on current unit.
+        
+        Args:
+            key: Data key
+            value: Data value (must be string)
+        """
+        unit_name = os.environ.get('JUJU_UNIT_NAME', 'local')
+        
+        if self.relation and hasattr(self.relation, 'data'):
+            try:
+                # Try to use ops.Relation API
+                local_unit = None
+                for unit in self.relation.units:
+                    if unit.name == unit_name:
+                        local_unit = unit
+                        break
+                
+                if local_unit:
+                    self.relation.data[local_unit][key] = value
+                else:
+                    self._mock_unit_data.setdefault(unit_name, {})[key] = value
+            except Exception as e:
+                self.logger.warning(f"Failed to set unit data via relation: {e}")
+                self._mock_unit_data.setdefault(unit_name, {})[key] = value
+        else:
+            self._mock_unit_data.setdefault(unit_name, {})[key] = value
     
     def get_unit_data(self, unit_name: str, key: str) -> Optional[str]:
-        """Get data from specific unit - STUB."""
-        return self._data.get(unit_name, {}).get(key)
+        """Get data from specific unit.
+        
+        Args:
+            unit_name: Name of unit to query
+            key: Data key
+            
+        Returns:
+            Value if exists, None otherwise
+        """
+        if self.relation and hasattr(self.relation, 'data'):
+            try:
+                for unit in self.relation.units:
+                    if unit.name == unit_name:
+                        return self.relation.data[unit].get(key)
+            except Exception as e:
+                self.logger.warning(f"Failed to get unit data via relation: {e}")
+        
+        return self._mock_unit_data.get(unit_name, {}).get(key)
     
     def get_all_units(self) -> list[str]:
-        """Get list of all units - STUB."""
-        return list(self._data.keys())
+        """Get list of all units in relation.
+        
+        Returns:
+            List of unit names
+        """
+        if self.relation and hasattr(self.relation, 'units'):
+            try:
+                return [unit.name for unit in self.relation.units]
+            except Exception as e:
+                self.logger.warning(f"Failed to get units via relation: {e}")
+        
+        return list(self._mock_unit_data.keys())
 
 
 # ============================================================================

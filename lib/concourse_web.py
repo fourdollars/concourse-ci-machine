@@ -66,8 +66,12 @@ class ConcourseWebHelper:
             if shared_storage_mode == "lxc":
                 storage_path = Path("/var/lib/concourse")
                 if not storage_path.exists():
-                    logger.warning(f"LXC storage path {storage_path} does not exist")
-                    return None
+                    from storage_coordinator import StorageNotMountedError
+                    raise StorageNotMountedError(
+                        f"Shared storage mode 'lxc' requires {storage_path} to exist. "
+                        f"Please ensure the LXC container has shared storage properly mounted. "
+                        f"See documentation for LXC shared directory configuration."
+                    )
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None

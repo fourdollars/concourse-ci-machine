@@ -98,21 +98,21 @@ description: "Task list for shared storage feature implementation"
 
 ### Implementation for User Story 2
 
-- [ ] T035 [P] [US2] Implement UpgradeCoordinator.initiate_upgrade method in lib/storage_coordinator.py that sets phase=PREPARE in peer relation data
-- [ ] T036 [P] [US2] Implement UpgradeCoordinator.wait_for_workers_ready method in lib/storage_coordinator.py with 2-minute timeout and worker count polling
-- [ ] T037 [P] [US2] Implement UpgradeCoordinator.mark_download_phase method in lib/storage_coordinator.py that sets phase=DOWNLOADING
-- [ ] T038 [P] [US2] Implement UpgradeCoordinator.complete_upgrade method in lib/storage_coordinator.py that sets phase=COMPLETE
-- [ ] T039 [P] [US2] Implement UpgradeCoordinator.reset_upgrade_state method in lib/storage_coordinator.py that sets phase=IDLE
-- [ ] T040 [P] [US2] Implement UpgradeCoordinator.get_upgrade_state method in lib/storage_coordinator.py that reads from peer relation data
-- [ ] T041 [P] [US2] Implement UpgradeCoordinator.handle_prepare_signal method in lib/storage_coordinator.py for worker units (stop service, set ready flag)
-- [ ] T042 [P] [US2] Implement UpgradeCoordinator.handle_complete_signal method in lib/storage_coordinator.py for worker units (verify binaries, start service)
+- [x] T035 [P] [US2] Implement UpgradeCoordinator.initiate_upgrade method in lib/storage_coordinator.py that sets phase=PREPARE in peer relation data
+- [x] T036 [P] [US2] Implement UpgradeCoordinator.wait_for_workers_ready method in lib/storage_coordinator.py with 2-minute timeout and worker count polling
+- [x] T037 [P] [US2] Implement UpgradeCoordinator.mark_download_phase method in lib/storage_coordinator.py that sets phase=DOWNLOADING
+- [x] T038 [P] [US2] Implement UpgradeCoordinator.complete_upgrade method in lib/storage_coordinator.py that sets phase=COMPLETE
+- [x] T039 [P] [US2] Implement UpgradeCoordinator.reset_upgrade_state method in lib/storage_coordinator.py that sets phase=IDLE
+- [x] T040 [P] [US2] Implement UpgradeCoordinator.get_upgrade_state method in lib/storage_coordinator.py that reads from peer relation data
+- [x] T041 [P] [US2] Implement UpgradeCoordinator.handle_prepare_signal method in lib/storage_coordinator.py for worker units (stop service, set ready flag)
+- [x] T042 [P] [US2] Implement UpgradeCoordinator.handle_complete_signal method in lib/storage_coordinator.py for worker units (verify binaries, start service)
 - [ ] T043 [US2] Add upgrade action handler in src/charm.py that creates upgrade_concourse method with version parameter
 - [ ] T044 [US2] Update src/charm.py upgrade_concourse method to branch on unit role: web/leader orchestrates, workers respond to signals
 - [ ] T045 [US2] Implement web/leader upgrade orchestration in src/charm.py: initiate → wait for workers → download → restart → complete
 - [ ] T046 [US2] Add _on_peer_relation_changed handler in src/charm.py that detects upgrade signals and calls appropriate coordinator methods
 - [ ] T047 [US2] Update lib/concourse_worker.py to add upgrade preparation logic: detect PREPARE signal → stop worker service → acknowledge
 - [ ] T048 [US2] Update lib/concourse_worker.py to add upgrade completion logic: detect COMPLETE signal → verify binaries → start worker service
-- [ ] T049 [US2] Add RelationDataAccessor implementation in lib/storage_coordinator.py using ops.framework relation data APIs
+- [x] T049 [US2] Add RelationDataAccessor implementation in lib/storage_coordinator.py using ops.framework relation data APIs
 - [ ] T050 [US2] Update lib/concourse_web.py to add upgrade download logic: acquire lock → download new version → update marker → restart server
 - [ ] T051 [US2] Add upgrade timeout handling in lib/storage_coordinator.py UpgradeCoordinator with UpgradeTimeoutError exception
 - [ ] T052 [US2] Update lib/concourse_common.py to add logging for upgrade phases ("Upgrade initiated", "Waiting for workers", "Download complete")

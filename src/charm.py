@@ -248,9 +248,15 @@ class ConcourseCharm(CharmBase):
                     from concourse_common import create_shared_storage_symlinks
                     create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                elif self.config.get("shared-storage", "none") != "none":
+                    # Shared storage is configured but not available - this is an error
+                    raise Exception(
+                        f"Shared storage mode '{self.config['shared-storage']}' is configured "
+                        "but shared storage initialization failed. Check logs for details."
+                    )
                 else:
-                    # Fallback to local installation
-                    logger.info("No shared storage, using local installation")
+                    # No shared storage configured, use local installation
+                    logger.info("No shared storage configured, using local installation")
                     download_and_install_concourse(self, version)
                     
             elif self._should_run_worker():
@@ -282,9 +288,16 @@ class ConcourseCharm(CharmBase):
                     from concourse_common import create_shared_storage_symlinks
                     create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                elif self.config.get("shared-storage", "none") != "none":
+                    # Shared storage is configured but not available - this is an error
+                    raise Exception(
+                        f"Shared storage mode '{self.config['shared-storage']}' is configured "
+                        "but shared storage initialization failed. Worker cannot proceed without "
+                        "access to shared binaries. Check logs for details."
+                    )
                 else:
-                    # Fallback to local installation
-                    logger.info("No shared storage, using local installation")
+                    # No shared storage configured, use local installation
+                    logger.info("No shared storage configured, using local installation")
                     download_and_install_concourse(self, version)
             else:
                 # "both" mode: treat as web/leader

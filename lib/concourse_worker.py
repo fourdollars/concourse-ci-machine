@@ -73,11 +73,16 @@ class ConcourseWorkerHelper:
                 worker_base_path.mkdir(parents=True, exist_ok=True)
                 logger.info(f"Worker base directory: {worker_base_path}")
                 
-                # Shared storage path (for binaries and keys)
+                # Shared storage path (for binaries and keys) - REQUIRED
                 storage_path = Path("/var/lib/concourse")
                 if not storage_path.exists():
-                    logger.warning(f"LXC shared storage path {storage_path} does not exist")
-                    return None
+                    from storage_coordinator import StorageNotMountedError
+                    raise StorageNotMountedError(
+                        f"Shared storage mode 'lxc' requires {storage_path} to exist. "
+                        f"Worker unit cannot proceed without shared storage access. "
+                        f"Please ensure the LXC container has shared storage properly mounted. "
+                        f"See documentation for LXC shared directory configuration."
+                    )
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None
