@@ -464,7 +464,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             logger.info(f"Using shared storage work_dir: {worker_dir}")
         else:
             worker_dir = Path(CONCOURSE_DATA_DIR) / "worker"
-            worker_dir.mkdir(exist_ok=True)
+            worker_dir.mkdir(parents=True, exist_ok=True)  # Create parent directories too
             logger.info(f"Using local work_dir: {worker_dir}")
 
         config = {
