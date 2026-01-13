@@ -69,12 +69,12 @@ peers:
     interface: concourse-peer
     description: Peer relation for sharing keys and configuration between units
 
-storage:
-  concourse-data:
-    type: filesystem
-    description: Persistent storage for Concourse worker work directory and volumes
-    location: /var/lib/concourse
-    minimum-size: 10G
+# # storage:
+#   concourse-data:
+#     type: filesystem
+#     description: Persistent storage for Concourse worker work directory and volumes
+#     location: /var/lib/concourse
+#     minimum-size: 10G
 
 assumes:
   - juju >= 3.1

@@ -155,6 +155,7 @@ def download_and_install_concourse_with_storage(
     - Progress marker creation (.download_in_progress)
     - Version marker writing after successful download
     - Worker waiting support
+    - LXC shared storage marker detection
     
     Args:
         charm: Charm instance for status updates
@@ -171,6 +172,24 @@ def download_and_install_concourse_with_storage(
     if not storage_coordinator:
         logger.info("No storage coordinator, using local installation")
         return download_and_install_concourse(charm, version)
+    
+    # Check for LXC shared storage marker - both web and worker must wait
+    import time
+    if hasattr(storage_coordinator.storage, 'is_lxc_shared_storage'):
+        if not storage_coordinator.storage.is_lxc_shared_storage():
+            logger.info("Waiting for LXC shared storage marker...")
+            charm.unit.status = MaintenanceStatus("Waiting for shared storage to be configured...")
+            
+            # Wait up to 5 minutes for the LXC marker
+            for i in range(60):  # 60 * 5s = 5 minutes
+                if storage_coordinator.storage.lxc_shared_marker_path.exists():
+                    logger.info("LXC shared storage marker found!")
+                    break
+                time.sleep(5)
+            else:
+                logger.warning("LXC shared marker not found after 5 minutes, proceeding anyway")
+                # Fall back to local installation if no LXC marker appears
+                return download_and_install_concourse(charm, version)
     
     # Check if binaries already exist
     existing_version = detect_existing_binaries(storage_coordinator, version)

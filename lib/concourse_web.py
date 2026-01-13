@@ -55,10 +55,21 @@ class ConcourseWebHelper:
             return None
         
         try:
-            # Get storage mount path
-            storage_path = get_storage_path("concourse-data")
-            if not storage_path:
-                logger.info("Shared storage not attached, using local installation")
+            # Check shared-storage config
+            shared_storage_mode = self.charm.config.get("shared-storage", "none")
+            
+            if shared_storage_mode == "none":
+                logger.info("Shared storage disabled (shared-storage=none)")
+                return None
+            
+            # For LXC mode, always use /var/lib/concourse
+            if shared_storage_mode == "lxc":
+                storage_path = Path("/var/lib/concourse")
+                if not storage_path.exists():
+                    logger.warning(f"LXC storage path {storage_path} does not exist")
+                    return None
+            else:
+                logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None
             
             # Get filesystem ID for validation

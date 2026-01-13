@@ -139,6 +139,19 @@ class SharedStorage:
         """Path to .download_in_progress marker file."""
         return self.volume_path / ".download_in_progress"
     
+    @property
+    def lxc_shared_marker_path(self) -> Path:
+        """Path to .lxc_shared_storage marker file."""
+        return self.volume_path / ".lxc_shared_storage"
+    
+    def is_lxc_shared_storage(self) -> bool:
+        """Check if this is LXC-mounted shared storage.
+        
+        Returns:
+            True if .lxc_shared_storage marker exists, False otherwise
+        """
+        return self.lxc_shared_marker_path.exists()
+    
     def read_installed_version(self) -> Optional[str]:
         """Read installed version from marker file.
         
