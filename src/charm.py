@@ -506,7 +506,76 @@ class ConcourseCharm(CharmBase):
             self.unit.status = BlockedStatus(f"Start failed: {e}")
 
     def _on_update_status(self, event):
-        """Handle update-status event"""
+        """Handle update-status event
+        
+        This hook runs periodically (~5 minutes) and checks:
+        - If unit is waiting for shared storage, check if it's now available
+        - If storage became available, trigger installation
+        """
+        from pathlib import Path
+        
+        # Check if unit is waiting for shared storage
+        if isinstance(self.unit.status, WaitingStatus) and "storage" in self.unit.status.message.lower():
+            logger.info("Unit waiting for storage, checking if it's now available...")
+            
+            # Check if shared storage is configured
+            if self.config.get("shared-storage", "none") == "lxc":
+                storage_path = Path("/var/lib/concourse")
+                marker_file = storage_path / ".lxc_shared_storage"
+                
+                # Check if storage is now mounted
+                if storage_path.exists() and marker_file.exists():
+                    logger.info("Shared storage detected! Triggering installation...")
+                    
+                    # Get version to install
+                    from concourse_installer import get_latest_concourse_version
+                    version = self.config.get("version") or get_latest_concourse_version()
+                    
+                    # Trigger installation based on role
+                    if self._should_run_web():
+                        logger.info("Web unit: starting installation with shared storage")
+                        self.unit.status = MaintenanceStatus(f"Installing Concourse v{version}...")
+                        try:
+                            storage_coordinator = self.web_helper.initialize_shared_storage()
+                            if storage_coordinator:
+                                from concourse_installer import download_and_install_concourse_with_storage
+                                download_and_install_concourse_with_storage(
+                                    self, version, storage_coordinator
+                                )
+                                from concourse_common import create_shared_storage_symlinks
+                                create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
+                                logger.info("Installation completed via update-status")
+                        except Exception as e:
+                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            self.unit.status = BlockedStatus(f"Installation failed: {e}")
+                            return
+                    
+                    elif self._should_run_worker():
+                        logger.info("Worker unit: starting installation with shared storage")
+                        self.unit.status = MaintenanceStatus(f"Waiting for binaries v{version}...")
+                        try:
+                            storage_coordinator = self.worker_helper.initialize_shared_storage()
+                            if storage_coordinator:
+                                from concourse_installer import download_and_install_concourse_with_storage
+                                download_and_install_concourse_with_storage(
+                                    self, version, storage_coordinator
+                                )
+                                from concourse_common import create_shared_storage_symlinks
+                                create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
+                                logger.info("Installation completed via update-status")
+                        except Exception as e:
+                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            self.unit.status = BlockedStatus(f"Installation failed: {e}")
+                            return
+                    
+                    # Generate keys after installation
+                    from concourse_common import generate_keys
+                    generate_keys()
+                    
+                    # Continue with normal status update
+                else:
+                    logger.info(f"Storage still not available (exists={storage_path.exists()}, marker={marker_file.exists() if storage_path.exists() else False})")
+        
         self._update_status()
 
     def _on_stop(self, event):
