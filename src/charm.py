@@ -249,11 +249,15 @@ class ConcourseCharm(CharmBase):
                     create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 elif self.config.get("shared-storage", "none") != "none":
-                    # Shared storage is configured but not available - this is an error
-                    raise Exception(
-                        f"Shared storage mode '{self.config['shared-storage']}' is configured "
-                        "but shared storage initialization failed. Check logs for details."
+                    # Shared storage is configured but not available - wait for mount
+                    storage_mode = self.config['shared-storage']
+                    logger.warning(
+                        f"Shared storage mode '{storage_mode}' configured but /var/lib/concourse not mounted. "
+                        "Unit will wait for storage to be configured."
                     )
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                    # Don't raise exception - just wait for config-changed or install retry
+                    return
                 else:
                     # No shared storage configured, use local installation
                     logger.info("No shared storage configured, using local installation")
@@ -289,12 +293,15 @@ class ConcourseCharm(CharmBase):
                     create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 elif self.config.get("shared-storage", "none") != "none":
-                    # Shared storage is configured but not available - this is an error
-                    raise Exception(
-                        f"Shared storage mode '{self.config['shared-storage']}' is configured "
-                        "but shared storage initialization failed. Worker cannot proceed without "
-                        "access to shared binaries. Check logs for details."
+                    # Shared storage is configured but not available - wait for mount
+                    storage_mode = self.config['shared-storage']
+                    logger.warning(
+                        f"Shared storage mode '{storage_mode}' configured but /var/lib/concourse not mounted. "
+                        "Unit will wait for storage to be configured."
                     )
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                    # Don't raise exception - just wait for config-changed or install retry
+                    return
                 else:
                     # No shared storage configured, use local installation
                     logger.info("No shared storage configured, using local installation")
