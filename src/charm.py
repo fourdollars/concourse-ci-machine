@@ -263,6 +263,18 @@ class ConcourseCharm(CharmBase):
             elif self._should_run_worker():
                 # Worker initializes shared storage and waits (T028)
                 logger.info("Worker unit: initializing shared storage")
+                
+                # Setup systemd service early so it's ready when binaries arrive
+                logger.info("Setting up worker service (early setup)")
+                self.worker_helper.setup_systemd_service()
+                
+                # Install containerd for worker
+                import subprocess
+                subprocess.run(["apt-get", "update", "-qq"], capture_output=True)
+                subprocess.run(
+                    ["apt-get", "install", "-y", "containerd"], capture_output=True
+                )
+                
                 storage_coordinator = self.worker_helper.initialize_shared_storage()
                 
                 if storage_coordinator:
@@ -294,7 +306,7 @@ class ConcourseCharm(CharmBase):
                         "Unit will wait for storage to be configured."
                     )
                     self.unit.status = WaitingStatus("Waiting for shared storage mount")
-                    # Don't raise exception - just wait for config-changed or install retry
+                    # Service file is ready, just waiting for binaries now
                     return
                 else:
                     # No shared storage configured, use local installation
@@ -321,21 +333,10 @@ class ConcourseCharm(CharmBase):
             import os
             os.chmod("/etc/default/concourse", 0o644)
 
-            # Setup services based on role
+            # Setup web service if needed (worker service already set up early)
             if self._should_run_web():
                 logger.info("Setting up web server service")
                 self.web_helper.setup_systemd_service()
-
-            if self._should_run_worker():
-                logger.info("Setting up worker service")
-                self.worker_helper.setup_systemd_service()
-                # Install containerd for worker
-                import subprocess
-
-                subprocess.run(["apt-get", "update", "-qq"], capture_output=True)
-                subprocess.run(
-                    ["apt-get", "install", "-y", "containerd"], capture_output=True
-                )
                 
                 # Configure GPU support if enabled
                 if self.config.get("enable-gpu", False):
