@@ -514,18 +514,46 @@ class ConcourseCharm(CharmBase):
         """
         from pathlib import Path
         
-        # Check if unit is waiting for shared storage
-        if isinstance(self.unit.status, WaitingStatus) and "storage" in self.unit.status.message.lower():
-            logger.info("Unit waiting for storage, checking if it's now available...")
+        # Check if unit is waiting for storage, leader, or installation
+        if isinstance(self.unit.status, WaitingStatus):
+            status_msg = self.unit.status.message.lower()
+            if any(keyword in status_msg for keyword in ["storage", "mount", "waiting for leader", "install"]):
+                logger.info(f"Unit in waiting state: {self.unit.status.message}, checking if can proceed...")
             
             # Check if shared storage is configured
             if self.config.get("shared-storage", "none") == "lxc":
                 storage_path = Path("/var/lib/concourse")
                 marker_file = storage_path / ".lxc_shared_storage"
+                version_marker = storage_path / ".installed_version"
                 
-                # Check if storage is now mounted
+                # Check if storage is mounted
                 if storage_path.exists() and marker_file.exists():
-                    logger.info("Shared storage detected! Triggering installation...")
+                    # Check if binaries already exist
+                    if version_marker.exists():
+                        installed_version = version_marker.read_text().strip()
+                        logger.info(f"Found existing binaries v{installed_version} in shared storage")
+                        
+                        # For workers, just create symlinks and finish
+                        if self._should_run_worker():
+                            logger.info("Worker: Creating symlinks to existing binaries")
+                            self.unit.status = MaintenanceStatus(f"Setting up binaries v{installed_version}...")
+                            try:
+                                from concourse_common import create_shared_storage_symlinks
+                                create_shared_storage_symlinks(storage_path / "bin")
+                                
+                                from concourse_common import generate_keys
+                                generate_keys()
+                                
+                                logger.info("Worker setup completed via update-status")
+                                self._update_status()
+                                return
+                            except Exception as e:
+                                logger.error(f"Setup failed: {e}", exc_info=True)
+                                self.unit.status = BlockedStatus(f"Setup failed: {e}")
+                                return
+                    
+                    # No binaries yet, need to download (leader/web only)
+                    logger.info("Shared storage detected but no binaries yet, triggering installation...")
                     
                     # Get version to install
                     from concourse_installer import get_latest_concourse_version
