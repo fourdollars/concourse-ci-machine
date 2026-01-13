@@ -358,6 +358,27 @@ def download_and_install_concourse(charm, version: str):
     import tarfile
     import time
 
+    # Safety check: Verify /var/lib/concourse is writable if it exists
+    # This prevents conflicts when shared storage is mounted but config says "none"
+    concourse_dir = Path("/var/lib/concourse")
+    if concourse_dir.exists():
+        # Check if it's writable by trying to create a test file
+        test_file = concourse_dir / ".write_test"
+        try:
+            test_file.touch()
+            test_file.unlink()
+            logger.info(f"{concourse_dir} is writable, proceeding with download")
+        except (PermissionError, OSError) as e:
+            error_msg = (
+                f"Cannot write to {concourse_dir}. "
+                f"If shared storage is mounted, set shared-storage=lxc config. "
+                f"Error: {e}"
+            )
+            logger.error(error_msg)
+            from ops.model import BlockedStatus
+            charm.unit.status = BlockedStatus("Storage not writable")
+            raise RuntimeError(error_msg)
+
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
     logger.info(f"Downloading Concourse CI {version} from {url}")
 
