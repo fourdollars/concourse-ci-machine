@@ -235,11 +235,12 @@ for UNIT_INFO in "${ALL_UNITS[@]}"; do
         lxc config device remove "$CONTAINER" "$DEVICE_NAME" 2>/dev/null || true
     fi
     
-    # Add shared storage device
-    print_info "  Mounting: $HOST_STORAGE_PATH → $CONTAINER_MOUNT_PATH"
+    # Add shared storage device with shift=true for automatic UID/GID mapping
+    print_info "  Mounting: $HOST_STORAGE_PATH → $CONTAINER_MOUNT_PATH (with shift=true)"
     if lxc config device add "$CONTAINER" "$DEVICE_NAME" disk \
         source="$HOST_STORAGE_PATH" \
-        path="$CONTAINER_MOUNT_PATH" 2>&1; then
+        path="$CONTAINER_MOUNT_PATH" \
+        shift=true 2>&1; then
         
         print_info "  ✓ LXC device configured"
         

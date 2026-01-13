@@ -259,8 +259,8 @@ class ConcourseCharm(CharmBase):
                     # No shared storage configured, use local installation
                     logger.info("No shared storage configured, using local installation")
                     download_and_install_concourse(self, version)
-                    
-            elif self._should_run_worker():
+            
+            if self._should_run_worker():
                 # Worker initializes shared storage and waits (T028)
                 logger.info("Worker unit: initializing shared storage")
                 
@@ -275,7 +275,9 @@ class ConcourseCharm(CharmBase):
                     ["apt-get", "install", "-y", "containerd"], capture_output=True
                 )
                 
-                storage_coordinator = self.worker_helper.initialize_shared_storage()
+                # Only initialize worker storage if web didn't already do it
+                if not storage_coordinator:
+                    storage_coordinator = self.worker_helper.initialize_shared_storage()
                 
                 if storage_coordinator:
                     # Check if binaries exist, otherwise wait for web/leader
@@ -561,6 +563,13 @@ class ConcourseCharm(CharmBase):
                             try:
                                 from concourse_common import generate_keys
                                 generate_keys()
+                                
+                                # Initialize worker storage and create config file
+                                storage_coordinator = self.worker_helper.initialize_shared_storage()
+                                if storage_coordinator:
+                                    tsa_host = self._get_tsa_host()
+                                    self.worker_helper.update_config(tsa_host=tsa_host)
+                                    logger.info("Worker config created via update-status")
                                 
                                 logger.info("Worker setup completed via update-status")
                                 self._update_status()
