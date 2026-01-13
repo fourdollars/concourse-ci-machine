@@ -137,8 +137,23 @@ class ConcourseWorkerHelper:
             # Non-fatal: fall back to local installation
             return None
 
+    def _get_worker_config_path(self) -> str:
+        """Get the worker configuration file path.
+        
+        When shared storage is enabled, use shared path.
+        Otherwise, use local worker-specific path.
+        """
+        if self.storage_coordinator:
+            # Shared storage mode: config under /var/lib/concourse
+            return f"{CONCOURSE_DATA_DIR}/worker-config.env"
+        else:
+            # Local mode: config under /var/lib/concourse-worker
+            return CONCOURSE_WORKER_CONFIG_FILE
+
     def setup_systemd_service(self):
         """Create systemd service file for Concourse worker"""
+        config_file_path = self._get_worker_config_path()
+        
         worker_service = f"""[Unit]
 Description=Concourse CI Worker
 After=network-online.target
@@ -149,7 +164,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory={CONCOURSE_DATA_DIR}
-EnvironmentFile={CONCOURSE_WORKER_CONFIG_FILE}
+EnvironmentFile={config_file_path}
 EnvironmentFile=/etc/default/concourse
 ExecStart={CONCOURSE_BIN} worker
 Restart=on-failure
@@ -162,6 +177,13 @@ WantedBy=multi-user.target
 """
 
         try:
+            # Ensure /etc/default/concourse exists (required by systemd service)
+            default_config = Path("/etc/default/concourse")
+            if not default_config.exists():
+                default_config.touch()
+                os.chmod("/etc/default/concourse", 0o644)
+                logger.info("Created /etc/default/concourse")
+            
             worker_path = Path(SYSTEMD_SERVICE_DIR) / "concourse-worker.service"
             worker_path.write_text(worker_service)
             os.chmod(worker_path, 0o644)
@@ -560,15 +582,16 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
     def _write_config(self, config: dict):
         """Write configuration to file"""
         try:
+            config_file_path = self._get_worker_config_path()
             config_lines = [f"{k}={v}" for k, v in config.items()]
-            Path(CONCOURSE_WORKER_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
-            os.chmod(CONCOURSE_WORKER_CONFIG_FILE, 0o640)
+            Path(config_file_path).write_text("\n".join(config_lines) + "\n")
+            os.chmod(config_file_path, 0o640)
             subprocess.run(
-                ["chown", "root:root", CONCOURSE_WORKER_CONFIG_FILE],
+                ["chown", "root:root", config_file_path],
                 check=True,
                 capture_output=True,
             )
-            logger.info(f"Configuration written to {CONCOURSE_WORKER_CONFIG_FILE}")
+            logger.info(f"Configuration written to {config_file_path}")
         except Exception as e:
             logger.error(f"Failed to write config: {e}")
             raise

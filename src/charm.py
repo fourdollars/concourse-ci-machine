@@ -485,7 +485,7 @@ class ConcourseCharm(CharmBase):
                     
                     # Check if Concourse binaries are installed before configuring
                     if not Path(CONCOURSE_BIN).exists():
-                        logger.info("Concourse not installed yet, skipping worker configuration")
+                        logger.info("Concourse CI is not installed yet, skipping worker configuration")
                         # Set waiting status if we're waiting for shared storage
                         if self.config.get("shared-storage", "none") != "none":
                             self.unit.status = WaitingStatus("Waiting for shared storage mount")
@@ -844,7 +844,7 @@ class ConcourseCharm(CharmBase):
             # Check if Concourse binaries are installed (install hook completed successfully)
             from concourse_common import CONCOURSE_BIN
             if not Path(CONCOURSE_BIN).exists() and not Path("/var/lib/concourse/bin/concourse").exists():
-                logger.info("Concourse not installed yet, skipping peer relation config")
+                logger.info("Concourse CI is not installed yet, skipping peer relation config")
                 # Set waiting status if we're waiting for shared storage
                 if self.config.get("shared-storage", "none") != "none":
                     self.unit.status = WaitingStatus("Waiting for shared storage mount")
@@ -1167,7 +1167,7 @@ class ConcourseCharm(CharmBase):
 
             # Check if installation is complete
             if not verify_installation():
-                self.unit.status = BlockedStatus("Concourse not installed")
+                self.unit.status = BlockedStatus("Concourse CI is not installed yet.")
                 return
 
             # Check database for web mode

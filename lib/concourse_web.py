@@ -137,6 +137,13 @@ WantedBy=multi-user.target
 """
 
         try:
+            # Ensure /etc/default/concourse exists (required by systemd service)
+            default_config = Path("/etc/default/concourse")
+            if not default_config.exists():
+                default_config.touch()
+                os.chmod("/etc/default/concourse", 0o644)
+                logger.info("Created /etc/default/concourse")
+            
             server_path = Path(SYSTEMD_SERVICE_DIR) / "concourse-server.service"
             server_path.write_text(server_service)
             os.chmod(server_path, 0o644)
