@@ -11,8 +11,9 @@
 - **Configuration**:
   - `shared-storage=lxc`
   - `mode=auto`
-  - Units: 2
-- **Shared Storage**: `/tmp/concourse-shared-test` mounted to `/var/lib/concourse` on both units
+  - Units: 4 (scaled from 2 → 3 → 4)
+- **PostgreSQL**: 16/stable (required for web server)
+- **Shared Storage**: `/tmp/concourse-shared-test` mounted to `/var/lib/concourse` on all units
 - **LXC Configuration**: `shift=true` for ID mapping, `readonly=false` for write access
 
 ## Test Results
@@ -35,11 +36,14 @@
 5. 14:43:04 - Unit 0 became active as worker
 6. 14:43:04 - Unit 1 waiting for PostgreSQL (web role)
 
-**Status:**
+**Final Status:**
 ```
 Unit                     Workload  Agent  Message
 concourse-ci-machine/0   active    idle   Worker ready (v7.14.3)
-concourse-ci-machine/1*  waiting   idle   Waiting for PostgreSQL database...
+concourse-ci-machine/1*  active    idle   Web server ready (v7.14.3) - port 8080
+concourse-ci-machine/2   active    idle   Worker ready (v7.14.3)
+concourse-ci-machine/3   active    idle   Worker ready (v7.14.3)
+postgresql/1*            active    idle   Primary - port 5432
 ```
 
 ### 📊 Shared Storage Verification
@@ -61,19 +65,36 @@ config.env               499 bytes (shared config)
 
 ### 🎯 Success Criteria Met
 
-- [x] **Single Download**: Binaries downloaded once by leader
+- [x] **Single Download**: Binaries downloaded once by leader (65 seconds)
 - [x] **Lock Coordination**: Exclusive lock acquired successfully
-- [x] **Worker Waiting**: Worker unit waited for leader completion
+- [x] **Worker Waiting**: Worker units waited for leader completion
 - [x] **Version Marker**: Version file written and readable
-- [x] **Shared Access**: Both units access same filesystem
+- [x] **Shared Access**: All 4 units access same filesystem
 - [x] **LXC Mode**: Marker file detection working
 - [x] **Storage Path**: `/var/lib/concourse` used consistently
+- [x] **Scaling Test**: Units 2 & 3 added post-deployment, instantly reused binaries
+- [x] **PostgreSQL Integration**: Web server connected to PostgreSQL 16/stable
+- [x] **Full Stack**: Complete 4-unit cluster operational
+
+## Scaling Test Results
+
+**Timeline of Unit Additions:**
+1. **Initial deployment** (2 units): Unit 1 downloaded binaries, Unit 0 waited
+2. **Scale to 3 units**: Unit 2 detected existing binaries instantly
+3. **Scale to 4 units**: Unit 3 detected existing binaries instantly
+4. **PostgreSQL integration**: All units connected successfully
+
+**Observations:**
+- First download: 65 seconds (v7.14.3, ~171 MB)
+- Additional units: < 5 seconds to detect and use existing binaries
+- No re-downloads occurred
+- All units share identical filesystem ID
 
 ## Known Limitations
 
-1. **PostgreSQL Required**: Web unit needs database relation for full operation
-2. **Manual LXC Setup**: Shared storage requires manual LXC device configuration
-3. **Phase 5 Incomplete**: Contention handling, retry logic, corruption detection not yet implemented
+1. **Manual LXC Setup**: Shared storage requires manual LXC device configuration before deployment
+2. **Phase 5 Incomplete**: Contention handling, retry logic, corruption detection not yet implemented
+3. **Binary Validation**: Unit 2 initially reported missing binary warning but recovered successfully
 
 ## Next Steps
 
