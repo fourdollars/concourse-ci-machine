@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 from ops.model import MaintenanceStatus
 
-from concourse_common import CONCOURSE_INSTALL_DIR, CONCOURSE_BIN
+from concourse_common import CONCOURSE_BIN
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +326,7 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
         with tarfile.open(tar_file, "r:gz") as tar:
             tar.extractall(path=extract_path)
         
-        # Find source directory
+        # Find source directory (tarball extracts to concourse/)
         src_dir = extract_path / "concourse"
         if not src_dir.exists():
             first_dir = next(extract_path.iterdir(), None)
@@ -335,13 +335,20 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
             else:
                 src_dir = extract_path
         
-        # Ensure target directory exists
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # For shared storage, target_dir is /var/lib/concourse/bin
+        # but tarball contains concourse/bin/, concourse/resource-types/
+        # So we need to move contents of extracted concourse/* to parent of target_dir
+        # e.g., move concourse/bin -> /var/lib/concourse/bin
+        #       move concourse/resource-types -> /var/lib/concourse/resource-types
         
-        # Move files to target
-        logger.info(f"Installing binaries from {src_dir} to {target_dir}")
+        # Get the parent directory (e.g., /var/lib/concourse)
+        parent_dir = target_dir.parent
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Move files to parent directory
+        logger.info(f"Installing binaries from {src_dir} to {parent_dir}")
         for item in src_dir.iterdir():
-            dest = target_dir / item.name
+            dest = parent_dir / item.name
             if dest.exists():
                 if dest.is_dir() and not dest.is_symlink():
                     shutil.rmtree(dest)

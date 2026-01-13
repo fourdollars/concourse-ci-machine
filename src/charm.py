@@ -244,9 +244,6 @@ class ConcourseCharm(CharmBase):
                     download_and_install_concourse_with_storage(
                         self, version, storage_coordinator
                     )
-                    # Create symlink from /opt/concourse to shared storage binaries
-                    from concourse_common import create_shared_storage_symlinks
-                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 elif self.config.get("shared-storage", "none") != "none":
                     # Shared storage is configured but not available - wait for mount
@@ -288,9 +285,6 @@ class ConcourseCharm(CharmBase):
                     else:
                         logger.info(f"Binaries v{version} already available")
                     
-                    # Create symlink from /opt/concourse to shared storage binaries
-                    from concourse_common import create_shared_storage_symlinks
-                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")  # T034
                 elif self.config.get("shared-storage", "none") != "none":
                     # Shared storage is configured but not available - wait for mount
@@ -315,9 +309,6 @@ class ConcourseCharm(CharmBase):
                     download_and_install_concourse_with_storage(
                         self, version, storage_coordinator
                     )
-                    # Create symlink from /opt/concourse to shared storage binaries
-                    from concourse_common import create_shared_storage_symlinks
-                    create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                     self.unit.status = MaintenanceStatus("Binaries ready")
                 else:
                     download_and_install_concourse(self, version)
@@ -435,12 +426,32 @@ class ConcourseCharm(CharmBase):
                     self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {desired_version}...")
                     
                     # Stop services before upgrading to avoid "text file busy" error
-                    if self._should_run_web():
-                        self.web_helper.stop_service()
                     if self._should_run_worker():
                         self.worker_helper.stop_service()
+                    if self._should_run_web():
+                        self.web_helper.stop_service()
                     
-                    download_and_install_concourse(self, desired_version)
+                    # Use shared storage installation if configured
+                    if self.config.get("shared-storage", "none") != "none":
+                        storage_coordinator = None
+                        if self._should_run_web():
+                            storage_coordinator = self.web_helper.initialize_shared_storage()
+                        elif self._should_run_worker():
+                            storage_coordinator = self.worker_helper.initialize_shared_storage()
+                        
+                        if storage_coordinator:
+                            from concourse_installer import download_and_install_concourse_with_storage
+                            download_and_install_concourse_with_storage(
+                                self, desired_version, storage_coordinator
+                            )
+                        else:
+                            logger.warning("Shared storage configured but not available, skipping upgrade")
+                            self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                            return
+                    else:
+                        # Local installation
+                        download_and_install_concourse(self, desired_version)
+                    
                     self._restart_concourse_service()
                     
                     # If web server, publish version to relations
@@ -472,7 +483,7 @@ class ConcourseCharm(CharmBase):
                     from concourse_common import CONCOURSE_BIN
                     
                     # Check if Concourse binaries are installed before configuring
-                    if not Path(CONCOURSE_BIN).exists() and not Path("/var/lib/concourse/bin/concourse").exists():
+                    if not Path(CONCOURSE_BIN).exists():
                         logger.info("Concourse not installed yet, skipping worker configuration")
                         # Set waiting status if we're waiting for shared storage
                         if self.config.get("shared-storage", "none") != "none":
@@ -542,14 +553,11 @@ class ConcourseCharm(CharmBase):
                         installed_version = version_marker.read_text().strip()
                         logger.info(f"Found existing binaries v{installed_version} in shared storage")
                         
-                        # For workers, just create symlinks and finish
+                        # For workers, generate keys and finish
                         if self._should_run_worker():
-                            logger.info("Worker: Creating symlinks to existing binaries")
+                            logger.info("Worker: Setting up with existing binaries")
                             self.unit.status = MaintenanceStatus(f"Setting up binaries v{installed_version}...")
                             try:
-                                from concourse_common import create_shared_storage_symlinks
-                                create_shared_storage_symlinks(storage_path / "bin")
-                                
                                 from concourse_common import generate_keys
                                 generate_keys()
                                 
@@ -597,8 +605,6 @@ class ConcourseCharm(CharmBase):
                                 download_and_install_concourse_with_storage(
                                     self, version, storage_coordinator
                                 )
-                                from concourse_common import create_shared_storage_symlinks
-                                create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
                                 logger.info("Installation completed via update-status")
                         except Exception as e:
                             logger.error(f"Installation failed: {e}", exc_info=True)

@@ -361,11 +361,15 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
         import subprocess
         import shutil
         
-        wrapper_path = Path("/usr/local/bin/runc-gpu-wrapper")
-        concourse_runc = Path("/opt/concourse/bin/runc")
-        concourse_runc_real = Path("/opt/concourse/bin/runc.real")
+        # Use /opt/bin for custom wrappers to keep /var/lib/concourse pure
+        wrapper_path = Path("/opt/bin/runc-gpu-wrapper")
+        concourse_runc = Path("/opt/bin/runc")
+        concourse_runc_real = Path("/opt/bin/runc.real")
         nvidia_runtime = Path("/usr/bin/nvidia-container-runtime")
         nvidia_runtime_real = Path("/usr/bin/nvidia-container-runtime.real")
+        
+        # Ensure /opt/bin exists
+        Path("/opt/bin").mkdir(parents=True, exist_ok=True)
         
         try:
             # Install jq if not present (needed for JSON manipulation)
@@ -396,19 +400,28 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                     check=True
                 )
             
-            # Backup original runc if not already backed up  
-            if concourse_runc.exists() and not concourse_runc_real.exists():
-                logger.info(f"Backing up original runc to {concourse_runc_real}")
-                subprocess.run(
-                    ["mv", str(concourse_runc), str(concourse_runc_real)],
-                    check=True
-                )
+            # Copy runc from Concourse binaries if not already in /opt/bin
+            concourse_runc_source = Path("/var/lib/concourse/bin/runc")
+            if not concourse_runc_real.exists():
+                if concourse_runc_source.exists():
+                    logger.info(f"Copying runc from Concourse binaries to {concourse_runc_real}")
+                    subprocess.run(
+                        ["cp", str(concourse_runc_source), str(concourse_runc_real)],
+                        check=True
+                    )
+                else:
+                    logger.warning("Concourse runc not available yet, skipping GPU wrapper setup")
+                    return
             
             # Force-replace symlink to point to GPU wrapper (even if it already exists)
             # This ensures GPU wrapper takes precedence over non-GPU wrapper
-            if concourse_runc.exists() and concourse_runc.is_symlink():
-                logger.info(f"Replacing existing symlink to point to GPU wrapper")
-                concourse_runc.unlink()
+            if concourse_runc.exists():
+                if concourse_runc.is_symlink():
+                    logger.info(f"Replacing existing symlink to point to GPU wrapper")
+                    concourse_runc.unlink()
+                else:
+                    logger.warning(f"Expected symlink but found file at {concourse_runc}")
+                    concourse_runc.unlink()
             
             logger.info(f"Creating symlink: {concourse_runc} -> {wrapper_path}")
             subprocess.run(
@@ -443,7 +456,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             logger.info("Configuring nvidia-container-runtime to use real runc")
             subprocess.run(
                 ["sed", "-i", 
-                 's|runtimes = \\["runc", "crun"\\]|runtimes = ["/opt/concourse/bin/runc.real", "crun"]|',
+                 's|runtimes = \\["runc", "crun"\\]|runtimes = ["/opt/bin/runc.real", "crun"]|',
                  str(nvidia_config)],
                 check=True
             )
@@ -484,6 +497,8 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             "CONCOURSE_CONTAINERD_DNS_SERVER": self.config.get(
                 "containerd-dns-server", "1.1.1.1,8.8.8.8"
             ),
+            # Use custom runc wrapper from /opt/bin
+            "CONCOURSE_CONTAINERD_RUNTIME": "/opt/bin/runc",
         }
         
         # Add GPU configuration if enabled
@@ -573,10 +588,14 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             logger.info("Skipping non-GPU wrapper installation (GPU wrapper handles folders)")
             return
         
-        wrapper_path = Path("/usr/local/bin/runc-wrapper")
-        concourse_runc = Path("/opt/concourse/bin/runc")
-        concourse_runc_real = Path("/opt/concourse/bin/runc.real")
+        # Use /opt/bin for custom wrappers to keep /var/lib/concourse pure
+        wrapper_path = Path("/opt/bin/runc-wrapper")
+        concourse_runc = Path("/opt/bin/runc")
+        concourse_runc_real = Path("/opt/bin/runc.real")
         runc_real = Path("/usr/bin/runc.real")
+        
+        # Ensure /opt/bin exists
+        Path("/opt/bin").mkdir(parents=True, exist_ok=True)
         
         try:
             # Install jq if not present (needed for JSON manipulation)
@@ -599,19 +618,33 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             os.chmod(wrapper_path, 0o755)
             logger.info("Folder mounting wrapper installed successfully")
             
-            # Backup original runc if not already backed up
+            # Backup original runc if not already backed up and if /usr/bin/runc exists
             if not runc_real.exists():
-                logger.info(f"Backing up original runc to {runc_real}")
-                subprocess.run(
-                    ["cp", "/usr/bin/runc", str(runc_real)],
-                    check=True
-                )
+                if Path("/usr/bin/runc").exists():
+                    logger.info(f"Backing up original runc to {runc_real}")
+                    subprocess.run(
+                        ["cp", "/usr/bin/runc", str(runc_real)],
+                        check=True
+                    )
+                else:
+                    # Use the runc from concourse binaries instead
+                    concourse_system_runc = Path("/var/lib/concourse/bin/runc")
+                    if concourse_system_runc.exists():
+                        logger.info(f"Copying runc from Concourse binaries to {runc_real}")
+                        subprocess.run(
+                            ["cp", str(concourse_system_runc), str(runc_real)],
+                            check=True
+                        )
+                    else:
+                        logger.warning("/usr/bin/runc not found and Concourse runc not available yet")
+                        # Don't fail - we'll retry later when binaries are available
+                        return
             
-            # Backup concourse runc if not already backed up
-            if concourse_runc.exists() and not concourse_runc_real.exists():
-                logger.info(f"Backing up concourse runc to {concourse_runc_real}")
+            # Copy runc to concourse_runc_real if needed
+            if not concourse_runc_real.exists() and runc_real.exists():
+                logger.info(f"Copying runc to {concourse_runc_real}")
                 subprocess.run(
-                    ["mv", str(concourse_runc), str(concourse_runc_real)],
+                    ["cp", str(runc_real), str(concourse_runc_real)],
                     check=True
                 )
             

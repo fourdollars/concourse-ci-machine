@@ -12,12 +12,12 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Installation and configuration paths
-CONCOURSE_INSTALL_DIR = "/opt/concourse"
+# Use /var/lib/concourse for everything - no /opt/concourse
 CONCOURSE_DATA_DIR = "/var/lib/concourse"
 CONCOURSE_WORKER_DATA_DIR = "/var/lib/concourse-worker"
 CONCOURSE_CONFIG_FILE = f"{CONCOURSE_DATA_DIR}/config.env"
 CONCOURSE_WORKER_CONFIG_FILE = f"{CONCOURSE_WORKER_DATA_DIR}/worker-config.env"
-CONCOURSE_BIN = f"{CONCOURSE_INSTALL_DIR}/bin/concourse"
+CONCOURSE_BIN = f"{CONCOURSE_DATA_DIR}/bin/concourse"
 SYSTEMD_SERVICE_DIR = "/etc/systemd/system"
 KEYS_DIR = f"{CONCOURSE_DATA_DIR}/keys"
 WORKER_KEYS_DIR = f"{CONCOURSE_WORKER_DATA_DIR}/keys"
@@ -31,10 +31,10 @@ def ensure_directories(skip_shared_storage: bool = False):
     """
     if skip_shared_storage:
         # Worker: create writable worker directories, skip shared storage
-        dirs = [CONCOURSE_INSTALL_DIR, CONCOURSE_WORKER_DATA_DIR, WORKER_KEYS_DIR]
+        dirs = [CONCOURSE_WORKER_DATA_DIR, WORKER_KEYS_DIR]
     else:
         # Web: create shared storage directories
-        dirs = [CONCOURSE_INSTALL_DIR, CONCOURSE_DATA_DIR, KEYS_DIR]
+        dirs = [CONCOURSE_DATA_DIR, KEYS_DIR]
     
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -48,35 +48,6 @@ def ensure_directories(skip_shared_storage: bool = False):
             # If chmod fails on shared storage, it's likely readonly - that's okay
             logger.debug(f"Cannot chmod {dir_path}: {e}")
     logger.info(f"Ensured directories exist: {', '.join(dirs)}")
-
-
-def create_shared_storage_symlinks(shared_storage_bin_dir: Path):
-    """Create symlinks from /opt/concourse to shared storage binaries.
-    
-    Args:
-        shared_storage_bin_dir: Path to shared storage bin directory (e.g., /var/lib/concourse/bin)
-    """
-    import shutil
-    
-    install_dir = Path(CONCOURSE_INSTALL_DIR)
-    
-    # Remove /opt/concourse if it exists and is not already a symlink to shared storage
-    if install_dir.exists():
-        if install_dir.is_symlink():
-            # Check if it already points to the correct location
-            if install_dir.resolve() == shared_storage_bin_dir.resolve():
-                logger.info(f"Symlink {install_dir} -> {shared_storage_bin_dir} already exists")
-                return
-            else:
-                logger.info(f"Removing incorrect symlink {install_dir}")
-                install_dir.unlink()
-        else:
-            logger.info(f"Removing existing directory {install_dir}")
-            shutil.rmtree(install_dir)
-    
-    # Create symlink from /opt/concourse to shared storage
-    install_dir.symlink_to(shared_storage_bin_dir)
-    logger.info(f"Created symlink: {install_dir} -> {shared_storage_bin_dir}")
 
 
 def generate_keys():
