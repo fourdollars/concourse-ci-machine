@@ -74,14 +74,12 @@ class ConcourseWorkerHelper:
                 
                 # Shared storage path (for binaries and keys) - REQUIRED
                 storage_path = Path("/var/lib/concourse")
+                # Create the directory if it doesn't exist - the marker file will indicate
+                # when the actual mount is ready. This allows the charm to initialize
+                # storage coordinator even before the LXC mount is added.
                 if not storage_path.exists():
-                    from storage_coordinator import StorageNotMountedError
-                    raise StorageNotMountedError(
-                        f"Shared storage mode 'lxc' requires {storage_path} to exist. "
-                        f"Worker unit cannot proceed without shared storage access. "
-                        f"Please ensure the LXC container has shared storage properly mounted. "
-                        f"See documentation for LXC shared directory configuration."
-                    )
+                    logger.info(f"Creating {storage_path} directory for LXC shared storage")
+                    storage_path.mkdir(parents=True, exist_ok=True)
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None

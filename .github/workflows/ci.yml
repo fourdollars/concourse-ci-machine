@@ -664,14 +664,8 @@ jobs:
       - name: Deploy with Shared Storage (mode=auto)
         run: |
           # Deploy first unit (leader/web) with shared storage
-          # Note: LXD provider in Juju doesn't support 'shared filesystem' easily out of box
-          # We'll use local storage and then attach-storage for subsequent units?
-          # Actually, Juju 3.x lxd provider supports attaching storage if using loop/dir?
-          # For CI, we can use the 'shared-storage=lxc' config and manually mount folders
-          # as we did in the web-worker test, or use Juju storage if it supports it.
-          
           # The charm supports 'shared-storage=lxc' where it expects /var/lib/concourse to be shared.
-          # We can simulate this by deploying and then using lxc config device add.
+          # We use the setup-shared-storage.sh script to configure LXC mounts after deployment.
           
           juju deploy ./concourse-ci-machine_amd64.charm concourse-ci \
             --config mode=auto \
@@ -681,29 +675,14 @@ jobs:
           juju deploy postgresql --channel 16/stable
           juju relate concourse-ci:postgresql postgresql:database
           
+          # Wait for deployment to complete first
           juju-wait -m concourse-shared -t 900
-
-      - name: Setup Shared Storage (Manual LXD Mount)
-        run: |
-          # Wait for unit 0 to be created (but maybe not active yet)
-          sleep 10
-          juju status
           
-          MACHINE=$(juju status concourse-ci/0 --format=json | jq -r '.applications."concourse-ci".units["concourse-ci/0"].machine')
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          # Create shared dir on host
-          mkdir -p $(pwd)/concourse-shared
-          chmod 777 $(pwd)/concourse-shared
-          
-          # Mount to unit 0
-          echo "Mounting shared storage to $CONTAINER"
-          lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared path=/var/lib/concourse shift=true
-          
-          # Wait for deployment to settle (unit 0 should install and download binaries)
-          juju-wait -m concourse-shared -t 900
+          # Now setup shared storage using the provided script
+          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
           
           # Verify binaries downloaded
+          echo "Verifying binaries in shared storage..."
           ls -lh $(pwd)/concourse-shared/bin/concourse
           
       - name: Add Unit with Shared Storage
@@ -711,18 +690,11 @@ jobs:
           START_TIME=$(date +%s)
           juju add-unit concourse-ci
           
-          # Wait for unit 1 machine assignment
-          sleep 30
-          
-          MACHINE=$(juju status concourse-ci/1 --format=json | jq -r '.applications."concourse-ci".units["concourse-ci/1"].machine')
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          # Mount SAME shared storage to unit 1
-          echo "Mounting shared storage to $CONTAINER"
-          lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared path=/var/lib/concourse shift=true
-          
           # Wait for unit to join
           juju-wait -m concourse-shared -t 900
+          
+          # Setup shared storage for the new unit using the script
+          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
           
           END_TIME=$(date +%s)
           DURATION=$((END_TIME - START_TIME))
@@ -824,35 +796,15 @@ jobs:
           juju relate concourse-web:postgresql postgresql:database
           juju relate concourse-web:web-tsa concourse-worker:worker-tsa
           
-          # Wait for units to be created
-          sleep 15
-          juju status
-
-      - name: Setup Shared Storage (Manual LXD Mount)
-        run: |
-          # Create shared dir on host
-          mkdir -p $(pwd)/concourse-shared-ww
-          chmod 777 $(pwd)/concourse-shared-ww
-          
-          # Get machines and containers
-          WEB_MACHINE=$(juju status concourse-web/0 --format=json | jq -r '.applications."concourse-web".units["concourse-web/0"].machine')
-          WEB_CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${WEB_MACHINE}$" | head -1)
-          
-          WORKER_MACHINE=$(juju status concourse-worker/0 --format=json | jq -r '.applications."concourse-worker".units["concourse-worker/0"].machine')
-          WORKER_CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${WORKER_MACHINE}$" | head -1)
-          
-          # Mount to Web unit
-          echo "Mounting shared storage to Web ($WEB_CONTAINER)"
-          lxc config device add $WEB_CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-ww path=/var/lib/concourse shift=true
-          
-          # Mount to Worker unit
-          echo "Mounting shared storage to Worker ($WORKER_CONTAINER)"
-          lxc config device add $WORKER_CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-ww path=/var/lib/concourse shift=true
-          
           # Wait for deployment to settle
           juju-wait -m concourse-ss-ww -t 900
           
+          # Setup shared storage for both applications using the script
+          ./scripts/setup-shared-storage.sh concourse-web $(pwd)/concourse-shared-ww
+          ./scripts/setup-shared-storage.sh concourse-worker $(pwd)/concourse-shared-ww
+          
           # Verify binaries downloaded by web
+          echo "Verifying binaries in shared storage..."
           ls -lh $(pwd)/concourse-shared-ww/bin/concourse
 
       - name: Verify Deployment
@@ -918,46 +870,25 @@ jobs:
           juju deploy postgresql --channel 16/stable
           juju relate concourse-ci:postgresql postgresql:database
           
-          # Wait for unit 0
-          sleep 15
-          juju status
-
-      - name: Setup Shared Storage (Manual LXD Mount)
-        run: |
-          # Create shared dir on host
-          mkdir -p $(pwd)/concourse-shared-all
-          chmod 777 $(pwd)/concourse-shared-all
-          
-          # Get unit 0
-          MACHINE=$(juju status concourse-ci/0 --format=json | jq -r '.applications."concourse-ci".units["concourse-ci/0"].machine')
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          # Mount to unit 0
-          echo "Mounting shared storage to $CONTAINER"
-          lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-all path=/var/lib/concourse shift=true
-          
           # Wait for installation
           juju-wait -m concourse-ss-all -t 900
           
+          # Setup shared storage using the script
+          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
+          
           # Verify binaries
+          echo "Verifying binaries in shared storage..."
           ls -lh $(pwd)/concourse-shared-all/bin/concourse
 
       - name: Add Unit with Shared Storage
         run: |
           juju add-unit concourse-ci
           
-          # Wait for unit 1
-          sleep 30
-          
-          MACHINE=$(juju status concourse-ci/1 --format=json | jq -r '.applications."concourse-ci".units["concourse-ci/1"].machine')
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          # Mount to unit 1
-          echo "Mounting shared storage to $CONTAINER"
-          lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-all path=/var/lib/concourse shift=true
-          
           # Wait for join
           juju-wait -m concourse-ss-all -t 900
+          
+          # Setup shared storage for the new unit
+          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
           
           # Verify unit 1 is active
           juju status concourse-ci/1
