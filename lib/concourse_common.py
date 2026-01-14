@@ -50,11 +50,18 @@ def ensure_directories(skip_shared_storage: bool = False):
     logger.info(f"Ensured directories exist: {', '.join(dirs)}")
 
 
-def generate_keys():
-    """Generate Concourse TSA and session signing keys with correct ownership"""
+def generate_keys(keys_dir_path: Optional[str] = None):
+    """Generate Concourse TSA and session signing keys with correct ownership
+    
+    Args:
+        keys_dir_path: Path to generate keys in (default: KEYS_DIR)
+    """
     import pwd
     
-    keys_dir = Path(KEYS_DIR)
+    if keys_dir_path:
+        keys_dir = Path(keys_dir_path)
+    else:
+        keys_dir = Path(KEYS_DIR)
     
     # Ensure keys directory exists
     keys_dir.mkdir(parents=True, exist_ok=True)

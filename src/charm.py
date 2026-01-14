@@ -351,8 +351,13 @@ class ConcourseCharm(CharmBase):
                 else:
                     download_and_install_concourse(self, version)
 
-            # Generate keys
-            generate_keys()
+            # Generate keys in appropriate directory
+            keys_dir = KEYS_DIR
+            if self._should_run_worker() and not self._should_run_web():
+                from concourse_common import WORKER_KEYS_DIR
+                keys_dir = WORKER_KEYS_DIR
+            
+            generate_keys(keys_dir)
 
             # Create /etc/default/concourse
             Path("/etc/default/concourse").touch()
@@ -398,12 +403,17 @@ class ConcourseCharm(CharmBase):
                 os.chmod(default_concourse, 0o644)
             
             # Ensure keys are generated
-            keys_dir = Path(KEYS_DIR)
+            keys_dir_path = KEYS_DIR
+            if self._should_run_worker() and not self._should_run_web():
+                from concourse_common import WORKER_KEYS_DIR
+                keys_dir_path = WORKER_KEYS_DIR
+
+            keys_dir = Path(keys_dir_path)
             if not (keys_dir / "tsa_host_key").exists():
                 # Check if binary exists before generating keys
                 if verify_installation():
-                    logger.info("Generating missing keys")
-                    generate_keys()
+                    logger.info(f"Generating missing keys in {keys_dir}")
+                    generate_keys(keys_dir_path)
                 else:
                     logger.warning("Concourse binary missing, skipping key generation during upgrade")
 
