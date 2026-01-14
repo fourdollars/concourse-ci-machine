@@ -531,6 +531,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             ),
             # Use custom runc wrapper from /opt/bin
             "CONCOURSE_CONTAINERD_RUNTIME": "/opt/bin/runc",
+            "CONCOURSE_RESOURCE_TYPES": str(Path(CONCOURSE_DATA_DIR) / "resource-types"),
         }
         
         # Add GPU configuration if enabled
