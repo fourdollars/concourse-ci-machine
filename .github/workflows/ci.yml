@@ -141,6 +141,7 @@ jobs:
       - name: Execute test task
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           fly -t ci execute -c task.yml
@@ -148,6 +149,7 @@ jobs:
       - name: Verify workers are registered
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           fly -t ci workers
@@ -199,6 +201,7 @@ jobs:
       - name: Verify upgraded deployment still works
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           sudo chown $(whoami) /usr/local/bin/fly
@@ -228,6 +231,7 @@ jobs:
           
           # Run verification task
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
@@ -266,6 +270,7 @@ jobs:
       - name: Verify tagged task execution
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
@@ -456,6 +461,7 @@ jobs:
       - name: Execute mount verification task
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
@@ -522,6 +528,7 @@ jobs:
       - name: Verify upgraded deployment still works
         run: |
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           sudo chown $(whoami) /usr/local/bin/fly
@@ -532,6 +539,7 @@ jobs:
         run: |
           echo "=== Checking registered workers and their tags ==="
           export CONCOURSE_URL=$(cat concourse-ip.txt)
+          cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           fly -t ci workers
