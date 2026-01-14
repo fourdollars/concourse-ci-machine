@@ -598,7 +598,7 @@ jobs:
           # The charm supports 'shared-storage=lxc' where it expects /var/lib/concourse to be shared.
           # We use the setup-shared-storage.sh script to configure LXC mounts after deployment.
           
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci \
+          juju deploy --debug --verbose ./concourse-ci-machine_amd64.charm concourse-ci \
             --config mode=auto \
             --config version=7.14.2 \
             --config shared-storage=lxc
