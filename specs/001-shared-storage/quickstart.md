@@ -37,12 +37,10 @@ The charm supports 4 deployment modes:
 | Mode | Description | Units Supported | Shared Storage |
 |------|-------------|-----------------|----------------|
 | `auto` | Leader=web, non-leaders=workers | **Multiple** ✅ | **Recommended** ✅ |
-| `all` | Both web and worker on unit | **Single only** | Legacy (use auto) |
 | `web` | Web server only | **Single only** | Future: load balancing |
 | `worker` | Worker only | **Multiple** ✅ | Requires separate web |
 
 **Important Constraints**:
-- `mode=all`: **Single unit only** (being merged into `mode=auto`, not planned for multi-unit)
 - `mode=web`: **Single unit only** (multiple units not yet implemented)
 - `mode=worker`: Multiple units supported ✅
 - `mode=auto`: Multiple units supported ✅ (**Recommended for shared storage**)
@@ -147,47 +145,6 @@ juju ssh concourse-ci-machine/1 "ls -lh /var/lib/concourse/bin/"
 
 juju ssh concourse-ci-machine/1 "ls -lh /var/lib/concourse/worker/concourse-ci-1/"
 # Isolated worker state
-```
-
-## Deployment Scenario B: mode=all (Single Unit Only - Legacy)
-
-**Best for**: Legacy single-unit deployments
-
-**⚠️ Important**: `mode=all` supports **ONLY single-unit** deployments. This mode is being merged into `mode=auto`. Use `mode=auto` for all new deployments.
-
-### Step 2B: Deploy Single All-in-One Unit
-
-```bash
-# Deploy single unit with shared storage
-juju deploy concourse-ci-machine \
-  --storage concourse-data=shared-nfs,10G \
-  --config mode=all
-
-# Wait for deployment
-juju wait-for application concourse-ci-machine --query='status=="active"'
-```
-
-**What happens**:
-- Single unit runs BOTH web server AND worker
-- Downloads binaries to shared `bin/`
-- Runs `concourse-server.service` + `concourse-worker.service`
-
-**❌ DO NOT add more units in mode=all**:
-```bash
-# This is NOT supported and will NEVER be supported
-juju add-unit concourse-ci-machine  # ❌ Not supported with mode=all
-```
-
-**Migrating from mode=all to mode=auto**:
-```bash
-# Switch to mode=auto to support multiple units
-juju config concourse-ci-machine mode=auto
-
-# Wait for configuration to apply
-juju wait-for application concourse-ci-machine
-
-# Now you can add units with shared storage
-juju add-unit concourse-ci-machine --attach-storage concourse-data/0
 ```
 
 ## Deployment Scenario C: mode=web + mode=worker (Single Web, Multiple Workers)
@@ -309,7 +266,7 @@ juju config concourse-ci-machine version
 
 ## Step 6: Access Concourse Web UI
 
-### For mode=auto or mode=all:
+### For mode=auto:
 ```bash
 # Get web UI URL (leader unit)
 juju status --format=json | jq -r '.applications."concourse-ci-machine".units."concourse-ci-machine/0".address'
@@ -360,24 +317,6 @@ juju show-storage concourse-data/0
 juju ssh concourse-ci-machine/0 "df /var/lib/concourse | tail -1"
 juju ssh concourse-ci-machine/1 "df /var/lib/concourse | tail -1"
 # Device should be SAME across units
-```
-
-### Issue: Trying to Add Units with mode=all
-**Symptoms**: 
-```
-ERROR cannot add unit: mode=all only supports single unit
-```
-
-**Resolution**:
-```bash
-# Switch to mode=auto to support multiple units
-juju config concourse-ci-machine mode=auto
-
-# Wait for configuration to apply
-juju wait-for application concourse-ci-machine
-
-# Now add units
-juju add-unit concourse-ci-machine --attach-storage concourse-data/0
 ```
 
 ### Issue: Trying to Add Multiple Web Units (mode=web)
@@ -543,16 +482,16 @@ juju run concourse-ci-machine/leader run-migrations target-version=1234
 
 ## Mode Comparison Table
 
-| Feature | mode=auto | mode=all | mode=web | mode=worker |
-|---------|-----------|----------|----------|-------------|
-| **Units Supported** | **Multiple** ✅ | Single only ⚠️ | Single only ⚠️ | **Multiple** ✅ |
-| **Shared Storage** | ✅ Leader downloads | ✅ Single unit | ✅ Web downloads | ✅ Detects existing |
-| **Binary Download** | Once (by leader) | Once (single unit) | Once (by web) | Never (waits for web) |
-| **TSA Connection** | Via peer relation | N/A (single unit) | Provides endpoint | Via explicit relation |
-| **Scaling** | Add units ✅ | ❌ Never supported | ❌ Not yet | Add worker units ✅ |
-| **Status** | **Recommended** ✅ | Legacy (use auto) | Single web only | Requires separate web |
-| **Best For** | Multi-unit deployments | Legacy single-unit | Dedicated web tier | Dedicated workers |
-| **Future Plans** | Active development | Merging into auto | Multi-unit planned | Active development |
+| Feature | mode=auto | mode=web | mode=worker |
+|---------|-----------|----------|-------------|
+| **Units Supported** | **Multiple** ✅ | Single only ⚠️ | **Multiple** ✅ |
+| **Shared Storage** | ✅ Leader downloads | ✅ Web downloads | ✅ Detects existing |
+| **Binary Download** | Once (by leader) | Once (by web) | Never (waits for web) |
+| **TSA Connection** | Via peer relation | Provides endpoint | Via explicit relation |
+| **Scaling** | Add units ✅ | ❌ Not yet | Add worker units ✅ |
+| **Status** | **Recommended** ✅ | Single web only | Requires separate web |
+| **Best For** | Multi-unit deployments | Dedicated web tier | Dedicated workers |
+| **Future Plans** | Active development | Multi-unit planned | Active development |
 
 ## Next Steps
 
@@ -569,7 +508,7 @@ Key configuration options from config.yaml:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `mode` | `auto` | Deployment mode (auto/all/web/worker) |
+| `mode` | `auto` | Deployment mode (auto/web/worker) |
 | `version` | (latest) | Concourse version to deploy |
 | `web-port` | `8080` | Web UI port |
 | `worker-procs` | `1` | Number of worker processes |

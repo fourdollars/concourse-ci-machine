@@ -147,10 +147,6 @@ juju ssh concourse-ci-machine/1 "ls -lh /var/lib/concourse/worker/concourse-ci-1
 # Isolated worker state
 ```
 
-## Deployment Scenario B: (Removed)
-
-**Note**: `mode=all` is deprecated. Please use `mode=auto` for all deployments.
-
 ## Deployment Scenario C: mode=web + mode=worker (Single Web, Multiple Workers)
 
 **Best for**: Production deployments with dedicated web/worker separation

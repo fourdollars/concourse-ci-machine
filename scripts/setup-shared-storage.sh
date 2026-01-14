@@ -160,12 +160,6 @@ for UNIT in $UNITS; do
                 print_debug "  → Worker (mode=auto, non-leader)"
             fi
             ;;
-        "all")
-            # In all mode, every unit runs both web and worker
-            IS_WORKER=true
-            IS_WEB=true
-            print_debug "  → Worker + Web (mode=all, runs both web+worker)"
-            ;;
         "web")
             # Web-only units
             IS_WEB=true

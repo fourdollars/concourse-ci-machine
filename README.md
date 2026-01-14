@@ -143,6 +143,8 @@ The charm supports three deployment modes via the `mode` configuration:
 ### 1. `auto` (Multi-Unit - Fully Automated ✨)
 Leader unit runs web server, non-leader units run workers. **Keys automatically distributed via peer relations!**
 
+**Note**: You need at least **2 units** for this mode to have functional workers (Unit 0 = Web, Unit 1+ = Workers).
+
 ```bash
 juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 juju relate concourse-ci:postgresql postgresql:database

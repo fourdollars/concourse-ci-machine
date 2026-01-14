@@ -8,7 +8,9 @@ Quick reference guide for deploying Concourse CI with this charm.
 - Ubuntu 24.04 LTS environment
 - Access to Charmhub or local charm file
 
-## Basic Deployment (Single Unit)
+## Basic Deployment (Single Unit - Web Only)
+
+**Note**: In `mode=auto`, the leader unit acts as the Web node. You need at least **2 units** to have functional Workers. A single-unit deployment provides the Web UI but cannot execute pipelines.
 
 ```bash
 # Create model
