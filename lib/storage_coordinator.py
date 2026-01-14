@@ -110,6 +110,7 @@ class SharedStorage:
     
     def __post_init__(self):
         """Validate paths exist and are accessible."""
+        logger.debug(f"Initializing SharedStorage at {self.volume_path}")
         if not self.volume_path.exists():
             raise StorageNotMountedError(f"Volume not mounted: {self.volume_path}")
             
@@ -134,6 +135,12 @@ class SharedStorage:
         # Ensure subdirectories exist
         self.bin_directory.mkdir(parents=True, exist_ok=True)
         self.keys_directory.mkdir(parents=True, exist_ok=True)
+        
+        # Enforce permissions (T075)
+        # Binaries: rwxr-xr-x (755) - executable by all
+        self.bin_directory.chmod(0o755)
+        # Keys: rwx------ (700) - owner only
+        self.keys_directory.chmod(0o700)
         
         # Read installed version if marker exists
         if self.installed_version is None:
@@ -190,6 +197,7 @@ class SharedStorage:
         """
         # Create temp file in same directory for atomic rename
         temp_file = self.version_marker_path.with_suffix(f".tmp.{os.getpid()}.{int(time.time())}")
+        logger.debug(f"Writing version {version} to temp file {temp_file}")
         try:
             temp_file.write_text(version)
             # Atomic rename (replace)
@@ -248,6 +256,7 @@ class LockCoordinator:
             Lock is automatically released when context exits, even on exception.
         """
         start_time = time.time()
+        logger.debug(f"Attempting to acquire lock at {self.lock_path} (timeout={timeout}s)")
         
         while True:
             # Check for orphaned/stale locks first (T065)
@@ -263,10 +272,12 @@ class LockCoordinator:
                 self.holder_unit = os.environ.get('JUJU_UNIT_NAME', 'unknown')
                 self.acquired_at = datetime.now(timezone.utc)
                 logger.info(f"Lock acquired by {self.holder_unit} at {self.acquired_at}")
+                logger.debug(f"Holding lock on {self.lock_path}")
                 try:
                     yield
                 finally:
                     # Release lock
+                    logger.debug(f"Releasing lock on {self.lock_path}")
                     try:
                         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
                     except Exception as e:
@@ -281,6 +292,7 @@ class LockCoordinator:
                 
             except BlockingIOError:
                 lock_file.close()
+                logger.debug("Lock held by another process")
                 
                 if timeout <= 0:
                     raise LockAcquireError(
@@ -298,6 +310,14 @@ class LockCoordinator:
                 time.sleep(1)
             self.holder_unit = None
             self.acquired_at = None
+    
+    def is_held(self) -> bool:
+        """Check if lock is currently held by this instance.
+        
+        Returns:
+            True if lock is held, False otherwise
+        """
+        return self.holder_unit is not None
     
     def check_and_clean_orphaned_locks(self) -> None:
         """Check for orphaned download markers and clean them (T065).
@@ -673,6 +693,8 @@ class StorageCoordinator:
         if not self.is_web_leader():
             raise PermissionError("Only web/leader units can download binaries")
         
+        self.logger.debug(f"Starting binary download for v{request.get('version')}")
+        
         if not self.lock.is_held():
             raise LockAcquireError("Download lock must be acquired before downloading")
         
@@ -965,8 +987,10 @@ class StorageCoordinator:
         # Then try actual write to catch Read-only filesystem errors
         try:
             test_file = path / f".write_test_{os.getpid()}_{int(time.time())}"
+            self.logger.debug(f"Testing write access to {path} via {test_file}")
             test_file.touch()
             test_file.unlink()
+            self.logger.debug(f"Write test passed for {path}")
             return True
         except (OSError, PermissionError) as e:
             self.logger.warning(f"Write test failed for {path}: {e}")
@@ -1040,6 +1064,7 @@ class UpgradeCoordinator:
         )
         
         # Write state to peer relation
+        self.logger.debug(f"Writing upgrade state: {upgrade_state}")
         for key, value in upgrade_state.to_relation_data().items():
             self.relation.set_app_data(key, value)
         
@@ -1226,6 +1251,7 @@ class UpgradeCoordinator:
         
         # Stop worker service
         try:
+            self.logger.debug(f"Stopping worker service via {self.service_mgr}")
             self.service_mgr.stop()
             self.logger.info("Worker service stopped successfully")
         except ServiceManagementError as e:
@@ -1275,6 +1301,7 @@ class UpgradeCoordinator:
         self.logger.info(f"Handling COMPLETE signal for upgrade to v{state.target_version}")
         
         # Verify new binaries
+        self.logger.debug(f"Verifying binaries for v{state.target_version}")
         if not self.storage.verify_binaries(state.target_version):
             raise SharedStorageError(
                 f"Binary verification failed for v{state.target_version}"

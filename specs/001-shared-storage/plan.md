@@ -847,3 +847,16 @@ publish-charm:
 | Shared storage pool in metadata.yaml | Native Juju storage feature, well-supported | Manual symlinking across units - rejected due to fragility and manual intervention requirements |
 | Detection before download | Reduces network usage, aligns with performance goals | Always download - rejected due to bandwidth waste and slower deployments |
 | Per-unit worker directories | Maintains isolation, prevents state conflicts | Fully shared worker state - rejected due to concurrency risks and potential corruption |
+
+## CI Test Matrix
+
+| Test Job | Deployment Mode | Storage Config | Units | Description | Dependencies |
+|----------|-----------------|----------------|-------|-------------|--------------|
+| `test-shared-storage-auto` | `auto` | `shared-storage=lxc` | 3 | Verifies shared storage mount, single binary download, and upgrade coordination. | `build-charm` |
+| `test-shared-storage-web-worker` | `web` + `worker` | `shared-storage=lxc` | 2 | Verifies separate web/worker units sharing storage volume. | `test-shared-storage-auto` |
+| `test-shared-storage-all` | `all` | `shared-storage=lxc` | 2 | Verifies monolith mode scaling with shared storage. | `test-shared-storage-web-worker` |
+
+**Execution Strategy**:
+- Sequential Chain: `auto` -> `web-worker` -> `all`
+- Rationale: Prevents resource contention on GitHub Actions runners and provides clear failure isolation.
+

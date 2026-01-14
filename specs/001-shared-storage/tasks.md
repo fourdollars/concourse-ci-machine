@@ -152,15 +152,15 @@ description: "Task list for shared storage feature implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T067 [P] Add comprehensive docstrings to all public methods in lib/storage_coordinator.py following Google style guide
+- [x] T067 [P] Add comprehensive docstrings to all public methods in lib/storage_coordinator.py following Google style guide
 - [x] T068 [P] Update docs/shared-storage.md with architecture diagrams from data-model.md data flow sections
-- [ ] T069 [P] Add logging statements at DEBUG level for all storage operations in lib/storage_coordinator.py
+- [x] T069 [P] Add logging statements at DEBUG level for all storage operations in lib/storage_coordinator.py
 - [x] T070 [P] Update quickstart.md deployment examples with actual CLI commands for shared storage testing
-- [ ] T071 Code review and refactoring: ensure all methods have type hints and follow constitution standards
-- [ ] T072 Verify all exception messages include actionable context per constitution UX principle
-- [ ] T073 Run quickstart.md deployment guide validation with actual 3-unit deployment
+- [x] T071 Code review and refactoring: ensure all methods have type hints and follow constitution standards
+- [x] T072 Verify all exception messages include actionable context per constitution UX principle
+- [x] T073 Run quickstart.md deployment guide validation with actual 3-unit deployment
 - [x] T074 [P] Add performance logging for download operations showing duration and bandwidth metrics
-- [ ] T075 Security review: ensure file permissions on shared storage prevent unauthorized access
+- [x] T075 Security review: ensure file permissions on shared storage prevent unauthorized access
 - [x] T076 Update lib/concourse_common.py to add storage statistics helper (disk usage, binary count, unit count)
 
 ---
@@ -176,11 +176,11 @@ description: "Task list for shared storage feature implementation"
 - [x] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
 - [x] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
 - [x] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
-- [ ] T084 Add storage attachment verification in test-shared-storage-all: verify both units share same storage volume
-- [ ] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
+- [x] T084 Add storage attachment verification in test-shared-storage-all: verify both units share same storage volume
+- [x] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
 - [ ] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units
 - [ ] T087 Add new unit addition test: deploy 2 units, add 3rd with existing binaries, verify <3min addition time
-- [ ] T088 Document CI test matrix in plan.md showing coverage for all modes (auto, all, web+worker) with shared storage
+- [x] T088 Document CI test matrix in plan.md showing coverage for all modes (auto, all, web+worker) with shared storage
 
 ---
 
