@@ -212,7 +212,7 @@ jobs:
     name: Test mode=web+worker (with mounts)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: test-auto-mode
+    needs: test-shared-storage-auto
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -479,7 +479,7 @@ jobs:
     name: Test mode=all
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: test-web-worker-mode
+    needs: test-shared-storage-web-worker
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -629,7 +629,7 @@ jobs:
     name: Test shared storage (mode=auto)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build-charm
+    needs: test-auto-mode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -774,7 +774,7 @@ jobs:
     name: Test shared storage (mode=web+worker)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: test-shared-storage-auto
+    needs: test-web-worker-mode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -876,7 +876,7 @@ jobs:
     name: Test shared storage (mode=all)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: test-shared-storage-web-worker
+    needs: test-all-mode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
