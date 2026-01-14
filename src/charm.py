@@ -176,6 +176,15 @@ class ConcourseCharm(CharmBase):
         mode = self._get_deployment_mode()
         return mode in ("worker", "both")
 
+    def _ensure_role_directories(self):
+        """Ensure directories exist based on current role"""
+        # Always ensure directories for roles we are running
+        if self._should_run_web():
+            ensure_directories(skip_shared_storage=False)
+        
+        if self._should_run_worker():
+            ensure_directories(skip_shared_storage=True)
+
     def _generate_random_password(self, length: int = 24) -> str:
         """Generate a secure random password"""
         alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
@@ -220,9 +229,8 @@ class ConcourseCharm(CharmBase):
             deployment_mode = self._get_deployment_mode()
             logger.info(f"Starting Concourse installation (mode: {deployment_mode})")
 
-            # Common setup - skip chmod on shared storage for workers (readonly mount)
-            skip_shared = not self._should_run_web()
-            ensure_directories(skip_shared_storage=skip_shared)
+            # Common setup - ensure directories based on role
+            self._ensure_role_directories()
             create_concourse_user()
             
             # Get desired version
@@ -423,6 +431,9 @@ class ConcourseCharm(CharmBase):
             logger.info("Config changed event triggered")
             mode = self._get_deployment_mode()
             logger.info(f"Deployment mode: {mode}")
+
+            # Ensure directories based on role (important if role changed)
+            self._ensure_role_directories()
 
             # Check for version change and upgrade if needed
             # Only leader should download binaries in shared storage mode
