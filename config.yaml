@@ -17,6 +17,16 @@ options:
     default: ""
     type: string
   
+  shared-storage:
+    description: |
+      Shared storage mode for LXC testing:
+      - 'none': Disable shared storage, each unit downloads independently (default)
+      - 'lxc': Enable LXC-mounted shared storage (requires .lxc_shared_storage marker)
+      When set to 'lxc', units will wait for the marker file before proceeding.
+      Default: none
+    default: "none"
+    type: string
+  
   web-port:
     description: |
       Port for Concourse web UI and API server.

@@ -176,6 +176,15 @@ class ConcourseCharm(CharmBase):
         mode = self._get_deployment_mode()
         return mode in ("worker", "both")
 
+    def _ensure_role_directories(self):
+        """Ensure directories exist based on current role"""
+        # Always ensure directories for roles we are running
+        if self._should_run_web():
+            ensure_directories(skip_shared_storage=False)
+        
+        if self._should_run_worker():
+            ensure_directories(skip_shared_storage=True)
+
     def _generate_random_password(self, length: int = 24) -> str:
         """Generate a secure random password"""
         alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
@@ -214,45 +223,151 @@ class ConcourseCharm(CharmBase):
         return password
 
     def _on_install(self, event):
-        """Handle install event"""
+        """Handle install event with shared storage support (T026-T028, T034)"""
         try:
             self.unit.status = MaintenanceStatus("Installing Concourse CI...")
-            logger.info(
-                f"Starting Concourse installation (mode: {self._get_deployment_mode()})"
-            )
+            deployment_mode = self._get_deployment_mode()
+            logger.info(f"Starting Concourse installation (mode: {deployment_mode})")
 
-            # Common setup
-            ensure_directories()
+            # Common setup - ensure directories based on role
+            self._ensure_role_directories()
             create_concourse_user()
-
-            # Download and install Concourse
+            
+            # Get desired version
             version = get_concourse_version(self.config)
-            download_and_install_concourse(self, version)
-
-            # Generate keys
-            generate_keys()
-
-            # Create /etc/default/concourse
-            Path("/etc/default/concourse").touch()
-            import os
-
-            os.chmod("/etc/default/concourse", 0o644)
-
-            # Setup services based on role
+            
+            # Initialize shared storage based on role (T026)
+            storage_coordinator = None
             if self._should_run_web():
-                logger.info("Setting up web server service")
-                self.web_helper.setup_systemd_service()
-
+                # Web/leader initializes shared storage (T027)
+                logger.info("Web/leader unit: initializing shared storage")
+                storage_coordinator = self.web_helper.initialize_shared_storage()
+                
+                if storage_coordinator:
+                    # Download binaries with shared storage support
+                    self.unit.status = MaintenanceStatus(
+                        f"Downloading Concourse v{version}..."  # T034
+                    )
+                    from concourse_installer import download_and_install_concourse_with_storage
+                    from storage_coordinator import LockAcquireError
+                    
+                    try:
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                        self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                    except LockAcquireError:
+                        logger.warning("Another unit is downloading binaries, deferring...")
+                        self.unit.status = MaintenanceStatus("Another unit downloading, waiting...")
+                        event.defer()
+                        return
+                elif self.config.get("shared-storage", "none") != "none":
+                    # Shared storage is configured but not available - wait for mount
+                    storage_mode = self.config['shared-storage']
+                    logger.warning(
+                        f"Shared storage mode '{storage_mode}' configured but /var/lib/concourse not mounted. "
+                        "Unit will wait for storage to be configured."
+                    )
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                    # Don't raise exception - just wait for config-changed or install retry
+                    return
+                else:
+                    # No shared storage configured, use local installation
+                    logger.info("No shared storage configured, using local installation")
+                    download_and_install_concourse(self, version)
+            
             if self._should_run_worker():
-                logger.info("Setting up worker service")
+                # Worker initializes shared storage and waits (T028)
+                logger.info("Worker unit: initializing shared storage")
+                
+                # Setup systemd service early so it's ready when binaries arrive
+                logger.info("Setting up worker service (early setup)")
                 self.worker_helper.setup_systemd_service()
+                
                 # Install containerd for worker
                 import subprocess
-
                 subprocess.run(["apt-get", "update", "-qq"], capture_output=True)
                 subprocess.run(
                     ["apt-get", "install", "-y", "containerd"], capture_output=True
                 )
+                
+                # Only initialize worker storage if web didn't already do it
+                if not storage_coordinator:
+                    storage_coordinator = self.worker_helper.initialize_shared_storage()
+                
+                if storage_coordinator:
+                    # Check if binaries exist, otherwise wait for web/leader
+                    self.unit.status = MaintenanceStatus(
+                        f"Waiting for binaries v{version}..."  # T034
+                    )
+                    from concourse_installer import (
+                        download_and_install_concourse_with_storage,
+                        detect_existing_binaries,
+                    )
+                    
+                    existing = detect_existing_binaries(storage_coordinator, version)
+                    if not existing:
+                        # Wait for web/leader to download
+                        logger.info(f"Waiting for web/leader to download v{version}")
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                    else:
+                        logger.info(f"Binaries v{version} already available")
+                    
+                    self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                elif self.config.get("shared-storage", "none") != "none":
+                    # Shared storage is configured but not available - wait for mount
+                    storage_mode = self.config['shared-storage']
+                    logger.warning(
+                        f"Shared storage mode '{storage_mode}' configured but /var/lib/concourse not mounted. "
+                        "Unit will wait for storage to be configured."
+                    )
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                    # Service file is ready, just waiting for binaries now
+                    return
+                else:
+                    # No shared storage configured, use local installation
+                    logger.info("No shared storage configured, using local installation")
+                    download_and_install_concourse(self, version)
+            else:
+                # "both" mode: treat as web/leader
+                storage_coordinator = self.web_helper.initialize_shared_storage()
+                if storage_coordinator:
+                    from concourse_installer import download_and_install_concourse_with_storage
+                    from storage_coordinator import LockAcquireError
+                    
+                    self.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
+                    try:
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                        self.unit.status = MaintenanceStatus("Binaries ready")
+                    except LockAcquireError:
+                        logger.warning("Another unit is downloading binaries, deferring...")
+                        self.unit.status = MaintenanceStatus("Another unit downloading, waiting...")
+                        event.defer()
+                        return
+                else:
+                    download_and_install_concourse(self, version)
+
+            # Generate keys in appropriate directory
+            keys_dir = KEYS_DIR
+            if self._should_run_worker() and not self._should_run_web():
+                from concourse_common import WORKER_KEYS_DIR
+                keys_dir = WORKER_KEYS_DIR
+            
+            generate_keys(keys_dir)
+
+            # Create /etc/default/concourse
+            Path("/etc/default/concourse").touch()
+            import os
+            os.chmod("/etc/default/concourse", 0o644)
+
+            # Setup web service if needed (worker service already set up early)
+            if self._should_run_web():
+                logger.info("Setting up web server service")
+                self.web_helper.setup_systemd_service()
                 
                 # Configure GPU support if enabled
                 if self.config.get("enable-gpu", False):
@@ -278,6 +393,29 @@ class ConcourseCharm(CharmBase):
 
             # Ensure directories exist
             ensure_directories()
+            
+            # Ensure /etc/default/concourse exists
+            default_concourse = Path("/etc/default/concourse")
+            if not default_concourse.exists():
+                logger.info("Creating /etc/default/concourse")
+                default_concourse.touch()
+                import os
+                os.chmod(default_concourse, 0o644)
+            
+            # Ensure keys are generated
+            keys_dir_path = KEYS_DIR
+            if self._should_run_worker() and not self._should_run_web():
+                from concourse_common import WORKER_KEYS_DIR
+                keys_dir_path = WORKER_KEYS_DIR
+
+            keys_dir = Path(keys_dir_path)
+            if not (keys_dir / "tsa_host_key").exists():
+                # Check if binary exists before generating keys
+                if verify_installation():
+                    logger.info(f"Generating missing keys in {keys_dir}")
+                    generate_keys(keys_dir_path)
+                else:
+                    logger.warning("Concourse binary missing, skipping key generation during upgrade")
 
             # Recreate systemd services (in case service definitions changed)
             if self._should_run_web():
@@ -287,6 +425,20 @@ class ConcourseCharm(CharmBase):
             if self._should_run_worker():
                 logger.info("Updating worker service")
                 self.worker_helper.setup_systemd_service()
+                
+                # Republish worker key to TSA relation
+                tsa_relation = self.model.get_relation("worker-tsa")
+                if tsa_relation:
+                    keys_dir_path = KEYS_DIR
+                    if not self._should_run_web():
+                        from concourse_common import WORKER_KEYS_DIR
+                        keys_dir_path = WORKER_KEYS_DIR
+                    
+                    worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
+                    if worker_pub_key_path.exists():
+                        worker_pub_key = worker_pub_key_path.read_text().strip()
+                        tsa_relation.data[self.unit]["worker-public-key"] = worker_pub_key
+                        logger.info("Republished worker public key to TSA relation")
 
             # Trigger config update
             self._on_config_changed(event)
@@ -304,21 +456,60 @@ class ConcourseCharm(CharmBase):
             mode = self._get_deployment_mode()
             logger.info(f"Deployment mode: {mode}")
 
+            # Ensure directories based on role (important if role changed)
+            self._ensure_role_directories()
+
             # Check for version change and upgrade if needed
-            desired_version = self.config.get("version")
+            # Only leader should download binaries in shared storage mode
+            desired_version = get_concourse_version(self.config)
             if desired_version:
                 installed_version = self._get_installed_concourse_version()
+                
+                # Also check shared storage for version if configured
+                if not installed_version and self.config.get("shared-storage", "none") == "lxc":
+                    from pathlib import Path
+                    version_marker = Path("/var/lib/concourse/.installed_version")
+                    if version_marker.exists():
+                        installed_version = version_marker.read_text().strip()
+                        logger.info(f"Found version {installed_version} in shared storage")
+                
                 if installed_version != desired_version:
+                    # In shared storage mode, only leader downloads
+                    if self.config.get("shared-storage", "none") != "none" and not self.unit.is_leader():
+                        logger.info(f"Worker unit: waiting for leader to upgrade to {desired_version}")
+                        self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse {desired_version}")
+                        return
+                    
                     logger.info(f"Upgrading Concourse CI from {installed_version} to {desired_version}")
                     self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {desired_version}...")
                     
                     # Stop services before upgrading to avoid "text file busy" error
-                    if self._should_run_web():
-                        self.web_helper.stop_service()
                     if self._should_run_worker():
                         self.worker_helper.stop_service()
+                    if self._should_run_web():
+                        self.web_helper.stop_service()
                     
-                    download_and_install_concourse(self, desired_version)
+                    # Use shared storage installation if configured
+                    if self.config.get("shared-storage", "none") != "none":
+                        storage_coordinator = None
+                        if self._should_run_web():
+                            storage_coordinator = self.web_helper.initialize_shared_storage()
+                        elif self._should_run_worker():
+                            storage_coordinator = self.worker_helper.initialize_shared_storage()
+                        
+                        if storage_coordinator:
+                            from concourse_installer import download_and_install_concourse_with_storage
+                            download_and_install_concourse_with_storage(
+                                self, desired_version, storage_coordinator
+                            )
+                        else:
+                            logger.warning("Shared storage configured but not available, skipping upgrade")
+                            self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                            return
+                    else:
+                        # Local installation
+                        download_and_install_concourse(self, desired_version)
+                    
                     self._restart_concourse_service()
                     
                     # If web server, publish version to relations
@@ -327,6 +518,14 @@ class ConcourseCharm(CharmBase):
                         self._publish_version_to_peer_relation()
 
             # Update configuration based on role
+            # Ensure systemd services are set up for the current role(s)
+            # This is critical for auto mode where roles can change dynamically
+            if self._should_run_web():
+                self.web_helper.setup_systemd_service()
+            
+            if self._should_run_worker():
+                self.worker_helper.setup_systemd_service()
+
             if mode == "both":
                 # When running both, we need to merge configs
                 logger.info("Updating merged web+worker configuration")
@@ -346,6 +545,17 @@ class ConcourseCharm(CharmBase):
                     self._restart_concourse_service()
 
                 if self._should_run_worker():
+                    from pathlib import Path
+                    from concourse_common import CONCOURSE_BIN
+                    
+                    # Check if Concourse binaries are installed before configuring
+                    if not Path(CONCOURSE_BIN).exists():
+                        logger.info("Concourse CI is not installed yet, skipping worker configuration")
+                        # Set waiting status if we're waiting for shared storage
+                        if self.config.get("shared-storage", "none") != "none":
+                            self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                        return
+                    
                     logger.info("Updating worker configuration")
                     tsa_host = self._get_tsa_host()
                     
@@ -356,7 +566,13 @@ class ConcourseCharm(CharmBase):
                         # Install/update folder mounting wrapper for non-GPU workers
                         self.worker_helper.install_folder_mount_wrapper()
                     
-                    self.worker_helper.update_config(tsa_host=tsa_host)
+                    # Update worker configuration
+                    keys_dir_path = KEYS_DIR
+                    if self._should_run_worker() and not self._should_run_web():
+                        from concourse_common import WORKER_KEYS_DIR
+                        keys_dir_path = WORKER_KEYS_DIR
+                        
+                    self.worker_helper.update_config(tsa_host=tsa_host, keys_dir=keys_dir_path)
                     # Restart worker service to apply new config
                     self._restart_concourse_service()
 
@@ -382,7 +598,112 @@ class ConcourseCharm(CharmBase):
             self.unit.status = BlockedStatus(f"Start failed: {e}")
 
     def _on_update_status(self, event):
-        """Handle update-status event"""
+        """Handle update-status event
+        
+        This hook runs periodically (~5 minutes) and checks:
+        - If unit is waiting for shared storage, check if it's now available
+        - If storage became available, trigger installation
+        """
+        from pathlib import Path
+        
+        # Check if unit is waiting for storage, leader, or installation
+        should_check_storage = False
+        if isinstance(self.unit.status, WaitingStatus):
+            status_msg = self.unit.status.message.lower()
+            if any(keyword in status_msg for keyword in ["storage", "mount", "waiting for leader", "install"]):
+                logger.info(f"Unit in waiting state: {self.unit.status.message}, checking if can proceed...")
+                should_check_storage = True
+        elif isinstance(self.unit.status, BlockedStatus) and "not installed" in self.unit.status.message:
+            logger.info("Unit blocked due to missing installation, checking if storage is available...")
+            should_check_storage = True
+            
+        if should_check_storage:
+            # Check if shared storage is configured
+            if self.config.get("shared-storage", "none") == "lxc":
+                storage_path = Path("/var/lib/concourse")
+                marker_file = storage_path / ".lxc_shared_storage"
+                version_marker = storage_path / ".installed_version"
+                
+                # Check if storage is mounted
+                if storage_path.exists() and marker_file.exists():
+                    # Check if binaries already exist
+                    if version_marker.exists():
+                        installed_version = version_marker.read_text().strip()
+                        logger.info(f"Found existing binaries v{installed_version} in shared storage")
+                        
+                        # For workers, generate keys and finish
+                        if self._should_run_worker():
+                            logger.info("Worker: Setting up with existing binaries")
+                            self.unit.status = MaintenanceStatus(f"Setting up binaries v{installed_version}...")
+                            try:
+                                from concourse_common import generate_keys
+                                generate_keys()
+                                
+                                # Initialize worker storage and create config file
+                                storage_coordinator = self.worker_helper.initialize_shared_storage()
+                                if storage_coordinator:
+                                    tsa_host = self._get_tsa_host()
+                                    self.worker_helper.update_config(tsa_host=tsa_host)
+                                    logger.info("Worker config created via update-status")
+                                
+                                logger.info("Worker setup completed via update-status")
+                                self._update_status()
+                                return
+                            except Exception as e:
+                                logger.error(f"Setup failed: {e}", exc_info=True)
+                                self.unit.status = BlockedStatus(f"Setup failed: {e}")
+                                return
+                    
+                    # No binaries yet, need to download (leader/web only)
+                    logger.info("Shared storage detected but no binaries yet, triggering installation...")
+                    
+                    # Get version to install
+                    from concourse_installer import get_latest_concourse_version
+                    version = self.config.get("version") or get_latest_concourse_version()
+                    
+                    # Trigger installation based on role
+                    if self._should_run_web():
+                        logger.info("Web unit: starting installation with shared storage")
+                        self.unit.status = MaintenanceStatus(f"Installing Concourse v{version}...")
+                        try:
+                            storage_coordinator = self.web_helper.initialize_shared_storage()
+                            if storage_coordinator:
+                                from concourse_installer import download_and_install_concourse_with_storage
+                                download_and_install_concourse_with_storage(
+                                    self, version, storage_coordinator
+                                )
+                                from concourse_common import create_shared_storage_symlinks
+                                create_shared_storage_symlinks(storage_coordinator.storage.bin_directory)
+                                logger.info("Installation completed via update-status")
+                        except Exception as e:
+                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            self.unit.status = BlockedStatus(f"Installation failed: {e}")
+                            return
+                    
+                    elif self._should_run_worker():
+                        logger.info("Worker unit: starting installation with shared storage")
+                        self.unit.status = MaintenanceStatus(f"Waiting for binaries v{version}...")
+                        try:
+                            storage_coordinator = self.worker_helper.initialize_shared_storage()
+                            if storage_coordinator:
+                                from concourse_installer import download_and_install_concourse_with_storage
+                                download_and_install_concourse_with_storage(
+                                    self, version, storage_coordinator
+                                )
+                                logger.info("Installation completed via update-status")
+                        except Exception as e:
+                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            self.unit.status = BlockedStatus(f"Installation failed: {e}")
+                            return
+                    
+                    # Generate keys after installation
+                    from concourse_common import generate_keys
+                    generate_keys()
+                    
+                    # Continue with normal status update
+                else:
+                    logger.info(f"Storage still not available (exists={storage_path.exists()}, marker={marker_file.exists() if storage_path.exists() else False})")
+        
         self._update_status()
 
     def _on_stop(self, event):
@@ -395,7 +716,7 @@ class ConcourseCharm(CharmBase):
                 self.worker_helper.stop_service()
         except Exception as e:
             logger.error(f"Stop failed: {e}", exc_info=True)
-
+    
     def _on_postgresql_relation_created(self, event):
         """Handle PostgreSQL relation created"""
         logger.info("PostgreSQL relation created")
@@ -581,8 +902,12 @@ class ConcourseCharm(CharmBase):
             logger.error(f"Failed to authorize worker key: {e}", exc_info=True)
 
     def _on_peer_relation_changed(self, event):
-        """Handle peer relation changed - share TSA keys and worker keys"""
+        """Handle peer relation changed - share TSA keys, worker keys, and upgrade signals (T046)"""
         logger.info("Peer relation changed")
+        
+        # T046: Check for upgrade signals first (for worker units)
+        if not self.unit.is_leader() and self.config.get("shared-storage", "none") != "none":
+            self._handle_upgrade_signals(event)
 
         # Web server: publish keys and authorize workers
         if self._should_run_web():
@@ -599,9 +924,19 @@ class ConcourseCharm(CharmBase):
         # Worker: publish our key and retrieve TSA configuration
         if self._should_run_worker():
             from pathlib import Path
+            
+            # Check if Concourse binaries are installed (install hook completed successfully)
+            from concourse_common import CONCOURSE_BIN
+            if not Path(CONCOURSE_BIN).exists() and not Path("/var/lib/concourse/bin/concourse").exists():
+                logger.info("Concourse CI is not installed yet, skipping peer relation config")
+                # Set waiting status if we're waiting for shared storage
+                if self.config.get("shared-storage", "none") != "none":
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                return
 
             # Publish our worker public key
-            keys_dir = Path(KEYS_DIR)
+            from concourse_common import WORKER_KEYS_DIR
+            keys_dir = Path(WORKER_KEYS_DIR)
             worker_pub_key_path = keys_dir / "worker_key.pub"
             if worker_pub_key_path.exists():
                 worker_pub_key = worker_pub_key_path.read_text().strip()
@@ -623,7 +958,8 @@ class ConcourseCharm(CharmBase):
                     break
             
             # Check if worker version matches web version and upgrade if needed
-            if web_version:
+            # Only for non-coordinated upgrades (simple auto-upgrade)
+            if web_version and self.config.get("shared-storage", "none") == "none":
                 worker_version = self._get_installed_concourse_version()
                 if worker_version and worker_version != web_version:
                     logger.info(f"Web version ({web_version}) differs from worker version ({worker_version}), upgrading...")
@@ -892,7 +1228,7 @@ class ConcourseCharm(CharmBase):
                     web_ip = data.get("web-ip")
                     if web_ip:
                         return f"{web_ip}:2222"
-                except:
+                except Exception:
                     pass
 
         # Fallback: if we're the leader, return our own IP
@@ -902,7 +1238,7 @@ class ConcourseCharm(CharmBase):
             try:
                 unit_ip = socket.gethostbyname(socket.gethostname())
                 return f"{unit_ip}:2222"
-            except:
+            except Exception:
                 return "127.0.0.1:2222"
 
         # Last resort: try localhost (will fail for remote workers)
@@ -915,7 +1251,7 @@ class ConcourseCharm(CharmBase):
 
             # Check if installation is complete
             if not verify_installation():
-                self.unit.status = BlockedStatus("Concourse not installed")
+                self.unit.status = BlockedStatus("Concourse CI is not installed yet.")
                 return
 
             # Check database for web mode
@@ -1016,39 +1352,191 @@ class ConcourseCharm(CharmBase):
         return None
 
     def _on_update_concourse_version_action(self, event):
-        """Handle upgrade action"""
+        """Handle upgrade action with coordinated multi-unit upgrade support (T043-T045)"""
         try:
             version = event.params.get("version") or self.config.get("version") or get_concourse_version(self.config)
-            self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {version}...")
             
-            # Stop services before upgrading to avoid "text file busy" error
-            if self._should_run_web():
-                self.web_helper.stop_service()
-            if self._should_run_worker():
-                self.worker_helper.stop_service()
+            # Check if we should use coordinated upgrade (shared storage mode)
+            shared_storage_mode = self.config.get("shared-storage", "none")
+            use_coordinated_upgrade = (shared_storage_mode != "none" and 
+                                      self.model.get_relation("concourse-peer") is not None)
             
-            download_and_install_concourse(self, version)
-            
-            # Re-install wrappers after upgrade if we are a worker
-            if self._should_run_worker():
-                if self.config.get("enable-gpu", False):
-                    self.worker_helper.configure_containerd_for_gpu()
-                else:
-                    self.worker_helper.install_folder_mount_wrapper()
-            
-            self._restart_concourse_service()
-            
-            # If web server, publish version to relations to trigger worker upgrades
-            if self._should_run_web():
-                self._publish_version_to_tsa_relations()
-                self._publish_version_to_peer_relation()
-            
-            event.set_results({"version": version, "message": "Concourse upgraded"})
-            logger.info(f"Concourse upgraded to {version} via action")
-            self._update_status()
+            if use_coordinated_upgrade and self.unit.is_leader():
+                # T044: Web/leader orchestrates coordinated upgrade
+                self._orchestrate_coordinated_upgrade(event, version)
+            elif use_coordinated_upgrade and not self.unit.is_leader():
+                # Workers should not trigger upgrade action
+                event.fail("Only the leader unit can trigger coordinated upgrades. "
+                          "Run this action on the leader unit.")
+                return
+            else:
+                # T044: Fallback to simple upgrade for single-unit or no shared storage
+                self._perform_simple_upgrade(event, version)
+                
         except Exception as e:
             event.fail(f"Upgrade failed: {e}")
             logger.error(f"Upgrade action failed: {e}", exc_info=True)
+    
+    def _orchestrate_coordinated_upgrade(self, event, version: str):
+        """Orchestrate coordinated upgrade across multiple units (T045)"""
+        try:
+            from storage_coordinator import UpgradeCoordinator, RelationDataAccessor, ServiceManager
+            
+            # T053: Set status messages
+            self.unit.status = MaintenanceStatus(f"Upgrading to v{version}...")
+            logger.info(f"Initiating coordinated upgrade to v{version}")  # T052
+            
+            # Initialize upgrade coordinator
+            storage_coordinator = self.web_helper.storage_coordinator
+            if not storage_coordinator:
+                raise Exception("Storage coordinator not initialized for coordinated upgrade")
+            
+            peer_relation = self.model.get_relation("concourse-peer")
+            relation_accessor = RelationDataAccessor(peer_relation)
+            service_manager = ServiceManager("concourse-server.service")
+            
+            upgrade_coordinator = UpgradeCoordinator(
+                storage_coordinator=storage_coordinator,
+                service_manager=service_manager,
+                relation_accessor=relation_accessor,
+                is_leader=True
+            )
+            
+            # Get expected worker count
+            worker_count = len([u for u in peer_relation.units if u != self.unit])
+            
+            # T045: Orchestration sequence
+            # Step 1: Initiate upgrade (sets PREPARE phase)
+            logger.info(f"Step 1: Initiating upgrade, expecting {worker_count} workers")  # T052
+            upgrade_coordinator.initiate_upgrade(version, worker_count)
+            self.unit.status = MaintenanceStatus(f"Waiting for {worker_count} workers...")  # T053
+            
+            # Step 2: Wait for workers to stop and acknowledge
+            try:
+                logger.info("Step 2: Waiting for workers to stop services...")  # T052
+                upgrade_coordinator.wait_for_workers_ready(timeout_seconds=120)
+                logger.info("All workers ready, proceeding with download")  # T052
+            except Exception as e:
+                logger.warning(f"Worker wait timeout or error: {e}")  # T052
+                # Continue anyway after timeout
+            
+            # Step 3: Mark download phase
+            upgrade_coordinator.mark_download_phase()
+            self.unit.status = MaintenanceStatus(f"Downloading v{version}...")  # T053
+            
+            # Step 4: Stop web service, download binaries, restart
+            logger.info("Step 3: Stopping web service for upgrade")  # T052
+            self.web_helper.stop_service()
+            
+            from concourse_installer import download_and_install_concourse_with_storage
+            logger.info(f"Step 4: Downloading Concourse v{version}")  # T052
+            download_and_install_concourse_with_storage(self, version, storage_coordinator)
+            
+            logger.info("Step 5: Restarting web service")  # T052
+            self.web_helper.start_service()
+            
+            # Step 5: Mark upgrade complete (signals workers to restart)
+            logger.info("Step 6: Upgrade complete, signaling workers")  # T052
+            upgrade_coordinator.complete_upgrade()
+            self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
+            
+            # Step 6: Reset state after a short delay
+            import time
+            time.sleep(5)
+            upgrade_coordinator.reset_upgrade_state()
+            
+            event.set_results({
+                "version": version,
+                "message": f"Coordinated upgrade to v{version} completed",
+                "workers": worker_count
+            })
+            logger.info(f"Coordinated upgrade to v{version} completed successfully")  # T052
+            self._update_status()
+            
+        except Exception as e:
+            logger.error(f"Coordinated upgrade failed: {e}", exc_info=True)  # T052
+            raise
+    
+    def _perform_simple_upgrade(self, event, version: str):
+        """Perform simple single-unit upgrade without coordination"""
+        self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {version}...")
+        
+        # Stop services before upgrading to avoid "text file busy" error
+        if self._should_run_web():
+            self.web_helper.stop_service()
+        if self._should_run_worker():
+            self.worker_helper.stop_service()
+        
+        download_and_install_concourse(self, version)
+        
+        # Re-install wrappers after upgrade if we are a worker
+        if self._should_run_worker():
+            if self.config.get("enable-gpu", False):
+                self.worker_helper.configure_containerd_for_gpu()
+            else:
+                self.worker_helper.install_folder_mount_wrapper()
+        
+        self._restart_concourse_service()
+        
+        # If web server, publish version to relations to trigger worker upgrades
+        if self._should_run_web():
+            self._publish_version_to_tsa_relations()
+            self._publish_version_to_peer_relation()
+        
+        event.set_results({"version": version, "message": "Concourse upgraded"})
+        logger.info(f"Concourse upgraded to {version} via action")
+        self._update_status()
+    
+    def _handle_upgrade_signals(self, event):
+        """Handle upgrade coordination signals from leader (T046, T047, T048)"""
+        try:
+            from storage_coordinator import (
+                UpgradeCoordinator, RelationDataAccessor,
+                ServiceManager, UpgradeState
+            )
+            
+            # Get upgrade state from app data
+            relation_accessor = RelationDataAccessor(event.relation)
+            app_data = relation_accessor.get_app_data()
+            
+            if not app_data or "upgrade-state" not in app_data:
+                return  # No upgrade in progress
+            
+            upgrade_state = UpgradeState.from_relation_data(app_data)
+            logger.info(f"Detected upgrade state: {upgrade_state.state} to v{upgrade_state.target_version}")
+            
+            # Initialize coordinators
+            storage_coordinator = self.worker_helper.storage_coordinator
+            if not storage_coordinator:
+                logger.warning("Storage coordinator not available for upgrade coordination")
+                return
+            
+            service_manager = ServiceManager("concourse-worker.service")
+            upgrade_coordinator = UpgradeCoordinator(
+                storage_coordinator=storage_coordinator,
+                service_manager=service_manager,
+                relation_accessor=relation_accessor,
+                is_leader=False
+            )
+            
+            # Handle upgrade signals based on state
+            if upgrade_state.state == "prepare":
+                # T047: Handle PREPARE signal
+                logger.info("Handling PREPARE signal from leader")  # T052
+                self.unit.status = MaintenanceStatus("Preparing for upgrade...")  # T053
+                upgrade_coordinator.handle_prepare_signal()
+                self.unit.status = MaintenanceStatus("Ready for upgrade")  # T053
+                
+            elif upgrade_state.state == "complete":
+                # T048: Handle COMPLETE signal
+                logger.info("Handling COMPLETE signal from leader")  # T052
+                self.unit.status = MaintenanceStatus(f"Upgrading to v{upgrade_state.target_version}...")  # T053
+                upgrade_coordinator.handle_complete_signal()
+                self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
+                self._update_status()
+                
+        except Exception as e:
+            logger.error(f"Failed to handle upgrade signal: {e}", exc_info=True)
     
     def _publish_version_to_peer_relation(self):
         """Publish current version to peer relation to trigger worker upgrades"""
@@ -1121,9 +1609,14 @@ class ConcourseCharm(CharmBase):
         elif self._should_run_worker():
             # Worker side: publish worker public key
             try:
-                worker_pub_key_path = Path(KEYS_DIR) / "worker_key.pub"
+                keys_dir_path = KEYS_DIR
+                if not self._should_run_web():
+                    from concourse_common import WORKER_KEYS_DIR
+                    keys_dir_path = WORKER_KEYS_DIR
+                
+                worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
                 if not worker_pub_key_path.exists():
-                    logger.warning("Worker public key not found")
+                    logger.warning(f"Worker public key not found in {keys_dir_path}")
                     return
                 
                 worker_pub_key = worker_pub_key_path.read_text().strip()
@@ -1205,7 +1698,12 @@ class ConcourseCharm(CharmBase):
                         logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
                 
                 # Write TSA public key
-                tsa_pub_key_path = Path(KEYS_DIR) / "tsa_host_key.pub"
+                keys_dir_path = KEYS_DIR
+                if self._should_run_worker() and not self._should_run_web():
+                    from concourse_common import WORKER_KEYS_DIR
+                    keys_dir_path = WORKER_KEYS_DIR
+                
+                tsa_pub_key_path = Path(keys_dir_path) / "tsa_host_key.pub"
                 tsa_pub_key_path.write_text(tsa_pub_key + "\n")
                 os.chmod(tsa_pub_key_path, 0o644)
                 
