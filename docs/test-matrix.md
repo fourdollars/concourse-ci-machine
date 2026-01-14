@@ -9,10 +9,10 @@ The following table summarizes the test coverage for different deployment modes 
 | Feature / Test | `mode=auto` | `mode=auto` + `shared-storage=lxc` | `mode=web` + `mode=worker` | `mode=web` + `mode=worker` + `shared-storage=lxc` | `mode=all` | `mode=all` + `shared-storage=lxc` |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **CI Job Name** | `test-auto-mode` | `test-shared-storage-auto` | `test-web-worker-mode` | `test-shared-storage-web-worker` | `test-all-mode` | `test-shared-storage-all` |
-| **Fly Execute Task** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| **Mounts (Bind)** | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Tagged Workers** | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| **Upgrade Test** | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Fly Execute Task** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Mounts (Bind)** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Tagged Workers** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Upgrade Test** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Units Tested** | 2 | 1 → 2 | 3 | 2 | 1 | 1 → 2 |
 
 ### Matrix Key
@@ -41,9 +41,9 @@ Most test jobs include a verification step using the `fly` CLI, which is the com
     - `test-auto-mode`: Runs a simple echo task.
     - `test-shared-storage-auto`: Runs a simple echo task.
     - `test-web-worker-mode`: Runs tasks on both default and tagged (`special-worker`) workers.
-    - `test-all-mode`: Runs a simple echo task.
+    - `test-shared-storage-web-worker`: Runs tasks on both default and tagged (`special-worker`) workers.
 
-### Mount Verification (`test-web-worker-mode`, `test-shared-storage-auto`)
+### Mount Verification (All Tests)
 This job specifically tests the ability to mount host directories into Concourse worker containers, simulating "bind mounts" often used for configuration or persistent data.
 
 1.  **Host Preparation**:

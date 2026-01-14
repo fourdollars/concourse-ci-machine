@@ -203,6 +203,84 @@ jobs:
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
           fly -t ci execute -c task.yml
 
+      - name: Verify Folder Mounts
+        run: |
+          # Create test directories
+          mkdir -p /tmp/config-test-mount
+          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
+          
+          mkdir -p /tmp/config-test-mount-writable
+          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
+          chmod 777 /tmp/config-test-mount-writable
+
+          # Get container name for unit 1 (worker)
+          UNIT="concourse-ci/1"
+          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-ci\".units.\"$UNIT\".machine")
+          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+          
+          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
+          
+          # Add mounts
+          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
+          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
+          
+          # Run verification task
+          export CONCOURSE_URL=$(cat concourse-ip.txt)
+          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
+          
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          
+          cat <<EOF > verify-mounts.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: busybox}
+          run:
+            path: sh
+            args:
+            - -c
+            - |
+              echo "Checking Read-Only Mount..."
+              cat /srv/config_test/test_ro.txt
+              if touch /srv/config_test/should_fail; then
+                echo "Error: Was able to write to read-only mount"
+                exit 1
+              fi
+              
+              echo "Checking Read-Write Mount..."
+              cat /srv/config_test_writable/test_rw.txt
+              echo "Writing test" > /srv/config_test_writable/write_test.txt
+              cat /srv/config_test_writable/write_test.txt
+          EOF
+          
+          fly -t ci execute -c verify-mounts.yml
+
+      - name: Configure tagged worker
+        run: |
+          juju config concourse-ci tag="special-worker"
+          sleep 10
+          juju-wait -m concourse-auto -t 300
+
+      - name: Verify tagged task execution
+        run: |
+          export CONCOURSE_URL=$(cat concourse-ip.txt)
+          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
+          
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          
+          cat <<EOF > verify-tagged.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: busybox}
+          tags: [special-worker]
+          run:
+            path: echo
+            args: ["Hello from tagged worker"]
+          EOF
+          
+          fly -t ci execute -c verify-tagged.yml
+
       - name: Cleanup
         if: always()
         run: |
@@ -756,7 +834,7 @@ jobs:
           platform: linux
           image_resource:
             type: registry-image
-            source: {repository: alpine}
+            source: {repository: busybox}
           run:
             path: sh
             args:
@@ -881,6 +959,105 @@ jobs:
           
           # Check logs for worker reuse
           juju debug-log --replay --include concourse-worker/0 | grep "Binaries .* already installed" || true
+
+      - name: Verify Folder Mounts
+        run: |
+          # Create test directories
+          mkdir -p /tmp/config-test-mount
+          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
+          
+          mkdir -p /tmp/config-test-mount-writable
+          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
+          chmod 777 /tmp/config-test-mount-writable
+
+          # Get container name for worker unit
+          UNIT="concourse-worker/0"
+          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-worker\".units.\"$UNIT\".machine")
+          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+          
+          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
+          
+          # Add mounts
+          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
+          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
+          
+          # Run verification task
+          # Login using web unit IP
+          export CONCOURSE_URL=$(juju status concourse-web/0 --format=json | jq -r '.applications."concourse-web".units."concourse-web/0"."public-address"')
+          export CONCOURSE_PASSWORD=$(juju run concourse-web/0 get-admin-password --format=json | jq -r '."concourse-web/0".results.password')
+          
+          # Install fly
+          curl -Lo fly "http://${CONCOURSE_URL}:8080/api/v1/cli?arch=amd64&platform=linux"
+          chmod +x ./fly
+          sudo mv ./fly /usr/local/bin/
+
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          
+          cat <<EOF > verify-mounts.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: busybox}
+          run:
+            path: sh
+            args:
+            - -c
+            - |
+              echo "Checking Read-Only Mount..."
+              cat /srv/config_test/test_ro.txt
+              if touch /srv/config_test/should_fail; then
+                echo "Error: Was able to write to read-only mount"
+                exit 1
+              fi
+              
+              echo "Checking Read-Write Mount..."
+              cat /srv/config_test_writable/test_rw.txt
+              echo "Writing test" > /srv/config_test_writable/write_test.txt
+              cat /srv/config_test_writable/write_test.txt
+          EOF
+          
+          fly -t ci execute -c verify-mounts.yml
+
+      - name: Configure tagged worker
+        run: |
+          juju config concourse-worker tag="special-worker"
+          sleep 10
+          juju-wait -m concourse-ss-ww -t 300
+
+      - name: Verify tagged task execution
+        run: |
+          export CONCOURSE_URL=$(juju status concourse-web/0 --format=json | jq -r '.applications."concourse-web".units."concourse-web/0"."public-address"')
+          export CONCOURSE_PASSWORD=$(juju run concourse-web/0 get-admin-password --format=json | jq -r '."concourse-web/0".results.password')
+          
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          
+          cat <<EOF > verify-tagged.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: busybox}
+          tags: [special-worker]
+          run:
+            path: echo
+            args: ["Hello from tagged worker"]
+          EOF
+          
+          fly -t ci execute -c verify-tagged.yml
+
+      - name: Test Upgrade (Concurrent Op)
+        run: |
+          UPGRADE_VERSION="7.14.3"
+          juju config concourse-web version=$UPGRADE_VERSION
+          juju config concourse-worker version=$UPGRADE_VERSION
+          juju run concourse-web/leader upgrade version=$UPGRADE_VERSION
+          # Worker should upgrade via config change or relation
+          
+          sleep 30
+          juju-wait -m concourse-ss-ww -t 900
+          
+          # Verify upgrade
+          juju status concourse-web
+          juju status concourse-worker
 
       - name: Cleanup
         if: always()
