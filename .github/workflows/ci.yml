@@ -47,7 +47,6 @@ jobs:
         run: |
           sudo snap remove charmcraft --purge
           sudo snap remove lxd --purge
-          sudo delgroup lxd || true
 
   test-auto-mode:
     name: Test mode=auto
@@ -302,7 +301,6 @@ jobs:
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
-          sudo delgroup lxd || true
 
   test-web-worker-mode:
     name: Test mode=web+worker
@@ -556,7 +554,6 @@ jobs:
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
-          sudo delgroup lxd || true
 
 
   test-shared-storage-auto:
@@ -739,7 +736,6 @@ jobs:
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
-          sudo delgroup lxd || true
 
 
   test-shared-storage-web-worker:
@@ -930,7 +926,6 @@ jobs:
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
-          sudo delgroup lxd || true
 
   publish-charm:
     name: Publish Charm to Edge
