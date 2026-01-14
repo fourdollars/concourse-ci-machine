@@ -201,6 +201,8 @@ jobs:
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          sudo chown $(whoami) /usr/local/bin/fly
+          fly -t ci sync
           fly -t ci execute -c task.yml
 
       - name: Verify Folder Mounts
@@ -522,6 +524,8 @@ jobs:
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          sudo chown $(whoami) /usr/local/bin/fly
+          fly -t ci sync
           fly -t ci execute -c task.yml
 
       - name: Test worker tag targeting
