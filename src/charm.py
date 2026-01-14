@@ -392,8 +392,12 @@ class ConcourseCharm(CharmBase):
             # Ensure keys are generated
             keys_dir = Path(KEYS_DIR)
             if not (keys_dir / "tsa_host_key").exists():
-                logger.info("Generating missing keys")
-                generate_keys()
+                # Check if binary exists before generating keys
+                if verify_installation():
+                    logger.info("Generating missing keys")
+                    generate_keys()
+                else:
+                    logger.warning("Concourse binary missing, skipping key generation during upgrade")
 
             # Recreate systemd services (in case service definitions changed)
             if self._should_run_web():
@@ -422,7 +426,7 @@ class ConcourseCharm(CharmBase):
 
             # Check for version change and upgrade if needed
             # Only leader should download binaries in shared storage mode
-            desired_version = self.config.get("version")
+            desired_version = get_concourse_version(self.config)
             if desired_version:
                 installed_version = self._get_installed_concourse_version()
                 
@@ -562,11 +566,17 @@ class ConcourseCharm(CharmBase):
         from pathlib import Path
         
         # Check if unit is waiting for storage, leader, or installation
+        should_check_storage = False
         if isinstance(self.unit.status, WaitingStatus):
             status_msg = self.unit.status.message.lower()
             if any(keyword in status_msg for keyword in ["storage", "mount", "waiting for leader", "install"]):
                 logger.info(f"Unit in waiting state: {self.unit.status.message}, checking if can proceed...")
+                should_check_storage = True
+        elif isinstance(self.unit.status, BlockedStatus) and "not installed" in self.unit.status.message:
+            logger.info("Unit blocked due to missing installation, checking if storage is available...")
+            should_check_storage = True
             
+        if should_check_storage:
             # Check if shared storage is configured
             if self.config.get("shared-storage", "none") == "lxc":
                 storage_path = Path("/var/lib/concourse")

@@ -155,15 +155,10 @@ class ConcourseWorkerHelper:
     def _get_worker_config_path(self) -> str:
         """Get the worker configuration file path.
         
-        When shared storage is enabled, use shared path.
-        Otherwise, use local worker-specific path.
+        Always use local worker-specific path to avoid conflicts in shared storage.
         """
-        if self.storage_coordinator:
-            # Shared storage mode: config under /var/lib/concourse
-            return f"{CONCOURSE_DATA_DIR}/worker-config.env"
-        else:
-            # Local mode: config under /var/lib/concourse-worker
-            return CONCOURSE_WORKER_CONFIG_FILE
+        # Local mode: config under /var/lib/concourse-worker
+        return CONCOURSE_WORKER_CONFIG_FILE
 
     def setup_systemd_service(self):
         """Create systemd service file for Concourse worker"""
