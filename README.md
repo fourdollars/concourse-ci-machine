@@ -27,9 +27,9 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
 - **Prometheus Metrics**: Optional metrics endpoint for monitoring
 - **Download Progress**: Real-time installation progress in Juju status
-- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/GPU_SUPPORT.md))
-- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/DATASET_MOUNTING.md))
-- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/GENERAL_MOUNTING.md))
+- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/gpu-support.md))
+- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/dataset-mounting.md))
+- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/general-mounting.md))
   - ✅ Zero configuration - just mount folders to `/srv` and go
   - ✅ Read-only by default for data safety
   - ✅ Writable folders with `_writable` or `_rw` suffix

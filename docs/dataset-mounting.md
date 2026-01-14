@@ -15,7 +15,7 @@ We provide a helper script to make mounting datasets easy:
 # 2. Done! Access /srv/datasets in your pipelines
 ```
 
-> **Note**: This guide focuses on GPU-specific dataset mounting. For general folder mounting (including writable folders, multiple paths, and non-GPU workers), see the [General Folder Mounting Guide](GENERAL_MOUNTING.md).
+> **Note**: This guide focuses on GPU-specific dataset mounting. For general folder mounting (including writable folders, multiple paths, and non-GPU workers), see the [General Folder Mounting Guide](general-mounting.md).
 
 ## How It Works
 
@@ -46,7 +46,7 @@ As of charm revision 38+, the mounting system has been enhanced to support:
 - **Writable folders** using `_writable` or `_rw` suffix
 - **Works on both GPU and non-GPU workers**
 
-**For non-dataset use cases**, see [GENERAL_MOUNTING.md](GENERAL_MOUNTING.md) for:
+**For non-dataset use cases**, see [general-mounting.md](general-mounting.md) for:
 - Mounting multiple folders (models, outputs, caches, etc.)
 - Creating writable folders for task outputs
 - Using the system on non-GPU workers

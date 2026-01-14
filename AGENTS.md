@@ -7,7 +7,7 @@ This file contains essential information for agentic coding assistants working o
 This is a **Juju Machine Charm** for deploying [Concourse CI](https://concourse-ci.org/), a continuous thing-doer. It is designed to run on bare metal, VMs, or LXD containers (not Kubernetes).
 
 The charm supports flexible deployment architectures:
-- **Auto-Scaling (`mode=auto`)**: The default mode. The leader unit becomes the Web node, and all other units become Workers. This allows for easy scaling by just adding units.
+- **Auto-Scaling (`mode=auto`)**: The default mode. The leader unit becomes the Web node, and all other units become Workers. This allows for easy scaling by just adding units. (Requires n≥2 units).
 - **Distributed (`mode=web` + `mode=worker`)**: Separate Web and Worker units.
 
 ### Core Architecture

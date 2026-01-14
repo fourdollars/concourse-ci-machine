@@ -170,17 +170,17 @@ description: "Task list for shared storage feature implementation"
 **Purpose**: Add comprehensive E2E tests for all deployment modes with shared storage
 
 - [x] T077 [P] Add test-shared-storage-auto job to .github/workflows/ci.yml for mode=auto with 3 units using --attach-storage
-- [x] T078 [P] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all with 2 units sharing storage
+- [ ] T078 [DEPRECATED] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all (Removed)
 - [x] T079 [P] Add test-shared-storage-web-worker job to .github/workflows/ci.yml for separate apps with shared storage
 - [x] T080 Update publish-charm job dependencies in .github/workflows/ci.yml to include new shared storage test jobs
 - [x] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
 - [x] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
 - [x] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
-- [x] T084 Add storage attachment verification in test-shared-storage-all: verify both units share same storage volume
+- [ ] T084 [DEPRECATED] Add storage attachment verification in test-shared-storage-all (Removed)
 - [x] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
 - [x] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units (Covered in test-shared-storage-auto upgrade step)
 - [x] T087 Add new unit addition test: deploy 2 units, add 3rd with existing binaries, verify <3min addition time (Covered in test-shared-storage-auto add unit step)
-- [x] T088 Document CI test matrix in plan.md showing coverage for all modes (auto, all, web+worker) with shared storage
+- [x] T088 Document CI test matrix in plan.md showing coverage for supported modes (auto, web+worker) with shared storage
 
 ---
 

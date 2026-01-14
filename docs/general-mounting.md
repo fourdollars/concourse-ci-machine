@@ -316,6 +316,5 @@ To add folders after worker deployment:
 
 ## See Also
 
-- [Dataset Mounting Guide](DATASET_MOUNTING.md) - GPU-specific dataset mounting
-- [Quick Start Guide](specs/001-general-mount/quickstart.md) - Deployment walkthroughs
-- [GPU Support Documentation](GPU_SUPPORT.md) - GPU worker configuration
+- [Dataset Mounting Guide](dataset-mounting.md) - GPU-specific dataset mounting
+- [GPU Support Documentation](gpu-support.md) - GPU worker configuration

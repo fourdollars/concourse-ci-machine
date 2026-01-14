@@ -129,12 +129,7 @@ concourse-ci-machine/
    - Test upgrade coordination: leader initiates, workers auto-upgrade
    - Measure upgrade duration (target: <2 minutes)
 
-2. **test-shared-storage-all-mode**: Deploy single unit in `mode=all` with storage, then scale
-   - Deploy unit 0 in `mode=all` (both web and worker on same unit)
-   - Add unit 1 with `--attach-storage` (should detect existing binaries)
-   - Verify both units share same storage volume
-   - Verify only 1 download despite 2 complete Concourse installations
-   - Test that both web servers can start (on different ports if configured)
+2. **test-shared-storage-all-mode**: [DEPRECATED/REMOVED]
 
 3. **test-shared-storage-web-worker-mode**: Separate web and worker apps with shared storage
    - Deploy `web` app in `mode=web` with storage
@@ -806,10 +801,7 @@ publish-charm:
   - Units 1-2 (workers): <2 minutes to active (reuse binaries)
   - Binary download count: Exactly 1
 
-- **mode=all (2 units)** with shared storage: <6 minutes total
-  - Unit 0: <3 minutes (downloads binaries)
-  - Unit 1: <3 minutes (reuses binaries, no download)
-  - Disk savings: ~50% (1x binaries vs 2x)
+
 
 - **mode=web+worker (1+2)** with shared storage: <7 minutes total
   - Web deployment: <3 minutes (downloads binaries)
