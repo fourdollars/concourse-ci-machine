@@ -552,7 +552,13 @@ class ConcourseCharm(CharmBase):
                         # Install/update folder mounting wrapper for non-GPU workers
                         self.worker_helper.install_folder_mount_wrapper()
                     
-                    self.worker_helper.update_config(tsa_host=tsa_host)
+                    # Update worker configuration
+                    keys_dir_path = KEYS_DIR
+                    if self._should_run_worker() and not self._should_run_web():
+                        from concourse_common import WORKER_KEYS_DIR
+                        keys_dir_path = WORKER_KEYS_DIR
+                        
+                    self.worker_helper.update_config(tsa_host=tsa_host, keys_dir=keys_dir_path)
                     # Restart worker service to apply new config
                     self._restart_concourse_service()
 
@@ -1673,7 +1679,12 @@ class ConcourseCharm(CharmBase):
                         logger.info(f"Worker auto-upgraded from {worker_version} to {web_version}")
                 
                 # Write TSA public key
-                tsa_pub_key_path = Path(KEYS_DIR) / "tsa_host_key.pub"
+                keys_dir_path = KEYS_DIR
+                if self._should_run_worker() and not self._should_run_web():
+                    from concourse_common import WORKER_KEYS_DIR
+                    keys_dir_path = WORKER_KEYS_DIR
+                
+                tsa_pub_key_path = Path(keys_dir_path) / "tsa_host_key.pub"
                 tsa_pub_key_path.write_text(tsa_pub_key + "\n")
                 os.chmod(tsa_pub_key_path, 0o644)
                 

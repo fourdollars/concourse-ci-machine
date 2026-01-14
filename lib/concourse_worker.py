@@ -499,10 +499,13 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             # Non-fatal - wrapper might still work
             pass
 
-    def update_config(self, tsa_host: str = "127.0.0.1:2222"):
+    def update_config(self, tsa_host: str = "127.0.0.1:2222", keys_dir: Optional[str] = None):
         """Update Concourse worker configuration (T025: use shared storage work_dir if available)"""
-        from concourse_common import WORKER_KEYS_DIR
-        keys_dir = Path(WORKER_KEYS_DIR)
+        if keys_dir:
+            keys_dir = Path(keys_dir)
+        else:
+            from concourse_common import WORKER_KEYS_DIR
+            keys_dir = Path(WORKER_KEYS_DIR)
         
         # Use worker-specific directory from shared storage if available (T025)
         if self.worker_directory:
