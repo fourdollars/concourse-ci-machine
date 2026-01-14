@@ -178,8 +178,8 @@ description: "Task list for shared storage feature implementation"
 - [x] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
 - [x] T084 Add storage attachment verification in test-shared-storage-all: verify both units share same storage volume
 - [x] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
-- [ ] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units
-- [ ] T087 Add new unit addition test: deploy 2 units, add 3rd with existing binaries, verify <3min addition time
+- [x] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units (Covered in test-shared-storage-auto upgrade step)
+- [x] T087 Add new unit addition test: deploy 2 units, add 3rd with existing binaries, verify <3min addition time (Covered in test-shared-storage-auto add unit step)
 - [x] T088 Document CI test matrix in plan.md showing coverage for all modes (auto, all, web+worker) with shared storage
 
 ---
