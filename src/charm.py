@@ -425,6 +425,20 @@ class ConcourseCharm(CharmBase):
             if self._should_run_worker():
                 logger.info("Updating worker service")
                 self.worker_helper.setup_systemd_service()
+                
+                # Republish worker key to TSA relation
+                tsa_relation = self.model.get_relation("worker-tsa")
+                if tsa_relation:
+                    keys_dir_path = KEYS_DIR
+                    if not self._should_run_web():
+                        from concourse_common import WORKER_KEYS_DIR
+                        keys_dir_path = WORKER_KEYS_DIR
+                    
+                    worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
+                    if worker_pub_key_path.exists():
+                        worker_pub_key = worker_pub_key_path.read_text().strip()
+                        tsa_relation.data[self.unit]["worker-public-key"] = worker_pub_key
+                        logger.info("Republished worker public key to TSA relation")
 
             # Trigger config update
             self._on_config_changed(event)
@@ -1595,9 +1609,14 @@ class ConcourseCharm(CharmBase):
         elif self._should_run_worker():
             # Worker side: publish worker public key
             try:
-                worker_pub_key_path = Path(KEYS_DIR) / "worker_key.pub"
+                keys_dir_path = KEYS_DIR
+                if not self._should_run_web():
+                    from concourse_common import WORKER_KEYS_DIR
+                    keys_dir_path = WORKER_KEYS_DIR
+                
+                worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
                 if not worker_pub_key_path.exists():
-                    logger.warning("Worker public key not found")
+                    logger.warning(f"Worker public key not found in {keys_dir_path}")
                     return
                 
                 worker_pub_key = worker_pub_key_path.read_text().strip()
