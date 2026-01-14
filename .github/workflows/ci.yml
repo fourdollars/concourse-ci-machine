@@ -682,6 +682,7 @@ jobs:
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
 
           # Wait for storage integration
+          sleep 15
           juju-wait -m concourse-shared -t 900
           
           # Verify binaries downloaded
@@ -700,6 +701,7 @@ jobs:
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
 
           # Wait for storage integration on new unit
+          sleep 15
           juju-wait -m concourse-shared -t 900
           
           END_TIME=$(date +%s)
@@ -810,6 +812,7 @@ jobs:
           ./scripts/setup-shared-storage.sh concourse-worker $(pwd)/concourse-shared-ww
 
           # Wait for storage integration
+          sleep 15
           juju-wait -m concourse-ss-ww -t 900
           
           # Verify binaries downloaded by web
@@ -886,6 +889,7 @@ jobs:
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
 
           # Wait for storage integration
+          sleep 15
           juju-wait -m concourse-ss-all -t 900
           
           # Verify binaries
@@ -903,6 +907,7 @@ jobs:
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
 
           # Wait for storage integration on new unit
+          sleep 15
           juju-wait -m concourse-ss-all -t 900
           
           # Verify unit 1 is active

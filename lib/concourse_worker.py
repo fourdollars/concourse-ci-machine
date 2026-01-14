@@ -534,6 +534,8 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             # Use custom runc wrapper from /opt/bin
             "CONCOURSE_CONTAINERD_RUNTIME": "/opt/bin/runc",
             "CONCOURSE_RESOURCE_TYPES": str(Path(CONCOURSE_DATA_DIR) / "resource-types"),
+            # Ensure /opt/bin is in PATH for runc wrapper
+            "PATH": "/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin",
         }
         
         # Add GPU configuration if enabled
@@ -671,6 +673,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                             ["cp", str(concourse_system_runc), str(runc_real)],
                             check=True
                         )
+                        # Remove original runc to avoid conflict
+                        concourse_system_runc.unlink()
+                        # Symlink runc in bin folder to wrapper
+                        concourse_system_runc.symlink_to(wrapper_path)
                     else:
                         logger.warning("/usr/bin/runc not found and Concourse runc not available yet")
                         # Don't fail - we'll retry later when binaries are available
@@ -694,6 +700,18 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 logger.info("Folder mounting wrapper symlinked successfully")
             else:
                 logger.info("Concourse runc already configured")
+
+            # Also ensure /var/lib/concourse/bin/runc is a symlink to wrapper if it exists as a file
+            concourse_bin_runc = Path("/var/lib/concourse/bin/runc")
+            if concourse_bin_runc.exists() and not concourse_bin_runc.is_symlink():
+                logger.info(f"Replacing {concourse_bin_runc} with symlink to wrapper")
+                # Always backup to /opt/bin/runc.real if it exists as a regular file
+                # This ensures we capture the binary that Concourse actually downloaded
+                subprocess.run(["cp", str(concourse_bin_runc), str(runc_real)], check=True)
+                
+                concourse_bin_runc.unlink()
+                concourse_bin_runc.symlink_to(wrapper_path)
+                logger.info(f"Symlinked {concourse_bin_runc} -> {wrapper_path}")
                 
         except subprocess.TimeoutExpired:
             logger.error("Timeout while installing dependencies")
