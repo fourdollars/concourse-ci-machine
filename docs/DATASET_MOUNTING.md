@@ -4,6 +4,17 @@
 
 This guide explains how to mount datasets into Concourse GPU worker tasks using LXC disk devices. The charm automatically makes datasets available to task containers via OCI runtime injection.
 
+## ⚡ Quick Start (Script Method)
+
+We provide a helper script to make mounting datasets easy:
+
+```bash
+# 1. Mount your dataset
+./scripts/mount-datasets.sh gpu-worker /path/to/your/datasets
+
+# 2. Done! Access /srv/datasets in your pipelines
+```
+
 > **Note**: This guide focuses on GPU-specific dataset mounting. For general folder mounting (including writable folders, multiple paths, and non-GPU workers), see the [General Folder Mounting Guide](GENERAL_MOUNTING.md).
 
 ## How It Works

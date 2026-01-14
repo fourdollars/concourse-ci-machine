@@ -77,9 +77,9 @@ lxc config device add juju-abc123-0 outputs disk \
     path=/srv/outputs_writable
 ```
 
-### 3. Deploy/Restart Worker
+### 3. Deploy Worker
 
-Folders are discovered automatically when containers start:
+Folders are discovered automatically when tasks are started:
 
 ```bash
 # For new deployment
@@ -189,7 +189,7 @@ juju status concourse-worker
    juju debug-log --include=concourse-worker
    ```
 
-3. Restart worker to trigger rediscovery:
+3. Restart worker to trigger rediscovery (optional - discovery is dynamic):
    ```bash
    juju ssh worker/0 'sudo systemctl restart concourse-worker'
    ```
@@ -312,12 +312,7 @@ Each worker independently discovers folders from its own `/srv` directory:
 To add folders after worker deployment:
 
 1. Add folder to LXC container
-2. Restart Concourse worker service:
-   ```bash
-   juju ssh worker/0 'sudo systemctl restart concourse-worker'
-   ```
-
-New folders will be discovered on the next task execution.
+2. New folders will be discovered on the next task execution (dynamic discovery).
 
 ## See Also
 
