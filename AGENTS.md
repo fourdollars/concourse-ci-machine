@@ -37,12 +37,15 @@ The charm supports flexible deployment architectures:
     - **`concourse_web.py`**: Logic specific to the Web component (systemd service, config generation, DB connection).
     - **`concourse_worker.py`**: Logic specific to the Worker component (containerd setup, GPU configuration, TSA connection).
         - `initialize_shared_storage()`: Sets up StorageCoordinator for shared storage mode
-        - `update_config()`: Creates worker-config.env file at the correct path (shared or local)
+        - `update_config()`: Creates worker-config.env file at the correct path (shared or local). **Crucial**: Injects `PATH` to prioritize `/opt/bin` for the runc wrapper.
+        - `install_folder_mount_wrapper()`: Backs up original `runc` and symlinks `/var/lib/concourse/bin/runc` to the wrapper to force its usage.
     - **`concourse_installer.py`**: Handles downloading and installing Concourse binaries.
     - **`folder_mount_manager.py`**: Manages the discovery and mounting of host folders into worker containers.
     - **`storage_coordinator.py`**: Manages shared storage coordination between web and worker units.
 - **`scripts/`**: Helper scripts for deployment and management.
     - **`setup-shared-storage.sh`**: Configures LXC shared storage for units (run before or after deployment).
+- **`hooks/`**:
+    - **`runc-wrapper`**: Intercepts OCI runtime calls to inject host folder mounts into the container's `config.json`.
 - **`specs/`**: Contains design specifications for features. **Always check here before starting complex tasks.**
 - **`metadata.yaml`**: Defines the charm's relations, storage, and containers.
 - **`config.yaml`**: Defines the configuration options available to the user.
@@ -186,3 +189,15 @@ mypy --ignore-missing-imports .
     2. Admin runs setup script to mount storage
     3. Update-status hook detects storage is available → completes worker configuration automatically
 - The update-status hook must call `worker_helper.update_config()` when shared storage becomes available to create the worker-config.env file
+
+### Folder Mounting (Mounts)
+- **Mechanism**: The charm uses a custom `runc-wrapper` to inject bind mounts from the host into Concourse task containers.
+- **Implementation**:
+    1.  The wrapper is installed to `/opt/bin/runc-wrapper`.
+    2.  The original `runc` (system or Concourse-bundled) is backed up to `/opt/bin/runc.real`.
+    3.  `/var/lib/concourse/bin/runc` is replaced with a symlink to the wrapper.
+    4.  `worker-config.env` sets `PATH=/opt/bin:...` to ensure the wrapper is found first.
+- **Workflow**:
+    - User configures an LXC device for the unit (e.g., `lxc config device add ...`).
+    - Wrapper detects mounts in `/srv/*` on the host.
+    - Wrapper modifies the OCI `config.json` to bind mount these folders into the container before executing the real `runc`.
