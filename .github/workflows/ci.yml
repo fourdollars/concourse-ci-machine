@@ -280,13 +280,12 @@ jobs:
           image_resource:
             type: registry-image
             source: {repository: busybox}
-          tags: [special-worker]
           run:
             path: echo
             args: ["Hello from tagged worker"]
           EOF
           
-          fly -t ci execute -c verify-tagged.yml
+          fly -t ci execute -c verify-tagged.yml --tag=special-worker
 
       - name: Cleanup
         if: always()
@@ -554,7 +553,7 @@ jobs:
           echo "✅ Tagged worker verified"
           
           echo "=== Executing task on worker with special-worker tag ==="
-          fly -t ci execute -c task.yml --tag special-worker || (echo "❌ Failed to run on tagged worker" && exit 1)
+          fly -t ci execute -c task.yml --tag=special-worker || (echo "❌ Failed to run on tagged worker" && exit 1)
           
           echo "✅ Worker tag targeting successful"
 
@@ -617,7 +616,7 @@ jobs:
           juju relate concourse-ci:postgresql postgresql:database
           
           # Wait for deployment to complete first
-          juju-wait -m concourse-shared -t 900
+          timeout 900 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage mount"; do sleep 5; done'
           
           # Now setup shared storage using the provided script
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
@@ -627,6 +626,7 @@ jobs:
           juju-wait -m concourse-shared -t 900
           
           # Verify binaries downloaded
+          juju status -m concourse-shared
           echo "Verifying binaries in shared storage..."
           ls -lh $(pwd)/concourse-shared/bin/concourse
           
@@ -636,7 +636,7 @@ jobs:
           juju add-unit concourse-ci
           
           # Wait for unit to join
-          juju-wait -m concourse-shared -t 900
+          timeout 900 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage mount"; do sleep 5; done'
           
           # Setup shared storage for the new unit using the script
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
@@ -798,7 +798,7 @@ jobs:
           juju relate concourse-web:web-tsa concourse-worker:worker-tsa
           
           # Wait for deployment to settle
-          juju-wait -m concourse-ss-ww -t 900
+          timeout 900 bash -c 'while ! juju status -m concourse-ss-ww | grep -q "Waiting for shared storage mount"; do sleep 5; done'
           
           # Setup shared storage for both applications using the script
           ./scripts/setup-shared-storage.sh concourse-web $(pwd)/concourse-shared-ww
@@ -809,6 +809,7 @@ jobs:
           juju-wait -m concourse-ss-ww -t 900
           
           # Verify binaries downloaded by web
+          juju status -m concourse-ss-ww
           echo "Verifying binaries in shared storage..."
           ls -lh $(pwd)/concourse-shared-ww/bin/concourse
 
@@ -899,13 +900,12 @@ jobs:
           image_resource:
             type: registry-image
             source: {repository: busybox}
-          tags: [special-worker]
           run:
             path: echo
             args: ["Hello from tagged worker"]
           EOF
           
-          fly -t ci execute -c verify-tagged.yml
+          fly -t ci execute -c verify-tagged.yml --tag=special-worker
 
       - name: Test Upgrade (Concurrent Op)
         run: |
