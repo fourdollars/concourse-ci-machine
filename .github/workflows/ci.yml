@@ -656,12 +656,6 @@ jobs:
       - name: Add Juju Model
         run: juju add-model concourse-shared
 
-      - name: Create Shared Storage Pool (LXD dir)
-        run: |
-          # Use a host directory as shared storage source
-          mkdir -p /tmp/concourse-shared-storage
-          juju create-storage-pool shared-fs lxd-profile
-
       - name: Deploy with Shared Storage (mode=auto)
         run: |
           # Deploy first unit (leader/web) with shared storage
