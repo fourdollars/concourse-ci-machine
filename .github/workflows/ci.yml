@@ -42,6 +42,13 @@ jobs:
       - name: Remove charm file
         run: rm concourse-ci-machine_amd64.charm
 
+      - name: Cleanup
+        if: always()
+        run: |
+          sudo snap remove charmcraft --purge
+          sudo snap remove lxd --purge
+          sudo delgroup lxd || true
+
   test-auto-mode:
     name: Test mode=auto
     runs-on: ubuntu-latest
@@ -291,6 +298,11 @@ jobs:
         if: always()
         run: |
           yes concourse-auto | juju destroy-model concourse-auto --destroy-storage --force --no-wait || true
+          
+          # Purge tools
+          sudo snap remove juju --purge
+          sudo snap remove lxd --purge
+          sudo delgroup lxd || true
 
   test-web-worker-mode:
     name: Test mode=web+worker
@@ -541,6 +553,11 @@ jobs:
           rm -rf /tmp/config-test-mount || true
           rm -rf /tmp/config-test-mount-writable || true
 
+          # Purge tools
+          sudo snap remove juju --purge
+          sudo snap remove lxd --purge
+          sudo delgroup lxd || true
+
 
   test-shared-storage-auto:
     name: Test shared storage (mode=auto)
@@ -718,6 +735,11 @@ jobs:
         run: |
           yes concourse-shared | juju destroy-model concourse-shared --destroy-storage --force --no-wait || true
           sudo rm -rf $(pwd)/concourse-shared || true
+
+          # Purge tools
+          sudo snap remove juju --purge
+          sudo snap remove lxd --purge
+          sudo delgroup lxd || true
 
 
   test-shared-storage-web-worker:
@@ -904,6 +926,11 @@ jobs:
         run: |
           yes concourse-ss-ww | juju destroy-model concourse-ss-ww --destroy-storage --force --no-wait || true
           sudo rm -rf $(pwd)/concourse-shared-ww || true
+
+          # Purge tools
+          sudo snap remove juju --purge
+          sudo snap remove lxd --purge
+          sudo delgroup lxd || true
 
   publish-charm:
     name: Publish Charm to Edge
