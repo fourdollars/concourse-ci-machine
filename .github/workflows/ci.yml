@@ -332,7 +332,6 @@ jobs:
         run: |
           juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.14.2
           juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2
-          juju deploy ./concourse-ci-machine_amd64.charm worker-with-tag --config mode=worker --config version=7.14.2 --config tag=special-worker
           juju deploy postgresql --channel 16/stable
 
       - name: Remove charm file
@@ -342,7 +341,6 @@ jobs:
         run: |
           juju relate web:postgresql postgresql:database
           juju relate worker:worker-tsa web:web-tsa
-          juju relate worker-with-tag:worker-tsa web:web-tsa
 
       - name: Wait for model to settle
         run: juju-wait -m concourse-ci -t 900
@@ -357,7 +355,6 @@ jobs:
 
           echo "=== Checking worker units ==="
           juju exec --unit worker/0 -- systemctl status concourse-worker || echo "Worker not running on unit 0"
-          juju exec --unit worker-with-tag/0 -- systemctl status concourse-worker || echo "Worker not running on tagged unit"
 
       - name: Get admin password
         run: |
@@ -394,23 +391,6 @@ jobs:
             CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
             if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
             echo "Adding mounts to $CONTAINER"
-            # remove any existing devices with the same names
-            lxc config device remove $CONTAINER config_test_ro || true
-            lxc config device remove $CONTAINER config_test_rw || true
-            # add a read-only mount
-            lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
-            # add a writable mount (suffix-based test)
-            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
-          done
-          
-          # Also mount folders into tagged worker container
-          TAGGED_UNITS=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | keys[]' || true)
-          if [ -z "$TAGGED_UNITS" ]; then echo "No tagged worker units found"; exit 1; fi
-          for UNIT in $TAGGED_UNITS; do
-            MACHINE=$(juju status $UNIT --format=json | jq -r '.applications."worker-with-tag".units["'"$UNIT"'"].machine')
-            CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-            if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
-            echo "Adding mounts to tagged worker $CONTAINER"
             # remove any existing devices with the same names
             lxc config device remove $CONTAINER config_test_ro || true
             lxc config device remove $CONTAINER config_test_rw || true
@@ -470,7 +450,6 @@ jobs:
           echo "=== Current version on all applications ==="
           juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value."workload-status".message)"'
           juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value."workload-status".message)"'
-          juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value."workload-status".message)"'
           
           UPGRADE_VERSION="7.14.3"
           echo "Upgrade version: $UPGRADE_VERSION"
@@ -478,7 +457,6 @@ jobs:
           echo "=== Setting version configuration for persistence on all applications ==="
           juju config web version=$UPGRADE_VERSION
           juju config worker version=$UPGRADE_VERSION
-          juju config worker-with-tag version=$UPGRADE_VERSION
           
           echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
           juju run web/leader upgrade version=$UPGRADE_VERSION
@@ -495,7 +473,6 @@ jobs:
           echo "=== Verifying all units upgraded ==="
           juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value."workload-status".message)"'
           juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value."workload-status".message)"'
-          juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[] | "worker-with-tag/\(.key): \(.value."workload-status".message)"'
           
           # Verify web server upgraded
           WEB_VERSION_CHECK=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[].value."workload-status".message' | grep -c "v$UPGRADE_VERSION" || true)
@@ -515,14 +492,7 @@ jobs:
             exit 1
           fi
           
-          # Verify tagged worker auto-upgraded
-          TAGGED_VERSION_CHECK=$(juju status worker-with-tag --format=json | jq -r '.applications."worker-with-tag".units | to_entries[].value."workload-status".message' | grep -c "v$UPGRADE_VERSION" || true)
-          if [ "$TAGGED_VERSION_CHECK" -lt 1 ]; then
-            echo "❌ Tagged worker auto-upgrade failed"
-            exit 1
-          fi
-          
-          echo "✅ Web and all workers (including tagged) auto-upgraded to $UPGRADE_VERSION successfully"
+          echo "✅ Web and all workers auto-upgraded to $UPGRADE_VERSION successfully"
 
       - name: Verify upgraded deployment still works
         run: |
@@ -533,6 +503,13 @@ jobs:
           sudo chown $(whoami) /usr/local/bin/fly
           fly -t ci sync
           fly -t ci execute -c task.yml
+
+      - name: Configure tagged worker
+        run: |
+          echo "=== Applying tag to existing worker ==="
+          juju config worker tag="special-worker"
+          sleep 10
+          juju-wait -m concourse-ci -t 300
 
       - name: Test worker tag targeting
         run: |

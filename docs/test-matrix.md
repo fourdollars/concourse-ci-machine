@@ -13,7 +13,7 @@ The following table summarizes the test coverage for different deployment modes 
 | **Mounts (Bind)** | ✅ | ✅ | ✅ | ✅ |
 | **Tagged Workers** | ✅ | ✅ | ✅ | ✅ |
 | **Upgrade Test** | ✅ | ✅ | ✅ | ✅ |
-| **Units Tested** | 2 | 1 → 2 | 3 | 2 |
+| **Units Tested** | 2 | 1 → 2 | 2 | 2 |
 
 ### Matrix Key
 - **Fly Execute Task**: Verifies the system by running a dummy task (e.g., `busybox` echo) via the Concourse CLI.
