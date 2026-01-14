@@ -531,10 +531,13 @@ def download_and_install_concourse(charm, version: str):
                     else:
                         src_dir = extract_path
                 
-                # Move files to CONCOURSE_INSTALL_DIR
-                logger.info(f"Moving files from {src_dir} to {CONCOURSE_INSTALL_DIR}")
+                # Move files to CONCOURSE_DATA_DIR
+                target_base = Path(CONCOURSE_DATA_DIR)
+                target_base.mkdir(parents=True, exist_ok=True)
+
+                logger.info(f"Moving files from {src_dir} to {target_base}")
                 for item in src_dir.iterdir():
-                    dest = Path(CONCOURSE_INSTALL_DIR) / item.name
+                    dest = target_base / item.name
                     # If destination exists, remove it first to avoid issues with symlinks or busy files
                     if dest.exists():
                         if dest.is_dir() and not dest.is_symlink():

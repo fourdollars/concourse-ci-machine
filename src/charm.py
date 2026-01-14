@@ -479,6 +479,14 @@ class ConcourseCharm(CharmBase):
                         self._publish_version_to_peer_relation()
 
             # Update configuration based on role
+            # Ensure systemd services are set up for the current role(s)
+            # This is critical for auto mode where roles can change dynamically
+            if self._should_run_web():
+                self.web_helper.setup_systemd_service()
+            
+            if self._should_run_worker():
+                self.worker_helper.setup_systemd_service()
+
             if mode == "both":
                 # When running both, we need to merge configs
                 logger.info("Updating merged web+worker configuration")
