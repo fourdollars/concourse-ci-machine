@@ -53,7 +53,6 @@ def ensure_directories(skip_shared_storage: bool = False):
 def generate_keys():
     """Generate Concourse TSA and session signing keys with correct ownership"""
     import pwd
-    import grp
     
     keys_dir = Path(KEYS_DIR)
     
@@ -232,7 +231,7 @@ def verify_nvidia_container_runtime():
         bool: True if nvidia-container-runtime is available
     """
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["which", "nvidia-container-runtime"],
             capture_output=True,
             check=True,

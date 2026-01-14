@@ -8,7 +8,6 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Optional
-from ops.model import MaintenanceStatus
 
 from concourse_common import (
     CONCOURSE_BIN,
@@ -16,7 +15,6 @@ from concourse_common import (
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
-    get_storage_path,
     get_filesystem_id,
 )
 
@@ -103,7 +101,7 @@ class ConcourseWebHelper:
                 is_leader=True  # Web units act as downloaders
             )
             
-            logger.info(f"Storage coordinator initialized for web/leader unit")
+            logger.info("Storage coordinator initialized for web/leader unit")
             return self.storage_coordinator
             
         except Exception as e:
@@ -151,7 +149,7 @@ WantedBy=multi-user.target
             # Reload systemd to recognize new service files
             subprocess.run(["systemctl", "daemon-reload"], check=True)
 
-            logger.info(f"Web server systemd service created")
+            logger.info("Web server systemd service created")
         except Exception as e:
             logger.error(f"Failed to create systemd service: {e}")
             raise
@@ -286,7 +284,7 @@ WantedBy=multi-user.target
                 text=True,
             )
             return result.returncode == 0 and result.stdout.strip() == "active"
-        except:
+        except Exception:
             return False
     
     def upgrade_with_shared_storage(self, target_version: str) -> None:
