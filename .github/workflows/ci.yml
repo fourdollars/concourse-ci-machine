@@ -132,7 +132,7 @@ jobs:
           image_resource:
             type: registry-image
             source:
-              repository: ghcr.io/linuxcontainers/alpine
+              repository: busybox
           run:
             path: echo
             args: ["Hello from mode=auto!"]
@@ -343,7 +343,7 @@ jobs:
           image_resource:
             type: registry-image
             source:
-              repository: ghcr.io/linuxcontainers/alpine
+              repository: busybox
           run:
             path: sh
             args:
@@ -558,7 +558,7 @@ jobs:
           image_resource:
             type: registry-image
             source:
-              repository: ghcr.io/linuxcontainers/alpine
+              repository: busybox
           run:
             path: echo
             args: ["Hello from mode=all!"]
