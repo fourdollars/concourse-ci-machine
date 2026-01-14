@@ -680,6 +680,9 @@ jobs:
           
           # Now setup shared storage using the provided script
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
+
+          # Wait for storage integration
+          juju-wait -m concourse-shared -t 900
           
           # Verify binaries downloaded
           echo "Verifying binaries in shared storage..."
@@ -695,6 +698,9 @@ jobs:
           
           # Setup shared storage for the new unit using the script
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
+
+          # Wait for storage integration on new unit
+          juju-wait -m concourse-shared -t 900
           
           END_TIME=$(date +%s)
           DURATION=$((END_TIME - START_TIME))
@@ -802,6 +808,9 @@ jobs:
           # Setup shared storage for both applications using the script
           ./scripts/setup-shared-storage.sh concourse-web $(pwd)/concourse-shared-ww
           ./scripts/setup-shared-storage.sh concourse-worker $(pwd)/concourse-shared-ww
+
+          # Wait for storage integration
+          juju-wait -m concourse-ss-ww -t 900
           
           # Verify binaries downloaded by web
           echo "Verifying binaries in shared storage..."
@@ -875,6 +884,9 @@ jobs:
           
           # Setup shared storage using the script
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
+
+          # Wait for storage integration
+          juju-wait -m concourse-ss-all -t 900
           
           # Verify binaries
           echo "Verifying binaries in shared storage..."
@@ -889,6 +901,9 @@ jobs:
           
           # Setup shared storage for the new unit
           ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared-all
+
+          # Wait for storage integration on new unit
+          juju-wait -m concourse-ss-all -t 900
           
           # Verify unit 1 is active
           juju status concourse-ci/1
