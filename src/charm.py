@@ -241,10 +241,18 @@ class ConcourseCharm(CharmBase):
                         f"Downloading Concourse v{version}..."  # T034
                     )
                     from concourse_installer import download_and_install_concourse_with_storage
-                    download_and_install_concourse_with_storage(
-                        self, version, storage_coordinator
-                    )
-                    self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                    from storage_coordinator import LockAcquireError
+                    
+                    try:
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                        self.unit.status = MaintenanceStatus("Binaries ready")  # T034
+                    except LockAcquireError:
+                        logger.warning("Another unit is downloading binaries, deferring...")
+                        self.unit.status = MaintenanceStatus("Another unit downloading, waiting...")
+                        event.defer()
+                        return
                 elif self.config.get("shared-storage", "none") != "none":
                     # Shared storage is configured but not available - wait for mount
                     storage_mode = self.config['shared-storage']
@@ -319,11 +327,19 @@ class ConcourseCharm(CharmBase):
                 storage_coordinator = self.web_helper.initialize_shared_storage()
                 if storage_coordinator:
                     from concourse_installer import download_and_install_concourse_with_storage
+                    from storage_coordinator import LockAcquireError
+                    
                     self.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
-                    download_and_install_concourse_with_storage(
-                        self, version, storage_coordinator
-                    )
-                    self.unit.status = MaintenanceStatus("Binaries ready")
+                    try:
+                        download_and_install_concourse_with_storage(
+                            self, version, storage_coordinator
+                        )
+                        self.unit.status = MaintenanceStatus("Binaries ready")
+                    except LockAcquireError:
+                        logger.warning("Another unit is downloading binaries, deferring...")
+                        self.unit.status = MaintenanceStatus("Another unit downloading, waiting...")
+                        event.defer()
+                        return
                 else:
                     download_and_install_concourse(self, version)
 
@@ -1153,7 +1169,7 @@ class ConcourseCharm(CharmBase):
                     web_ip = data.get("web-ip")
                     if web_ip:
                         return f"{web_ip}:2222"
-                except:
+                except Exception:
                     pass
 
         # Fallback: if we're the leader, return our own IP
@@ -1163,7 +1179,7 @@ class ConcourseCharm(CharmBase):
             try:
                 unit_ip = socket.gethostbyname(socket.gethostname())
                 return f"{unit_ip}:2222"
-            except:
+            except Exception:
                 return "127.0.0.1:2222"
 
         # Last resort: try localhost (will fail for remote workers)

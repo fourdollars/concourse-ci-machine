@@ -17,7 +17,6 @@ from concourse_common import (
     KEYS_DIR,
     detect_nvidia_gpus,
     verify_nvidia_container_runtime,
-    get_storage_path,
     get_filesystem_id,
 )
 
@@ -115,9 +114,25 @@ class ConcourseWorkerHelper:
             # Create worker-specific directory under /var/lib/concourse-worker/
             # (not under shared storage to avoid write conflicts)
             worker_path = worker_base_path / self.charm.unit.name
-            worker_path.mkdir(parents=True, exist_ok=True)
-            work_dir = worker_path / "work_dir"
-            work_dir.mkdir(parents=True, exist_ok=True)
+            
+            # T066: Handle concurrent starts gracefully with existence checks
+            try:
+                if worker_path.exists():
+                    logger.info(f"Worker directory already exists: {worker_path}")
+                else:
+                    logger.info(f"Creating new worker directory: {worker_path}")
+                
+                worker_path.mkdir(parents=True, exist_ok=True)
+                work_dir = worker_path / "work_dir"
+                work_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"Error creating worker directory (concurrency issue?): {e}")
+                # Retry once after short delay
+                import time
+                time.sleep(1)
+                worker_path.mkdir(parents=True, exist_ok=True)
+                work_dir = worker_path / "work_dir"
+                work_dir.mkdir(parents=True, exist_ok=True)
             
             self.worker_directory = WorkerDirectory(
                 unit_name=self.charm.unit.name,
@@ -129,7 +144,7 @@ class ConcourseWorkerHelper:
             logger.info(f"  - Work dir: {self.worker_directory.work_dir}")
             logger.info(f"  - State file: {self.worker_directory.state_file}")
             
-            logger.info(f"Storage coordinator initialized for worker unit")
+            logger.info("Storage coordinator initialized for worker unit")
             return self.storage_coordinator
             
         except Exception as e:
@@ -191,7 +206,7 @@ WantedBy=multi-user.target
             # Reload systemd to recognize new service files
             subprocess.run(["systemctl", "daemon-reload"], check=True)
 
-            logger.info(f"Worker systemd service created")
+            logger.info("Worker systemd service created")
         except Exception as e:
             logger.error(f"Failed to create systemd service: {e}")
             raise
@@ -439,7 +454,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             # This ensures GPU wrapper takes precedence over non-GPU wrapper
             if concourse_runc.exists():
                 if concourse_runc.is_symlink():
-                    logger.info(f"Replacing existing symlink to point to GPU wrapper")
+                    logger.info("Replacing existing symlink to point to GPU wrapper")
                     concourse_runc.unlink()
                 else:
                     logger.warning(f"Expected symlink but found file at {concourse_runc}")
@@ -730,7 +745,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 text=True,
             )
             return result.returncode == 0 and result.stdout.strip() == "active"
-        except:
+        except Exception:
             return False
     
     def _get_gpu_tags(self):
@@ -778,7 +793,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 gpu_count = len(device_ids)
                 tags.append(f"gpu-count={gpu_count}")
                 tags.append(f"gpu-devices={device_ids_config}")
-            except ValueError as e:
+            except ValueError:
                 logger.error(f"Invalid gpu-device-ids format: {device_ids_config}")
                 return []
         
@@ -806,11 +821,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             try:
                 device_ids = [int(x.strip()) for x in device_ids_config.split(",")]
                 count = len(device_ids)
-            except:
+            except Exception:
                 count = 0
         
         if count > 0:
-            gpu_name = gpu_info["devices"][0]["name"]
             return f" (GPU: {count}x NVIDIA)"
         
         return ""

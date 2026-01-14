@@ -6,26 +6,26 @@ Concourse Installer Library - Handles downloading and installing Concourse
 import json
 import logging
 import os
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
 from ops.model import MaintenanceStatus
 
-from concourse_common import CONCOURSE_BIN
+from concourse_common import CONCOURSE_BIN, CONCOURSE_DATA_DIR
+
+CONCOURSE_INSTALL_DIR = f"{CONCOURSE_DATA_DIR}/bin"
 
 logger = logging.getLogger(__name__)
 
 # Import storage coordinator (may not be available in all contexts)
 try:
-    from storage_coordinator import (
-        SharedStorage,
-        LockCoordinator,
-        StorageCoordinator,
-    )
+    from storage_coordinator import LockAcquireError
     HAS_STORAGE_COORDINATOR = True
 except ImportError:
     HAS_STORAGE_COORDINATOR = False
+    # Define dummy exception if module missing so except block doesn't fail
+    class LockAcquireError(Exception):
+        pass
     logger.warning("storage_coordinator not available, shared storage disabled")
 
 
@@ -221,44 +221,60 @@ def download_and_install_concourse_with_storage(
     
     # Web/leader: acquire lock and download (T019)
     logger.info("Web/leader unit: acquiring download lock")
-    try:
-        with storage_coordinator.acquire_download_lock(timeout_seconds=0):
-            logger.info("Download lock acquired, starting download")
-            
-            # Create progress marker (T021)
-            storage_coordinator.mark_download_started(version)
-            charm.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
-            
-            try:
-                # Perform actual download
-                _download_and_extract_binaries(
-                    charm,
-                    version,
-                    storage_coordinator.storage.bin_directory
-                )
+    
+    # Retry lock acquisition (T054)
+    max_lock_retries = 3
+    import time
+    
+    for attempt in range(max_lock_retries):
+        try:
+            with storage_coordinator.acquire_download_lock(timeout_seconds=0):
+                logger.info("Download lock acquired, starting download")
                 
-                # Write version marker (T020)
-                storage_coordinator.mark_download_complete(version)
-                logger.info(f"Successfully downloaded and marked v{version} as complete")
+                # Create progress marker (T021)
+                storage_coordinator.mark_download_started(version)
+                charm.unit.status = MaintenanceStatus(f"Downloading Concourse v{version}...")
                 
-                charm.unit.status = MaintenanceStatus(f"Binaries v{version} installed")
-                return version
-                
-            except Exception as e:
-                # Clean up progress marker on failure
                 try:
-                    bin_dir = storage_coordinator.storage.bin_directory
-                    if bin_dir.exists():
-                        progress_marker = bin_dir / ".download_in_progress"
-                        if progress_marker.exists():
-                            progress_marker.unlink()
+                    # Perform actual download
+                    _download_and_extract_binaries(
+                        charm,
+                        version,
+                        storage_coordinator.storage.bin_directory
+                    )
+                    
+                    # Write version marker (T020)
+                    storage_coordinator.mark_download_complete(version)
+                    logger.info(f"Successfully downloaded and marked v{version} as complete")
+                    
+                    charm.unit.status = MaintenanceStatus(f"Binaries v{version} installed")
+                    return version
+                    
                 except Exception:
-                    pass
-                raise
-                
-    except Exception as e:
-        logger.error(f"Failed to download binaries with lock: {e}")
-        raise RuntimeError(f"Download failed: {e}")
+                    # Clean up progress marker on failure
+                    try:
+                        bin_dir = storage_coordinator.storage.bin_directory
+                        if bin_dir.exists():
+                            progress_marker = bin_dir / ".download_in_progress"
+                            if progress_marker.exists():
+                                progress_marker.unlink()
+                    except Exception:
+                        pass
+                    raise
+            break # Success, exit loop
+            
+        except LockAcquireError:
+            if attempt < max_lock_retries - 1:
+                wait_time = 5 * (attempt + 1)
+                logger.warning(f"Lock held by another unit, retrying in {wait_time}s...")
+                charm.unit.status = MaintenanceStatus(f"Waiting for download lock... (retry {attempt + 1})")
+                time.sleep(wait_time)
+            else:
+                logger.error("Failed to acquire download lock after retries")
+                raise RuntimeError("Another unit is currently downloading binaries. Please try again later.")
+        except Exception as e:
+            logger.error(f"Failed to download binaries with lock: {e}")
+            raise RuntimeError(f"Download failed: {e}")
 
 
 def _download_and_extract_binaries(charm, version: str, target_dir: Path):
@@ -273,12 +289,15 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
     import tarfile
     import time
     import shutil
+    import hashlib
     
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
+    sha1_url = f"{url}.sha1"
     logger.info(f"Downloading Concourse CI {version} from {url}")
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tar_file = Path(tmpdir) / "concourse.tar.gz"
+        sha1_file = Path(tmpdir) / "concourse.sha1"
         
         # Download with progress tracking
         last_pct = [0]
@@ -303,12 +322,50 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
                     time.sleep(retry_delay * attempt)
                     last_pct[0] = 0
                 
+                # Download binary
+                start_time = time.time()
                 urllib.request.urlretrieve(url, tar_file, download_progress)
+                end_time = time.time()
                 
                 if not tar_file.exists() or tar_file.stat().st_size == 0:
                     raise RuntimeError(f"Downloaded file is empty: {tar_file}")
                 
-                logger.info(f"Download completed ({tar_file.stat().st_size} bytes)")
+                duration = end_time - start_time
+                size_mb = tar_file.stat().st_size / (1024 * 1024)
+                speed_mbps = size_mb / duration if duration > 0 else 0
+                logger.info(
+                    f"Download completed: {size_mb:.1f}MB in {duration:.1f}s "
+                    f"({speed_mbps:.2f} MB/s)"
+                )
+                
+                # Download and verify checksum (T058)
+                logger.info("Verifying checksum...")
+                try:
+                    urllib.request.urlretrieve(sha1_url, sha1_file)
+                    expected_sha1 = sha1_file.read_text().split()[0].strip()
+                    
+                    hasher = hashlib.sha1()
+                    with open(tar_file, 'rb') as f:
+                        while chunk := f.read(8192):
+                            hasher.update(chunk)
+                    actual_sha1 = hasher.hexdigest()
+                    
+                    if actual_sha1 != expected_sha1:
+                        raise RuntimeError(
+                            f"Checksum mismatch: expected {expected_sha1}, got {actual_sha1}"
+                        )
+                    logger.info("Checksum verified successfully")
+                except Exception as e:
+                    logger.warning(f"Checksum verification failed: {e}")
+                    # If we can't verify checksum, should we fail? 
+                    # T058 implies we should detect corruption.
+                    # If fetching sha1 fails, maybe warn? But if mismatch, definitely fail.
+                    if "Checksum mismatch" in str(e):
+                        raise
+                    # For network errors fetching sha1, we might want to retry the whole loop?
+                    # Or just warn. Let's fail safe and retry.
+                    raise
+                
                 break
                 
             except Exception as e:
@@ -356,6 +413,20 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
                     dest.unlink()
             shutil.move(str(item), str(dest))
         
+        # Generate checksum for installed binary (T064)
+        concourse_bin = parent_dir / "bin" / "concourse"
+        if concourse_bin.exists():
+            try:
+                hasher = hashlib.sha256()
+                with open(concourse_bin, 'rb') as f:
+                    while chunk := f.read(8192):
+                        hasher.update(chunk)
+                checksum = hasher.hexdigest()
+                (parent_dir / "bin" / ".concourse.sha256").write_text(checksum)
+                logger.info(f"Generated checksum for installed binary: {checksum}")
+            except Exception as e:
+                logger.warning(f"Failed to generate binary checksum: {e}")
+
         logger.info(f"Concourse {version} installed to {target_dir}")
 
 

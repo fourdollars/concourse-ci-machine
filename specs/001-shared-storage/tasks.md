@@ -130,19 +130,19 @@ description: "Task list for shared storage feature implementation"
 
 ### Implementation for User Story 3
 
-- [ ] T054 [P] [US3] Add LockAcquireError exception handling in lib/concourse_installer.py download_binaries method with retry logic
-- [ ] T055 [P] [US3] Add progress marker validation in lib/storage_coordinator.py ProgressTracker to detect concurrent download attempts
-- [ ] T056 [US3] Implement exponential backoff in lib/storage_coordinator.py StorageCoordinator.wait_for_binaries method (5s → 10s → 20s intervals)
-- [ ] T057 [US3] Add filesystem write verification in lib/storage_coordinator.py FilesystemValidator.is_writable method before downloads
-- [ ] T058 [US3] Update lib/concourse_installer.py to add checksum verification after binary download to detect corruption
-- [ ] T059 [US3] Add atomic file operations in lib/storage_coordinator.py for marker files using Path.write_text with temp file + rename pattern
-- [ ] T060 [US3] Implement lock timeout handling in lib/storage_coordinator.py LockCoordinator with detailed error messages
-- [ ] T061 [US3] Add concurrent operation logging in lib/concourse_common.py showing which units hold locks and when
-- [ ] T062 [US3] Update src/charm.py to handle LockAcquireError gracefully with status message "Another unit downloading, waiting..."
-- [ ] T063 [US3] Add storage availability checks in lib/storage_coordinator.py SharedStorage.__post_init__ method with StorageNotMountedError
-- [ ] T064 [US3] Implement binary corruption detection in lib/concourse_installer.py verify_binaries method using file hash comparison
-- [ ] T065 [US3] Add lock cleanup logic in lib/storage_coordinator.py for orphaned locks from crashed units
-- [ ] T066 [US3] Update lib/concourse_worker.py to handle concurrent worker starts gracefully with worker directory existence checks
+- [x] T054 [P] [US3] Add LockAcquireError exception handling in lib/concourse_installer.py download_binaries method with retry logic
+- [x] T055 [P] [US3] Add progress marker validation in lib/storage_coordinator.py ProgressTracker to detect concurrent download attempts
+- [x] T056 [US3] Implement exponential backoff in lib/storage_coordinator.py StorageCoordinator.wait_for_binaries method (5s → 10s → 20s intervals)
+- [x] T057 [US3] Add filesystem write verification in lib/storage_coordinator.py FilesystemValidator.is_writable method before downloads
+- [x] T058 [US3] Update lib/concourse_installer.py to add checksum verification after binary download to detect corruption
+- [x] T059 [US3] Add atomic file operations in lib/storage_coordinator.py for marker files using Path.write_text with temp file + rename pattern
+- [x] T060 [US3] Implement lock timeout handling in lib/storage_coordinator.py LockCoordinator with detailed error messages
+- [x] T061 [US3] Add concurrent operation logging in lib/concourse_common.py showing which units hold locks and when
+- [x] T062 [US3] Update src/charm.py to handle LockAcquireError gracefully with status message "Another unit downloading, waiting..."
+- [x] T063 [US3] Add storage availability checks in lib/storage_coordinator.py SharedStorage.__post_init__ method with StorageNotMountedError
+- [x] T064 [US3] Implement binary corruption detection in lib/concourse_installer.py verify_binaries method using file hash comparison
+- [x] T065 [US3] Add lock cleanup logic in lib/storage_coordinator.py for orphaned locks from crashed units
+- [x] T066 [US3] Update lib/concourse_worker.py to handle concurrent worker starts gracefully with worker directory existence checks
 
 **Checkpoint**: All user stories should now be independently functional with proper contention handling
 
@@ -153,15 +153,15 @@ description: "Task list for shared storage feature implementation"
 **Purpose**: Improvements that affect multiple user stories
 
 - [ ] T067 [P] Add comprehensive docstrings to all public methods in lib/storage_coordinator.py following Google style guide
-- [ ] T068 [P] Update docs/shared-storage.md with architecture diagrams from data-model.md data flow sections
+- [x] T068 [P] Update docs/shared-storage.md with architecture diagrams from data-model.md data flow sections
 - [ ] T069 [P] Add logging statements at DEBUG level for all storage operations in lib/storage_coordinator.py
-- [ ] T070 [P] Update quickstart.md deployment examples with actual CLI commands for shared storage testing
+- [x] T070 [P] Update quickstart.md deployment examples with actual CLI commands for shared storage testing
 - [ ] T071 Code review and refactoring: ensure all methods have type hints and follow constitution standards
 - [ ] T072 Verify all exception messages include actionable context per constitution UX principle
 - [ ] T073 Run quickstart.md deployment guide validation with actual 3-unit deployment
-- [ ] T074 [P] Add performance logging for download operations showing duration and bandwidth metrics
+- [x] T074 [P] Add performance logging for download operations showing duration and bandwidth metrics
 - [ ] T075 Security review: ensure file permissions on shared storage prevent unauthorized access
-- [ ] T076 Update lib/concourse_common.py to add storage statistics helper (disk usage, binary count, unit count)
+- [x] T076 Update lib/concourse_common.py to add storage statistics helper (disk usage, binary count, unit count)
 
 ---
 
@@ -169,13 +169,11 @@ description: "Task list for shared storage feature implementation"
 
 **Purpose**: Add comprehensive E2E tests for all deployment modes with shared storage
 
-- [ ] T077 [P] Add test-shared-storage-auto job to .github/workflows/ci.yml for mode=auto with 3 units using --attach-storage
-- [ ] T078 [P] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all with 2 units sharing storage
-- [ ] T079 [P] Add test-shared-storage-web-worker job to .github/workflows/ci.yml for separate apps with shared storage
-- [ ] T080 Update publish-charm job dependencies in .github/workflows/ci.yml to include new shared storage test jobs
-- [ ] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
-- [ ] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
-- [ ] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
+- [x] T077 [P] Add test-shared-storage-auto job to .github/workflows/ci.yml for mode=auto with 3 units using --attach-storage
+- [x] T080 Update publish-charm job dependencies in .github/workflows/ci.yml to include new shared storage test jobs
+- [x] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
+- [x] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
+- [x] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
 - [ ] T084 Add storage attachment verification in test-shared-storage-all: verify both units share same storage volume
 - [ ] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
 - [ ] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units

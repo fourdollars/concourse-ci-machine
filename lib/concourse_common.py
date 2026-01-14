@@ -344,3 +344,70 @@ def get_storage_logger(unit_name: str) -> logging.Logger:
         storage_logger.setLevel(logging.INFO)
     
     return storage_logger
+
+
+def log_concurrent_operation(
+    unit_name: str, 
+    operation: str, 
+    lock_held: bool = False, 
+    details: str = ""
+) -> None:
+    """Log concurrent storage operation details (T061).
+    
+    Args:
+        unit_name: Current unit name
+        operation: Operation name
+        lock_held: Whether lock is currently held by this unit
+        details: Additional operation details
+    """
+    logger = get_storage_logger(unit_name)
+    status = "LOCKED" if lock_held else "UNLOCKED"
+    logger.info(f"Concurrent Op: {operation} [{status}] - {details}")
+
+
+def get_storage_stats() -> dict:
+    """Get storage statistics for monitoring (T076).
+    
+    Returns:
+        dict with disk_usage_bytes, binary_count, unit_count
+    """
+    stats = {
+        "disk_usage_bytes": 0,
+        "binary_count": 0,
+        "worker_count": 0,
+        "shared_storage": False
+    }
+    
+    try:
+        data_dir = Path(CONCOURSE_DATA_DIR)
+        if not data_dir.exists():
+            return stats
+            
+        # Disk usage
+        total_size = 0
+        for p in data_dir.rglob('*'):
+            if p.is_file() and not p.is_symlink():
+                try:
+                    total_size += p.stat().st_size
+                except OSError:
+                    pass
+        stats["disk_usage_bytes"] = total_size
+        
+        # Binary count
+        bin_dir = data_dir / "bin"
+        if bin_dir.exists():
+            stats["binary_count"] = sum(1 for _ in bin_dir.iterdir())
+            
+        # Worker count (based on directories)
+        worker_dir = data_dir / "worker"
+        if worker_dir.exists():
+            stats["worker_count"] = sum(1 for p in worker_dir.iterdir() if p.is_dir())
+            
+        # Shared storage check
+        if (data_dir / ".lxc_shared_storage").exists():
+            stats["shared_storage"] = True
+            
+        return stats
+    except Exception as e:
+        logger.warning(f"Failed to collect storage stats: {e}")
+        return stats

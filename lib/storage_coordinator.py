@@ -112,6 +112,16 @@ class SharedStorage:
         """Validate paths exist and are accessible."""
         if not self.volume_path.exists():
             raise StorageNotMountedError(f"Volume not mounted: {self.volume_path}")
+            
+        if not self.volume_path.is_dir():
+            raise StorageNotMountedError(f"Volume path is not a directory: {self.volume_path}")
+            
+        # Check accessibility (T063)
+        try:
+            # Check if we can access stats/permissions
+            self.volume_path.stat()
+        except OSError as e:
+            raise StorageNotMountedError(f"Volume not accessible: {e}")
         
         # Set default subdirectories if not provided
         if self.bin_directory is None:
@@ -169,6 +179,8 @@ class SharedStorage:
     def write_installed_version(self, version: str) -> None:
         """Write installed version to marker file (web/leader only).
         
+        Uses atomic write via temp file + rename to prevent partial reads (T059).
+        
         Args:
             version: Version string to write (e.g., "7.14.3")
         
@@ -176,9 +188,18 @@ class SharedStorage:
             This should only be called by web/leader units after
             successful binary download.
         """
-        self.version_marker_path.write_text(version)
-        self.installed_version = version
-        logger.info(f"Updated installed version marker to {version}")
+        # Create temp file in same directory for atomic rename
+        temp_file = self.version_marker_path.with_suffix(f".tmp.{os.getpid()}.{int(time.time())}")
+        try:
+            temp_file.write_text(version)
+            # Atomic rename (replace)
+            os.replace(temp_file, self.version_marker_path)
+            self.installed_version = version
+            logger.info(f"Updated installed version marker to {version}")
+        except Exception as e:
+            if temp_file.exists():
+                temp_file.unlink()
+            raise SharedStorageError(f"Failed to write version marker: {e}")
 
 
 @dataclass
@@ -207,11 +228,14 @@ class LockCoordinator:
     timeout_seconds: int = 600  # 10 minutes
     
     @contextmanager
-    def acquire_exclusive(self) -> Iterator[None]:
+    def acquire_exclusive(self, timeout: float = 0) -> Iterator[None]:
         """Acquire exclusive lock for binary download.
         
         Only web/leader should call this method. Uses fcntl.flock with
         LOCK_EX | LOCK_NB for non-blocking exclusive lock acquisition.
+        
+        Args:
+            timeout: Maximum time to wait for lock (0 = non-blocking)
         
         Yields:
             None when lock successfully acquired
@@ -223,38 +247,96 @@ class LockCoordinator:
         Note:
             Lock is automatically released when context exits, even on exception.
         """
-        # Check for stale locks first
-        if self._is_stale():
-            logger.warning("Stale download marker detected, cleaning up")
-            self._clean_stale_markers()
-            raise StaleLockError("Stale lock was detected and cleaned")
+        start_time = time.time()
         
-        # Ensure lock file parent directory exists
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        lock_file = self.lock_path.open('w')
-        try:
-            # Non-blocking exclusive lock
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.holder_unit = os.environ.get('JUJU_UNIT_NAME', 'unknown')
-            self.acquired_at = datetime.now(timezone.utc)
-            logger.info(f"Lock acquired by {self.holder_unit} at {self.acquired_at}")
-            yield
-        except BlockingIOError:
-            raise LockAcquireError(
-                f"Download lock held by another unit. "
-                f"Only web/leader should download binaries."
-            )
-        finally:
-            # Release lock
+        while True:
+            # Check for orphaned/stale locks first (T065)
+            self.check_and_clean_orphaned_locks()
+            
+            # Ensure lock file parent directory exists
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            lock_file = self.lock_path.open('w')
             try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                # Non-blocking exclusive lock
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.holder_unit = os.environ.get('JUJU_UNIT_NAME', 'unknown')
+                self.acquired_at = datetime.now(timezone.utc)
+                logger.info(f"Lock acquired by {self.holder_unit} at {self.acquired_at}")
+                try:
+                    yield
+                finally:
+                    # Release lock
+                    try:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    except Exception as e:
+                        logger.warning(f"Error releasing lock: {e}")
+                    try:
+                        lock_file.close()
+                    except Exception:
+                        pass
+                    self.holder_unit = None
+                    self.acquired_at = None
+                return
+                
+            except BlockingIOError:
                 lock_file.close()
-            except Exception as e:
-                logger.warning(f"Error releasing lock: {e}")
+                
+                if timeout <= 0:
+                    raise LockAcquireError(
+                        "Download lock held by another unit (non-blocking). "
+                        "Only one unit can download binaries at a time."
+                    )
+                
+                elapsed = time.time() - start_time
+                if elapsed >= timeout:
+                    raise LockAcquireError(
+                        f"Timeout waiting for lock after {timeout}s. "
+                        "Another unit is likely downloading binaries."
+                    )
+                
+                time.sleep(1)
             self.holder_unit = None
             self.acquired_at = None
     
+    def check_and_clean_orphaned_locks(self) -> None:
+        """Check for orphaned download markers and clean them (T065).
+        
+        If .download_in_progress exists but .install.lock is not held by any process,
+        the marker is orphaned (crashed unit) and should be removed immediately.
+        Also cleans up if marker is stale based on timeout.
+        """
+        progress_marker = self.lock_path.parent / ".download_in_progress"
+        if not progress_marker.exists():
+            return
+
+        # Ensure directory exists
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            # We open for writing to check lock, but we don't truncate
+            with self.lock_path.open('w') as lock_file:
+                try:
+                    # Try to acquire exclusive lock non-blocking
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    
+                    # If we got here, we acquired the lock, so no one else holds it.
+                    # But marker exists. It is orphaned.
+                    logger.warning("Found orphaned download marker (lock free), cleaning up")
+                    if progress_marker.exists():
+                        progress_marker.unlink()
+                    
+                    # Release lock
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                except BlockingIOError:
+                    # Lock is held by someone. Check for staleness (timeout)
+                    if self._is_stale():
+                        logger.warning("Found stale download marker (timeout), cleaning up")
+                        if progress_marker.exists():
+                            progress_marker.unlink()
+        except Exception as e:
+            logger.warning(f"Error checking orphaned locks: {e}")
+
     def _is_stale(self) -> bool:
         """Check if progress marker is stale.
         
@@ -573,7 +655,7 @@ class StorageCoordinator:
         if not self.is_web_leader():
             raise PermissionError("Only web/leader units can download binaries")
         
-        with self.lock.acquire_exclusive():
+        with self.lock.acquire_exclusive(timeout=timeout_seconds):
             yield
     
     def download_binaries(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -648,6 +730,8 @@ class StorageCoordinator:
             f"Waiting for binaries v{expected_version} (timeout: {timeout_seconds}s)"
         )
         
+        current_interval = poll_interval_seconds
+        
         while True:
             installed_version = self.get_installed_version()
             if installed_version == expected_version:
@@ -663,7 +747,10 @@ class StorageCoordinator:
                 )
                 return False
             
-            time.sleep(poll_interval_seconds)
+            self.logger.debug(f"Binaries not ready, sleeping {current_interval}s...")
+            time.sleep(current_interval)
+            # Exponential backoff: 5 -> 10 -> 20 (cap at 20s)
+            current_interval = min(current_interval * 2, 20)
     
     def verify_binaries(self, version: str) -> bool:
         """Verify that binaries for given version are valid.
@@ -693,6 +780,33 @@ class StorageCoordinator:
                 self.logger.warning(f"Binary not executable: {binary_path}")
                 return False
         
+        # Verify checksum if available (T064)
+        checksum_file = self.storage.bin_directory / ".concourse.sha256"
+        concourse_bin = self.storage.bin_directory / "concourse"
+        
+        if checksum_file.exists() and concourse_bin.exists():
+            try:
+                import hashlib
+                expected_sha256 = checksum_file.read_text().strip()
+                
+                hasher = hashlib.sha256()
+                with open(concourse_bin, 'rb') as f:
+                    while chunk := f.read(8192):
+                        hasher.update(chunk)
+                actual_sha256 = hasher.hexdigest()
+                
+                if actual_sha256 != expected_sha256:
+                    self.logger.error(
+                        f"Binary corruption detected! "
+                        f"Expected {expected_sha256}, got {actual_sha256}"
+                    )
+                    return False
+                self.logger.info("Binary checksum verified successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to verify binary checksum: {e}")
+                # Don't fail if just verification error (missing file etc), but if corruption...
+                # We already logged error above if mismatch.
+        
         return True
     
     def create_worker_directory(self, unit_name: str) -> Path:
@@ -715,12 +829,47 @@ class StorageCoordinator:
         
         Args:
             version: Version being downloaded
+            
+        Raises:
+            LockAcquireError: If download marker already exists (concurrent attempt or recent crash)
         """
         # Ensure bin_directory exists before creating marker
         self.storage.bin_directory.mkdir(parents=True, exist_ok=True)
         progress_marker = self.storage.bin_directory / ".download_in_progress"
-        progress_marker.write_text(f"{version}\n{datetime.now(timezone.utc).isoformat()}")
-        self.logger.info(f"Marked download started for v{version}")
+        
+        # Check for concurrent download (T055)
+        if progress_marker.exists():
+            # If marker exists and we are here (holding lock), it means:
+            # 1. Another unit is downloading (but we have lock?)
+            # 2. Previous download crashed recently (marker not stale yet)
+            # In either case, we shouldn't proceed to avoid corruption
+            try:
+                content = progress_marker.read_text().splitlines()
+                existing_version = content[0] if content else "unknown"
+                timestamp = content[1] if len(content) > 1 else "unknown"
+                
+                raise LockAcquireError(
+                    f"Download already in progress for v{existing_version} "
+                    f"(started at {timestamp}). If this is a stale lock from a "
+                    f"crashed unit, it will expire in 10 minutes."
+                )
+            except (OSError, IndexError):
+                # Handle unreadable/empty marker
+                raise LockAcquireError(
+                    "Download marker exists but is unreadable. "
+                    "Waiting for stale lock cleanup."
+                )
+
+        # Atomic write (T059)
+        temp_file = progress_marker.with_suffix(f".tmp.{os.getpid()}.{int(time.time())}")
+        try:
+            temp_file.write_text(f"{version}\n{datetime.now(timezone.utc).isoformat()}")
+            os.replace(temp_file, progress_marker)
+            self.logger.info(f"Marked download started for v{version}")
+        except Exception as e:
+            if temp_file.exists():
+                temp_file.unlink()
+            raise SharedStorageError(f"Failed to create progress marker: {e}")
     
     def mark_download_complete(self, version: str) -> None:
         """Remove progress marker, write version marker (web/leader only).
@@ -797,13 +946,31 @@ class StorageCoordinator:
     def is_writable(self, path: Path) -> bool:
         """Check if path is writable by current unit.
         
+        Performs an actual write test to ensure filesystem is mounted read-write
+        and permissions are correct (T057).
+        
         Args:
             path: Path to check
         
         Returns:
             True if writable, False otherwise
         """
-        return os.access(path, os.W_OK)
+        if not path.exists():
+            return False
+            
+        # First check permission bits
+        if not os.access(path, os.W_OK):
+            return False
+            
+        # Then try actual write to catch Read-only filesystem errors
+        try:
+            test_file = path / f".write_test_{os.getpid()}_{int(time.time())}"
+            test_file.touch()
+            test_file.unlink()
+            return True
+        except (OSError, PermissionError) as e:
+            self.logger.warning(f"Write test failed for {path}: {e}")
+            return False
 
 
 # ============================================================================
@@ -1054,8 +1221,6 @@ class UpgradeCoordinator:
         if not state or state.state != "prepare":
             self.logger.warning("No PREPARE signal detected")
             return
-        
-        unit_name = os.environ.get('JUJU_UNIT_NAME', 'unknown')
         
         self.logger.info(f"Handling PREPARE signal for upgrade to v{state.target_version}")
         
