@@ -700,6 +700,11 @@ jobs:
           echo "Mounting shared storage to $CONTAINER"
           lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared path=/var/lib/concourse shift=true
           
+          # Create LXC shared storage marker file to signal the charm that shared storage is ready
+          # This marker tells the charm to proceed with downloading binaries to shared storage
+          echo "Creating .lxc_shared_storage marker file"
+          touch $(pwd)/concourse-shared/.lxc_shared_storage
+          
           # Wait for deployment to settle (unit 0 should install and download binaries)
           juju-wait -m concourse-shared -t 900
           
@@ -849,6 +854,10 @@ jobs:
           echo "Mounting shared storage to Worker ($WORKER_CONTAINER)"
           lxc config device add $WORKER_CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-ww path=/var/lib/concourse shift=true
           
+          # Create LXC shared storage marker file to signal the charms that shared storage is ready
+          echo "Creating .lxc_shared_storage marker file"
+          touch $(pwd)/concourse-shared-ww/.lxc_shared_storage
+          
           # Wait for deployment to settle
           juju-wait -m concourse-ss-ww -t 900
           
@@ -935,6 +944,10 @@ jobs:
           # Mount to unit 0
           echo "Mounting shared storage to $CONTAINER"
           lxc config device add $CONTAINER concourse_shared disk source=$(pwd)/concourse-shared-all path=/var/lib/concourse shift=true
+          
+          # Create LXC shared storage marker file to signal the charm that shared storage is ready
+          echo "Creating .lxc_shared_storage marker file"
+          touch $(pwd)/concourse-shared-all/.lxc_shared_storage
           
           # Wait for installation
           juju-wait -m concourse-ss-all -t 900
