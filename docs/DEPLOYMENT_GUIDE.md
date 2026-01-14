@@ -18,7 +18,7 @@ juju add-model concourse
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI
-juju deploy concourse-ci-machine concourse-ci --config mode=all --base ubuntu@24.04
+juju deploy concourse-ci-machine concourse-ci --config mode=auto --base ubuntu@24.04
 
 # Integrate with database (uses Juju secrets)
 juju integrate concourse-ci:postgresql postgresql:database

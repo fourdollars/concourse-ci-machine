@@ -6,14 +6,14 @@ This document describes the test scenarios covered in the GitHub Actions CI work
 
 The following table summarizes the test coverage for different deployment modes and features in the CI pipeline.
 
-| Feature / Test | `mode=auto` | `mode=auto` + `shared-storage=lxc` | `mode=web` + `mode=worker` | `mode=web` + `mode=worker` + `shared-storage=lxc` | `mode=all` | `mode=all` + `shared-storage=lxc` |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **CI Job Name** | `test-auto-mode` | `test-shared-storage-auto` | `test-web-worker-mode` | `test-shared-storage-web-worker` | `test-all-mode` | `test-shared-storage-all` |
-| **Fly Execute Task** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Mounts (Bind)** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Tagged Workers** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Upgrade Test** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Units Tested** | 2 | 1 → 2 | 3 | 2 | 1 | 1 → 2 |
+| Feature / Test | `mode=auto` | `mode=auto` + `shared-storage=lxc` | `mode=web` + `mode=worker` | `mode=web` + `mode=worker` + `shared-storage=lxc` |
+| :--- | :---: | :---: | :---: | :---: |
+| **CI Job Name** | `test-auto-mode` | `test-shared-storage-auto` | `test-web-worker-mode` | `test-shared-storage-web-worker` |
+| **Fly Execute Task** | ✅ | ✅ | ✅ | ✅ |
+| **Mounts (Bind)** | ✅ | ✅ | ✅ | ✅ |
+| **Tagged Workers** | ✅ | ✅ | ✅ | ✅ |
+| **Upgrade Test** | ✅ | ✅ | ✅ | ✅ |
+| **Units Tested** | 2 | 1 → 2 | 3 | 2 |
 
 ### Matrix Key
 - **Fly Execute Task**: Verifies the system by running a dummy task (e.g., `busybox` echo) via the Concourse CLI.

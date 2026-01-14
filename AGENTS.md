@@ -8,7 +8,6 @@ This is a **Juju Machine Charm** for deploying [Concourse CI](https://concourse-
 
 The charm supports flexible deployment architectures:
 - **Auto-Scaling (`mode=auto`)**: The default mode. The leader unit becomes the Web node, and all other units become Workers. This allows for easy scaling by just adding units.
-- **Monolith (`mode=all`)**: Web and Worker on the same unit.
 - **Distributed (`mode=web` + `mode=worker`)**: Separate Web and Worker units.
 
 ### Core Architecture
@@ -21,7 +20,6 @@ The charm supports flexible deployment architectures:
 ### Future Plans (Planned Refactoring)
 - Rename `web:web-tsa` relation to `web:tsa`.
 - Rename `worker:worker-tsa` relation to `worker:aircraft`.
-- Remove `mode=all` and replace it with `mode=auto` for single-unit (`n=1`) deployments.
 - Remove `mode=web` and replace it with `mode=auto` on the leader unit.
 
 ## File Organization & Responsibilities
@@ -76,10 +74,7 @@ juju bootstrap localhost test-controller --config test-mode=true
 juju add-model concourse-test
 juju deploy postgresql --channel 16/stable
 
-# 3. Deploy Concourse (Monolith Mode)
-juju deploy ./concourse-ci-machine_amd64.charm concourse --config mode=all
-
-# 3. Alternative: Deploy Concourse (Auto-Scaling Mode)
+# 3. Deploy Concourse (Auto-Scaling Mode)
 juju deploy ./concourse-ci-machine_amd64.charm concourse --config mode=auto -n 3
 
 # 3. Alternative: Deploy Concourse (Distributed Mode)
