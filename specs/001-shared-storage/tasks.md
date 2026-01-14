@@ -170,6 +170,8 @@ description: "Task list for shared storage feature implementation"
 **Purpose**: Add comprehensive E2E tests for all deployment modes with shared storage
 
 - [x] T077 [P] Add test-shared-storage-auto job to .github/workflows/ci.yml for mode=auto with 3 units using --attach-storage
+- [x] T078 [P] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all with 2 units sharing storage
+- [x] T079 [P] Add test-shared-storage-web-worker job to .github/workflows/ci.yml for separate apps with shared storage
 - [x] T080 Update publish-charm job dependencies in .github/workflows/ci.yml to include new shared storage test jobs
 - [x] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
 - [x] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
