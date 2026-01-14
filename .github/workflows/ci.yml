@@ -725,6 +725,58 @@ jobs:
           # Verify filesystem ID matches (via ssh)
           # (Skip ssh in CI if not setup, but we can trust the mount)
 
+      - name: Verify Folder Mounts (Worker 1)
+        run: |
+          # Create test directories
+          mkdir -p /tmp/config-test-mount
+          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
+          
+          mkdir -p /tmp/config-test-mount-writable
+          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
+          chmod 777 /tmp/config-test-mount-writable
+
+          # Get container name for unit 1 (worker)
+          UNIT="concourse-ci/1"
+          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-ci\".units.\"$UNIT\".machine")
+          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+          
+          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
+          
+          # Add mounts
+          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
+          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
+          
+          # Run verification task
+          export CONCOURSE_URL=$(juju status concourse-ci/0 --format=json | jq -r '.applications."concourse-ci".units."concourse-ci/0"."public-address"')
+          export CONCOURSE_PASSWORD=$(juju run concourse-ci/0 get-admin-password --format=json | jq -r '."concourse-ci/0".results.password')
+          
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          
+          cat <<EOF > verify-mounts.yml
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: alpine}
+          run:
+            path: sh
+            args:
+            - -c
+            - |
+              echo "Checking Read-Only Mount..."
+              cat /srv/config_test/test_ro.txt
+              if touch /srv/config_test/should_fail; then
+                echo "Error: Was able to write to read-only mount"
+                exit 1
+              fi
+              
+              echo "Checking Read-Write Mount..."
+              cat /srv/config_test_writable/test_rw.txt
+              echo "Writing test" > /srv/config_test_writable/write_test.txt
+              cat /srv/config_test_writable/write_test.txt
+          EOF
+          
+          fly -t ci execute -c verify-mounts.yml
+
       - name: Test Upgrade with Shared Storage (Concurrent Op)
         run: |
           UPGRADE_VERSION="7.14.3"
