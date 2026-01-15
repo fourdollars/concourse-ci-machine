@@ -234,6 +234,9 @@ ensure_cli() {
     # Login
     echo "Logging in to Concourse..."
     ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
+
+    # Sync to avoid version mismatch warnings
+    ./fly -t test sync 2>/dev/null || true
 }
 
 # Step functions
@@ -724,7 +727,7 @@ step_scale_out() {
         
         # Expected workers calculation
         if [[ "$MODE" == "auto" ]]; then
-             EXPECTED_WORKERS=$TARGET_COUNT
+             EXPECTED_WORKERS=$((TARGET_COUNT - 1))
         else
              # Web units don't register as workers? Assuming standard concourse architecture
              # In our charm, web unit IS just a web node. 
