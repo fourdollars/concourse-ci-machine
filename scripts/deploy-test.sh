@@ -137,7 +137,7 @@ cleanup() {
         echo "$MODEL_NAME" | juju destroy-model "$MODEL_NAME" --destroy-storage --force --no-wait || true
         
         # Cleanup temp files
-        rm -f task.yml verify-mounts.yml verify-tagged.yml fly admin-password.txt concourse-ip.txt 2>/dev/null
+        rm -f verify-gpu.yml task.yml verify-mounts.yml verify-tagged.yml fly admin-password.txt concourse-ip.txt 2>/dev/null
         rm -rf /tmp/config-test-mount /tmp/config-test-mount-writable 2>/dev/null
         
         if [[ "$SHARED_STORAGE" == "lxc" && -n "$SHARED_PATH" ]]; then
@@ -325,7 +325,7 @@ if should_run "verify"; then
     chmod +x ./fly
 
     echo "Logging in to Concourse..."
-    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD"
+    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" || (echo "Concourse login failed" && juju run "$LEADER" get-admin-password && exit 1)
 
     echo "=== Verifying System ==="
     echo "Checking registered workers..."
@@ -618,9 +618,13 @@ if should_run "upgrade"; then
 
     if [[ "$MODE" == "auto" ]]; then
         juju config "$APP_NAME" version="$UPGRADE_VERSION"
+        echo "Triggering upgrade action..."
+        juju run "$APP_NAME/leader" upgrade version="$UPGRADE_VERSION"
     else
         juju config "$WEB_APP" version="$UPGRADE_VERSION"
         juju config "$WORKER_APP" version="$UPGRADE_VERSION"
+        echo "Triggering upgrade action on web..."
+        juju run "$WEB_APP/leader" upgrade version="$UPGRADE_VERSION"
     fi
 
     echo "Waiting for upgrade..."
