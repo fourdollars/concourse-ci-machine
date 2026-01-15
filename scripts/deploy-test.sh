@@ -21,23 +21,35 @@ help() {
     echo ""
     echo "  --skip-cleanup                Do not destroy model after test (default: false)"
     echo ""
-    echo "  --goto=[step]                 Start from specific step (default: deploy)"
+    echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
+    echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
+    echo ""
+    echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, gpu, upgrade"
     echo ""
     echo "  --help, -h                    Show this help message"
     echo ""
     echo "Examples:"
+    echo "  # Run full regression test (deploy -> verify -> mounts -> tagged -> gpu -> upgrade -> destroy)"
+    echo "  $0"
+    echo ""
+    echo "  # Test upgrade logic only"
+    echo "  $0 --steps=deploy,upgrade,destroy"
+    echo ""
+    echo "  # Debug a specific step without destroying the model"
+    echo "  $0 --steps=gpu --skip-cleanup"
+    echo ""
+    echo "  # Distributed mode with shared storage"
     echo "  $0 --mode=web+worker --shared-storage=lxc"
-    echo "  $0 --channel=edge"
-    echo "  $0 --goto=verify --skip-cleanup"
 }
 
 # Default values
 MODE="auto"
 SHARED_STORAGE="none"
 SKIP_CLEANUP="false"
-GOTO_STEP="deploy"
+GOTO_STEP=""
 CHANNEL=""
+STEPS=""
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -47,6 +59,7 @@ while [[ "$#" -gt 0 ]]; do
         --channel=*) CHANNEL="${1#*=}"; shift ;;
         --skip-cleanup) SKIP_CLEANUP="true"; shift ;;
         --goto=*) GOTO_STEP="${1#*=}"; shift ;;
+        --steps=*) STEPS="${1#*=}"; shift ;;
         --help|-h) help; exit 0 ;;
         *) echo "Error: Unknown option: $1" >&2; help; exit 1 ;;
     esac
@@ -63,51 +76,34 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
     exit 1
 fi
 
-# Validate goto step
-VALID_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade")
-IS_VALID_STEP=false
-for step in "${VALID_STEPS[@]}"; do
-    if [[ "$GOTO_STEP" == "$step" ]]; then
-        IS_VALID_STEP=true
-        break
-    fi
-done
+# Determine steps to run
+ALL_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade" "destroy")
+STEPS_TO_RUN=()
 
-if [[ "$IS_VALID_STEP" == "false" ]]; then
-    echo "Error: Invalid goto step '$GOTO_STEP'. Valid steps: ${VALID_STEPS[*]}" >&2
-    exit 1
-fi
-
-# Determine if we should run a step
-should_run() {
-    local step_order=("${VALID_STEPS[@]}")
-    local current_step="$1"
-    
-    # If GOTO_STEP matches current_step, we start running
-    if [[ "$GOTO_STEP" == "$current_step" ]]; then
-        return 0
-    fi
-    
-    # Find index of goto step and current step
-    local goto_idx=-1
-    local current_idx=-1
-    
-    for i in "${!step_order[@]}"; do
-        if [[ "${step_order[$i]}" == "$GOTO_STEP" ]]; then
-            goto_idx=$i
+if [[ -n "$STEPS" ]]; then
+    IFS=',' read -ra ADDR <<< "$STEPS"
+    for i in "${ADDR[@]}"; do
+        STEPS_TO_RUN+=("$i")
+    done
+elif [[ -n "$GOTO_STEP" ]]; then
+    # Legacy goto support
+    FOUND=false
+    for step in "${ALL_STEPS[@]}"; do
+        if [[ "$step" == "$GOTO_STEP" ]]; then
+            FOUND=true
         fi
-        if [[ "${step_order[$i]}" == "$current_step" ]]; then
-            current_idx=$i
+        if [[ "$FOUND" == "true" ]]; then
+            STEPS_TO_RUN+=("$step")
         fi
     done
-    
-    # Run if current step is after or equal to goto step
-    if [[ $current_idx -ge $goto_idx ]]; then
-        return 0
-    else
-        return 1
+    if [[ "$FOUND" == "false" ]]; then
+        echo "Error: Invalid goto step '$GOTO_STEP'. Valid steps: ${ALL_STEPS[*]}" >&2
+        exit 1
     fi
-}
+else
+    # Default steps
+    STEPS_TO_RUN=("${ALL_STEPS[@]}")
+fi
 
 # Check requirements
 command -v juju >/dev/null 2>&1 || { echo "juju is required but not installed."; exit 1; }
@@ -120,11 +116,48 @@ echo "=== Starting deployment test ==="
 echo "Mode: $MODE"
 echo "Shared Storage: $SHARED_STORAGE"
 echo "Model: $MODEL_NAME"
-echo "Starting from step: $GOTO_STEP"
+echo "Steps: ${STEPS_TO_RUN[*]}"
 
-# Cleanup function
-cleanup() {
+# Setup shared path variable
+if [[ "$SHARED_STORAGE" == "lxc" ]]; then
+    SHARED_PATH="/tmp/${MODEL_NAME}-shared"
+fi
+
+# Helper variables
+if [[ "$MODE" == "auto" ]]; then
+    APP_NAME="concourse-ci"
+    LEADER="$APP_NAME/leader"
+else
+    WEB_APP="concourse-web"
+    WORKER_APP="concourse-worker"
+    LEADER="$WEB_APP/leader"
+fi
+
+# Cleanup function (used by trap and destroy step)
+cleanup_model() {
+    echo "=== Cleaning up ==="
+    echo "Destroying model $MODEL_NAME..."
+    echo "$MODEL_NAME" | juju destroy-model "$MODEL_NAME" --destroy-storage --force --no-wait || true
+    
+    # Cleanup temp files
+    rm -f verify-gpu.yml task.yml verify-mounts.yml verify-tagged.yml fly admin-password.txt concourse-ip.txt 2>/dev/null
+    rm -rf /tmp/config-test-mount /tmp/config-test-mount-writable 2>/dev/null
+    
+    if [[ "$SHARED_STORAGE" == "lxc" && -n "$SHARED_PATH" ]]; then
+        echo "Removing shared storage directory..."
+        rm -rf "$SHARED_PATH" 2>/dev/null || echo "Warning: Failed to remove $SHARED_PATH"
+    fi
+    
+    echo "Cleanup complete."
+}
+
+# Trap exit for cleanup
+trap_cleanup() {
     exit_code=$?
+    if [[ "$DESTROYED" == "true" ]]; then
+        exit $exit_code
+    fi
+    
     if [[ "$SKIP_CLEANUP" == "true" ]]; then
         echo ""
         echo "Skipping cleanup as requested."
@@ -132,38 +165,67 @@ cleanup() {
         echo "  juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait -y"
     else
         echo ""
-        echo "=== Cleaning up ==="
-        echo "Destroying model $MODEL_NAME..."
-        echo "$MODEL_NAME" | juju destroy-model "$MODEL_NAME" --destroy-storage --force --no-wait || true
-        
-        # Cleanup temp files
-        rm -f verify-gpu.yml task.yml verify-mounts.yml verify-tagged.yml fly admin-password.txt concourse-ip.txt 2>/dev/null
-        rm -rf /tmp/config-test-mount /tmp/config-test-mount-writable 2>/dev/null
-        
-        if [[ "$SHARED_STORAGE" == "lxc" && -n "$SHARED_PATH" ]]; then
-            echo "Removing shared storage directory..."
-            rm -rf "$SHARED_PATH" 2>/dev/null || echo "Warning: Failed to remove $SHARED_PATH"
-        fi
-        
-        echo "Cleanup complete."
+        cleanup_model
     fi
     exit $exit_code
 }
+trap trap_cleanup EXIT
 
-# Trap exit for cleanup
-trap cleanup EXIT
+# Helper to ensure CLI is set up
+ensure_cli() {
+    if [[ -f "fly" && -n "$PASSWORD" && -n "$IP" ]]; then
+        return
+    fi
+    
+    echo "=== Setting up CLI ==="
+    
+    # Get password if missing
+    if [[ -z "$PASSWORD" ]]; then
+        PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
+        if [[ -z "$PASSWORD" ]]; then
+            echo "Error: Failed to retrieve admin password."
+            exit 1
+        fi
+    fi
 
-# Setup shared path variable (needed for verify steps even if skipped deploy)
-if [[ "$SHARED_STORAGE" == "lxc" ]]; then
-    SHARED_PATH="/tmp/${MODEL_NAME}-shared"
-fi
+    # Get IP if missing
+    if [[ -z "$IP" ]]; then
+        IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
+        if [[ "$IP" == "null" || -z "$IP" ]]; then
+            echo "Error: Could not determine Concourse IP."
+            exit 1
+        fi
+    fi
 
-if should_run "deploy"; then
+    # Download fly if missing
+    if [[ ! -f "fly" ]]; then
+        echo "Downloading fly CLI from http://$IP:8080..."
+        for i in {1..5}; do
+            if curl -Lo fly "http://${IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent; then
+                echo "Fly CLI downloaded."
+                chmod +x ./fly
+                break
+            fi
+            echo "Waiting for API to be ready (attempt $i/5)..."
+            sleep 10
+        done
+        if [[ ! -f "fly" ]]; then
+            echo "Error: Failed to download fly CLI."
+            exit 1
+        fi
+    fi
+
+    # Login
+    echo "Logging in to Concourse..."
+    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
+}
+
+# Step functions
+step_deploy() {
     # Check/Create Model
     if juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; then
         echo "Cleaning up existing model $MODEL_NAME..."
         echo "$MODEL_NAME" | juju destroy-model "$MODEL_NAME" --destroy-storage --force --no-wait
-        # Wait for model to disappear (simple loop)
         echo "Waiting for model removal..."
         while juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; do
             sleep 2
@@ -200,7 +262,6 @@ if should_run "deploy"; then
     fi
 
     if [[ "$MODE" == "auto" ]]; then
-        APP_NAME="concourse-ci"
         echo "Deploying Concourse (auto mode) with 2 units..."
         juju deploy "${DEPLOY_SOURCE[@]}" "$APP_NAME" -n 2 \
             --config mode=auto \
@@ -214,9 +275,6 @@ if should_run "deploy"; then
         juju relate "$APP_NAME:postgresql" postgresql:database
 
     elif [[ "$MODE" == "web+worker" ]]; then
-        WEB_APP="concourse-web"
-        WORKER_APP="concourse-worker"
-        
         echo "Deploying Concourse Web..."
         juju deploy "${DEPLOY_SOURCE[@]}" "$WEB_APP" \
             --config mode=web \
@@ -262,21 +320,9 @@ if should_run "deploy"; then
         sleep 60
         juju status -m "$MODEL_NAME"
     fi
-else
-    echo "Skipping deploy step..."
-fi
+}
 
-# Define app names even if deploy skipped (needed for verification)
-if [[ "$MODE" == "auto" ]]; then
-    APP_NAME="concourse-ci"
-    LEADER="$APP_NAME/leader"
-else
-    WEB_APP="concourse-web"
-    WORKER_APP="concourse-worker"
-    LEADER="$WEB_APP/leader"
-fi
-
-if should_run "verify"; then
+step_verify() {
     # Post-deployment info
     echo "=== Deployment Ready ==="
     juju status -m "$MODEL_NAME"
@@ -290,42 +336,7 @@ if should_run "verify"; then
          juju exec --unit "$WORKER_APP/0" -- systemctl status concourse-worker || echo "WARNING: concourse-worker not running on worker unit"
     fi
 
-    echo "=== Setting up CLI ==="
-    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
-    
-    if [[ -z "$PASSWORD" ]]; then
-        echo "Error: Failed to retrieve admin password. Full output:"
-        juju run "$LEADER" get-admin-password
-        exit 1
-    fi
-
-    IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
-
-    if [[ "$IP" == "null" || -z "$IP" ]]; then
-        echo "Error: Could not determine Concourse IP."
-        exit 1
-    fi
-
-    echo "Downloading fly CLI from http://$IP:8080..."
-    # Retry curl a few times as the API might take a moment to come up fully
-    for i in {1..5}; do
-        if curl -Lo fly "http://${IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent; then
-            echo "Fly CLI downloaded."
-            break
-        fi
-        echo "Waiting for API to be ready (attempt $i/5)..."
-        sleep 10
-    done
-
-    if [[ ! -f "fly" ]]; then
-        echo "Error: Failed to download fly CLI."
-        exit 1
-    fi
-
-    chmod +x ./fly
-
-    echo "Logging in to Concourse..."
-    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" || (echo "Concourse login failed" && juju run "$LEADER" get-admin-password && exit 1)
+    ensure_cli
 
     echo "=== Verifying System ==="
     echo "Checking registered workers..."
@@ -358,15 +369,12 @@ EOF
 
     if [[ "$SHARED_STORAGE" == "lxc" ]]; then
         echo "=== Verifying Shared Storage Binaries ==="
-        # Check if binaries exist in the shared path on the host
-        # (Assuming we are running on the LXD host)
         SHARED_BIN="$SHARED_PATH/bin/concourse"
         if [[ -f "$SHARED_BIN" ]]; then
             echo "✓ Binary found in shared storage: $SHARED_BIN"
             ls -lh "$SHARED_BIN"
         else
             echo "✗ Binary NOT found in shared storage at $SHARED_BIN"
-            # Don't fail the script if running remotely/in VM where path isn't local, but usually this script is for local dev
             if [[ -d "$SHARED_PATH" ]]; then
                  echo "Directory contents:"
                  ls -la "$SHARED_PATH"
@@ -375,7 +383,6 @@ EOF
 
         echo "=== Verifying Shared Storage Logs ==="
         if [[ "$MODE" == "auto" ]]; then
-            # Check if non-leader unit reused binaries
             echo "Checking if worker reused binaries..."
             juju debug-log --replay --include "$APP_NAME/1" --no-tail | grep -E "Binaries .* already (installed|available)|Binaries .* are now available" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
         elif [[ "$MODE" == "web+worker" ]]; then
@@ -385,32 +392,11 @@ EOF
 
         echo "Checking for lock acquisition..."
         juju debug-log --replay --include "$APP_NAME" --no-tail | grep "acquiring download lock" && echo "✓ Lock acquisition verified" || echo "WARNING: Lock acquisition log not found"
-
     fi
-else
-    echo "Skipping verify step..."
-    # Need to setup fly and password/IP for subsequent steps if skipping verify
-    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
-    
-    if [[ -z "$PASSWORD" ]]; then
-        echo "Error: Failed to retrieve admin password. Full output:"
-        juju run "$LEADER" get-admin-password
-        exit 1
-    fi
+}
 
-    IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
-    # Assuming fly is already there or we need it? 
-    # If verify skipped, we might not have fly.
-    # Let's ensure fly login if we are going to run mounts/tagged/upgrade
-    if [[ ! -f "fly" ]]; then
-         echo "Downloading fly CLI (required for later steps)..."
-         curl -Lo fly "http://${IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent || true
-         chmod +x ./fly 2>/dev/null || true
-    fi
-    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
-fi
-
-if should_run "mounts"; then
+step_mounts() {
+    ensure_cli
     echo "=== Verifying Folder Mounts ==="
     # Create test directories
     mkdir -p /tmp/config-test-mount
@@ -421,9 +407,7 @@ if should_run "mounts"; then
 
     # Find a worker unit to test mounts on
     if [[ "$MODE" == "auto" ]]; then
-        # Pick a unit that is NOT the leader (so it's a worker)
         UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | to_entries[] | select(.value.leader != true) | .key" | head -1)
-        # Fallback if no worker found (shouldn't happen with n=2)
         if [[ -z "$UNIT_TO_TEST" ]]; then
              echo "Error: Could not find a worker unit (non-leader) in auto mode."
              exit 1
@@ -467,11 +451,10 @@ EOF
     else
         echo "✗ Mount verification failed"
     fi
-else
-    echo "Skipping mounts step..."
-fi
+}
 
-if should_run "tagged"; then
+step_tagged() {
+    ensure_cli
     echo "=== Verifying Tagged Worker ==="
     echo "Configuring worker with tag 'special-worker'..."
     if [[ "$MODE" == "auto" ]]; then
@@ -504,11 +487,10 @@ EOF
     else
         echo "✗ Tagged task execution failed"
     fi
-else
-    echo "Skipping tagged step..."
-fi
+}
 
-if should_run "gpu"; then
+step_gpu() {
+    ensure_cli
     echo "=== Checking for GPU Capability ==="
     HAS_GPU=false
     if command -v nvidia-smi >/dev/null 2>&1; then
@@ -534,12 +516,9 @@ if should_run "gpu"; then
         fi
 
         # 2. Pass GPU to LXD container (if on LXD)
-        # We assume LXD is being used if we can find the container
         echo "Configuring LXD GPU pass-through..."
         
-        # Find worker unit
         if [[ "$MODE" == "auto" ]]; then
-            # Pick a unit that is NOT the leader (so it's a worker)
             UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | to_entries[] | select(.value.leader != true) | .key" | head -1)
         else
             UNIT_TO_TEST=$(juju status "$WORKER_APP" --format=json | jq -r ".applications.\"$WORKER_APP\".units | keys[]" | head -1)
@@ -554,7 +533,7 @@ if should_run "gpu"; then
             lxc config device remove "$CONTAINER" gpu0 >/dev/null 2>&1 || true
             lxc config device add "$CONTAINER" gpu0 gpu
         else
-            echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through (might be on bare metal or VM)."
+            echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through."
         fi
 
         # 3. Wait for configuration
@@ -572,8 +551,7 @@ if should_run "gpu"; then
         if echo "$STATUS_OUTPUT" | grep -q "GPU"; then
             echo "✓ Unit status reports GPU"
         else
-            echo "WARNING: Unit status does not report GPU. Output:"
-            echo "$STATUS_OUTPUT"
+            echo "WARNING: Unit status does not report GPU."
         fi
 
         # 5. Run GPU Task
@@ -595,16 +573,10 @@ run:
         exit 0
     else
         echo "No /dev/nvidia* devices found!"
-        # Check /dev for any nv devices
         ls -la /dev/ | grep nv || true
         exit 1
     fi
 EOF
-
-        # We use --tag=gpu because the charm should have tagged the worker
-        # But we need to be sure the worker has picked up the tag.
-        # The charm adds tags: [gpu] when enabled.
-        # Let's try running with tag.
         
         echo "Checking if worker is tagged..."
         ./fly -t test workers
@@ -613,19 +585,15 @@ EOF
             echo "✓ GPU task execution passed"
         else
             echo "✗ GPU task execution failed"
-            # Fallback: try without tag if maybe tagging failed but device is there?
-            # But the point is to test the integration.
             exit 1
         fi
 
     else
         echo "No GPU detected on host. Skipping GPU tests."
     fi
-else
-    echo "Skipping gpu step..."
-fi
+}
 
-if should_run "upgrade"; then
+step_upgrade() {
     echo "=== Verifying Upgrade ==="
     UPGRADE_VERSION="7.14.3"
     echo "Upgrading to $UPGRADE_VERSION..."
@@ -646,7 +614,6 @@ if should_run "upgrade"; then
     fi
 
     echo "Verifying version in status..."
-    # Strict verification matching CI
     if [[ "$MODE" == "auto" ]]; then
         APPS=("$APP_NAME")
     else
@@ -676,12 +643,30 @@ if should_run "upgrade"; then
             echo "✗ Shared storage version mismatch or file missing"
         fi
     fi
-else
-    echo "Skipping upgrade step..."
-fi
+}
+
+step_destroy() {
+    cleanup_model
+    DESTROYED=true
+}
+
+# Main execution loop
+for step in "${STEPS_TO_RUN[@]}"; do
+    case $step in
+        deploy) step_deploy ;;
+        verify) step_verify ;;
+        mounts) step_mounts ;;
+        tagged) step_tagged ;;
+        gpu) step_gpu ;;
+        upgrade) step_upgrade ;;
+        destroy) step_destroy ;;
+        *) echo "Warning: Unknown step '$step'";;
+    esac
+done
 
 echo ""
-echo "Access Info:"
+echo "Test execution complete."
+echo "Access Info (if model still exists):"
 echo "  URL:      http://$IP:8080"
 echo "  Username: admin"
 echo "  Password: $PASSWORD"
