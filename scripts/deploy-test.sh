@@ -26,7 +26,6 @@ help() {
     echo "Examples:"
     echo "  $0 --mode=web+worker --shared-storage=lxc"
     echo "  $0 --goto=verify --skip-cleanup"
-    exit 0
 }
 
 # Default values
@@ -42,8 +41,8 @@ while [[ "$#" -gt 0 ]]; do
         --shared-storage=*) SHARED_STORAGE="${1#*=}"; shift ;;
         --skip-cleanup) SKIP_CLEANUP="true"; shift ;;
         --goto=*) GOTO_STEP="${1#*=}"; shift ;;
-        --help|-h) help ;;
-        *) echo "Unknown option: $1"; help ;;
+        --help|-h) help; exit 0 ;;
+        *) echo "Error: Unknown option: $1" >&2; help; exit 1 ;;
     esac
 done
 
