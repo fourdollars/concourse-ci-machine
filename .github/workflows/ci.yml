@@ -628,7 +628,7 @@ jobs:
         run: |
           juju status -m concourse-shared
           echo "Verifying binaries in shared storage..."
-          ls -lh $(pwd)/concourse-shared/bin/concourse
+          ls -lh $(pwd)/concourse-shared/bin/concourse || (find $(pwd)/concourse-shared -name concourse; echo "❌ Failed to find concourse binary" && exit 1)
           
       - name: Add second unit
         run: |
@@ -838,7 +838,7 @@ jobs:
         run: |
           juju status -m concourse-ss-ww
           echo "Verifying binaries in shared storage..."
-          ls -lh $(pwd)/concourse-shared-ww/bin/concourse
+          ls -lh $(pwd)/concourse-shared-ww/bin/concourse || (find $(pwd)/concourse-shared-ww -name concourse; echo "❌ Failed to find concourse binary" && exit 1)
 
       - name: Verify Deployment
         run: |

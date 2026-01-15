@@ -377,14 +377,14 @@ EOF
         if [[ "$MODE" == "auto" ]]; then
             # Check if non-leader unit reused binaries
             echo "Checking if worker reused binaries..."
-            juju debug-log --replay --include "$APP_NAME/1" --no-tail | grep "Binaries .* already installed" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
+            juju debug-log --replay --include "$APP_NAME/1" --no-tail | grep -E "Binaries .* already (installed|available)|Binaries .* are now available" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
         elif [[ "$MODE" == "web+worker" ]]; then
              echo "Checking if worker reused binaries..."
-             juju debug-log --replay --include "$WORKER_APP/0" --no-tail | grep "Binaries .* already installed" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
+             juju debug-log --replay --include "$WORKER_APP/0" --no-tail | grep -E "Binaries .* already (installed|available)|Binaries .* are now available" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
         fi
 
         echo "Checking for lock acquisition..."
-        juju debug-log --replay --include "$APP_NAME" --no-tail | grep "Acquiring shared storage lock" && echo "✓ Lock acquisition verified" || echo "WARNING: Lock acquisition log not found"
+        juju debug-log --replay --include "$APP_NAME" --no-tail | grep "acquiring download lock" && echo "✓ Lock acquisition verified" || echo "WARNING: Lock acquisition log not found"
 
     fi
 else
@@ -650,7 +650,27 @@ if should_run "upgrade"; then
     fi
 
     echo "Verifying version in status..."
-    juju status -m "$MODEL_NAME" | grep "$UPGRADE_VERSION" || echo "WARNING: Upgrade version not seen in status"
+    # Strict verification matching CI
+    if [[ "$MODE" == "auto" ]]; then
+        APPS=("$APP_NAME")
+    else
+        APPS=("$WEB_APP" "$WORKER_APP")
+    fi
+
+    for APP in "${APPS[@]}"; do
+        echo "Checking app: $APP"
+        UNIT_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | length")
+        VERSION_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | to_entries[].value.\"workload-status\".message" | grep -c "v$UPGRADE_VERSION" || true)
+        
+        echo "Total units: $UNIT_COUNT, Units at v$UPGRADE_VERSION: $VERSION_COUNT"
+        
+        if [[ "$VERSION_COUNT" -ne "$UNIT_COUNT" ]]; then
+            echo "❌ Upgrade verification failed for $APP: not all units upgraded"
+            juju status -m "$MODEL_NAME" "$APP"
+            exit 1
+        fi
+    done
+    echo "✅ All units upgraded to $UPGRADE_VERSION"
 
     if [[ "$SHARED_STORAGE" == "lxc" ]]; then
         echo "Checking shared storage version file..."
