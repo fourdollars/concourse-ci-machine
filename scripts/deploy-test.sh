@@ -144,12 +144,12 @@ fi
 
 if should_run "deploy"; then
     # Check/Create Model
-    if juju models --format=json | jq -r '.models[].name' | grep -q "^${MODEL_NAME}$"; then
+    if juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; then
         echo "Cleaning up existing model $MODEL_NAME..."
         echo "$MODEL_NAME" | juju destroy-model "$MODEL_NAME" --destroy-storage --force --no-wait
         # Wait for model to disappear (simple loop)
         echo "Waiting for model removal..."
-        while juju models --format=json | jq -r '.models[].name' | grep -q "^${MODEL_NAME}$"; do
+        while juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; do
             sleep 2
         done
     fi
@@ -455,11 +455,9 @@ if should_run "upgrade"; then
 
     if [[ "$MODE" == "auto" ]]; then
         juju config "$APP_NAME" version="$UPGRADE_VERSION"
-        juju run "$APP_NAME/leader" upgrade version="$UPGRADE_VERSION"
     else
         juju config "$WEB_APP" version="$UPGRADE_VERSION"
         juju config "$WORKER_APP" version="$UPGRADE_VERSION"
-        juju run "$WEB_APP/leader" upgrade version="$UPGRADE_VERSION"
     fi
 
     echo "Waiting for upgrade..."
