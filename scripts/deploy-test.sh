@@ -48,18 +48,33 @@ done
 
 # Validate arguments
 if [[ "$MODE" != "auto" && "$MODE" != "web+worker" ]]; then
-    echo "Error: Invalid mode '$MODE'. Must be 'auto' or 'web+worker'."
+    echo "Error: Invalid mode '$MODE'. Must be 'auto' or 'web+worker'." >&2
     exit 1
 fi
 
 if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
-    echo "Error: Invalid shared-storage '$SHARED_STORAGE'. Must be 'none' or 'lxc'."
+    echo "Error: Invalid shared-storage '$SHARED_STORAGE'. Must be 'none' or 'lxc'." >&2
+    exit 1
+fi
+
+# Validate goto step
+VALID_STEPS=("deploy" "verify" "mounts" "tagged" "upgrade")
+IS_VALID_STEP=false
+for step in "${VALID_STEPS[@]}"; do
+    if [[ "$GOTO_STEP" == "$step" ]]; then
+        IS_VALID_STEP=true
+        break
+    fi
+done
+
+if [[ "$IS_VALID_STEP" == "false" ]]; then
+    echo "Error: Invalid goto step '$GOTO_STEP'. Valid steps: ${VALID_STEPS[*]}" >&2
     exit 1
 fi
 
 # Determine if we should run a step
 should_run() {
-    local step_order=("deploy" "verify" "mounts" "tagged" "upgrade")
+    local step_order=("${VALID_STEPS[@]}")
     local current_step="$1"
     
     # If GOTO_STEP matches current_step, we start running
@@ -79,11 +94,6 @@ should_run() {
             current_idx=$i
         fi
     done
-    
-    if [[ $goto_idx -eq -1 ]]; then
-        echo "Error: Invalid goto step '$GOTO_STEP'. Valid steps: ${step_order[*]}"
-        exit 1
-    fi
     
     # Run if current step is after or equal to goto step
     if [[ $current_idx -ge $goto_idx ]]; then
