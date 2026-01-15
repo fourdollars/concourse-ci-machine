@@ -435,6 +435,22 @@ def download_and_install_concourse(charm, version: str):
     import urllib.request
     import tarfile
     import time
+    import subprocess
+    import re
+
+    # Idempotency check: if version already installed, skip
+    try:
+        if Path(CONCOURSE_BIN).exists():
+            result = subprocess.run([CONCOURSE_BIN, "-v"], capture_output=True, text=True)
+            output = (result.stdout or result.stderr or "").strip()
+            match = re.search(r"v?(\d+\.\d+\.\d+)", output)
+            if match and match.group(1) == version:
+                 logger.info(f"Concourse {version} already installed, skipping download")
+                 charm.unit.status = MaintenanceStatus(f"Concourse {version} already installed")
+                 return version
+    except Exception as e:
+        logger.debug(f"Failed to check existing version: {e}")
+        # Proceed with download if check fails
 
     # Safety check: Verify /var/lib/concourse is writable if it exists
     # This prevents conflicts when shared storage is mounted but config says "none"
