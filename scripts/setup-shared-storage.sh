@@ -211,10 +211,18 @@ for UNIT_INFO in "${ALL_UNITS[@]}"; do
     print_info "Configuring shared storage for: $UNIT"
     
     # Find LXC container by machine ID
-    # Pattern: juju-<model>-<machine-id>
-    CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+    # Try to get exact instance-id from Juju status first
+    CONTAINER=$(echo "$APP_STATUS" | jq -r '.machines."'"$MACHINE"'".["instance-id"]' 2>/dev/null)
     
-    if [ -z "$CONTAINER" ]; then
+    # Fallback/Validation
+    if [ -z "$CONTAINER" ] || [ "$CONTAINER" = "null" ]; then
+        print_warn "  Could not determine instance-id from Juju status. Using fallback discovery..."
+        # Fallback: try to find container matching regex
+        # Note: This might match stale containers from other models if machine IDs overlap
+        CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+    fi
+    
+    if [ -z "$CONTAINER" ] || [ "$CONTAINER" = "null" ]; then
         print_error "  Container not found for machine $MACHINE"
         FAILED_COUNT=$((FAILED_COUNT + 1))
         echo ""
