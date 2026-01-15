@@ -664,6 +664,8 @@ step_upgrade() {
     fi
     
     ensure_cli
+    echo "Syncing fly CLI with new version..."
+    ./fly -t test sync
 }
 
 step_scale_out() {
