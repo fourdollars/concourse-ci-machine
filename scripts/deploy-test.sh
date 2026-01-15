@@ -644,16 +644,27 @@ step_upgrade() {
 
     for APP in "${APPS[@]}"; do
         echo "Checking app: $APP"
-        UNIT_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | length")
-        VERSION_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | to_entries[].value.\"workload-status\".message" | grep -c "v$UPGRADE_VERSION" || true)
         
-        echo "Total units: $UNIT_COUNT, Units at v$UPGRADE_VERSION: $VERSION_COUNT"
-        
-        if [[ "$VERSION_COUNT" -ne "$UNIT_COUNT" ]]; then
-            echo "❌ Upgrade verification failed for $APP: not all units upgraded"
-            juju status -m "$MODEL_NAME" "$APP"
-            exit 1
-        fi
+        # Retry loop for version check
+        MAX_RETRIES=60
+        for ((i=1; i<=MAX_RETRIES; i++)); do
+            UNIT_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | length")
+            VERSION_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | to_entries[].value.\"workload-status\".message" | grep -c "v$UPGRADE_VERSION" || true)
+            
+            echo "Attempt $i/$MAX_RETRIES: Total units: $UNIT_COUNT, Units at v$UPGRADE_VERSION: $VERSION_COUNT"
+            
+            if [[ "$VERSION_COUNT" -eq "$UNIT_COUNT" ]]; then
+                echo "✓ All units for $APP upgraded"
+                break
+            fi
+            
+            if [[ $i -eq $MAX_RETRIES ]]; then
+                echo "❌ Upgrade verification failed for $APP: not all units upgraded after $((MAX_RETRIES * 5))s"
+                juju status -m "$MODEL_NAME" "$APP"
+                exit 1
+            fi
+            sleep 5
+        done
     done
     echo "✅ All units upgraded to $UPGRADE_VERSION"
 
