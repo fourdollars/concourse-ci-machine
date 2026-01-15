@@ -372,6 +372,20 @@ EOF
                  ls -la "$SHARED_PATH"
             fi
         fi
+
+        echo "=== Verifying Shared Storage Logs ==="
+        if [[ "$MODE" == "auto" ]]; then
+            # Check if non-leader unit reused binaries
+            echo "Checking if worker reused binaries..."
+            juju debug-log --replay --include "$APP_NAME/1" --no-tail | grep "Binaries .* already installed" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
+        elif [[ "$MODE" == "web+worker" ]]; then
+             echo "Checking if worker reused binaries..."
+             juju debug-log --replay --include "$WORKER_APP/0" --no-tail | grep "Binaries .* already installed" && echo "✓ Worker reused binaries" || echo "WARNING: Worker binary reuse log not found"
+        fi
+
+        echo "Checking for lock acquisition..."
+        juju debug-log --replay --include "$APP_NAME" --no-tail | grep "Acquiring shared storage lock" && echo "✓ Lock acquisition verified" || echo "WARNING: Lock acquisition log not found"
+
     fi
 else
     echo "Skipping verify step..."
