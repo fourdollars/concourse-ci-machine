@@ -458,6 +458,16 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 ["ln", "-sf", str(wrapper_path), str(concourse_runc)],
                 check=True
             )
+            
+            # Also update /var/lib/concourse/bin/runc to point to wrapper
+            # This is crucial because Concourse uses this path by default
+            var_lib_runc = Path("/var/lib/concourse/bin/runc")
+            logger.info(f"Creating symlink: {var_lib_runc} -> {wrapper_path}")
+            subprocess.run(
+                ["ln", "-sf", str(wrapper_path), str(var_lib_runc)],
+                check=True
+            )
+
             logger.info("GPU wrapper installed and symlinked successfully")
                 
         except subprocess.TimeoutExpired:

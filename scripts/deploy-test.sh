@@ -22,7 +22,7 @@ help() {
     echo "  --skip-cleanup                Do not destroy model after test (default: false)"
     echo ""
     echo "  --goto=[step]                 Start from specific step (default: deploy)"
-    echo "                                Steps: deploy, verify, mounts, tagged, upgrade"
+    echo "                                Steps: deploy, verify, mounts, tagged, gpu, upgrade"
     echo ""
     echo "  --help, -h                    Show this help message"
     echo ""
@@ -64,7 +64,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Validate goto step
-VALID_STEPS=("deploy" "verify" "mounts" "tagged" "upgrade")
+VALID_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade")
 IS_VALID_STEP=false
 for step in "${VALID_STEPS[@]}"; do
     if [[ "$GOTO_STEP" == "$step" ]]; then
@@ -201,8 +201,8 @@ if should_run "deploy"; then
 
     if [[ "$MODE" == "auto" ]]; then
         APP_NAME="concourse-ci"
-        echo "Deploying Concourse (auto mode)..."
-        juju deploy "${DEPLOY_SOURCE[@]}" "$APP_NAME" \
+        echo "Deploying Concourse (auto mode) with 2 units..."
+        juju deploy "${DEPLOY_SOURCE[@]}" "$APP_NAME" -n 2 \
             --config mode=auto \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
@@ -407,7 +407,13 @@ if should_run "mounts"; then
 
     # Find a worker unit to test mounts on
     if [[ "$MODE" == "auto" ]]; then
-        UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | keys[]" | head -1)
+        # Pick a unit that is NOT the leader (so it's a worker)
+        UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | to_entries[] | select(.value.leader != true) | .key" | head -1)
+        # Fallback if no worker found (shouldn't happen with n=2)
+        if [[ -z "$UNIT_TO_TEST" ]]; then
+             echo "Error: Could not find a worker unit (non-leader) in auto mode."
+             exit 1
+        fi
     else
         UNIT_TO_TEST=$(juju status "$WORKER_APP" --format=json | jq -r ".applications.\"$WORKER_APP\".units | keys[]" | head -1)
     fi
@@ -486,6 +492,123 @@ EOF
     fi
 else
     echo "Skipping tagged step..."
+fi
+
+if should_run "gpu"; then
+    echo "=== Checking for GPU Capability ==="
+    HAS_GPU=false
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        HAS_GPU=true
+        echo "Found nvidia-smi on host."
+    elif ls /dev/nvidia* >/dev/null 2>&1; then
+        HAS_GPU=true
+        echo "Found /dev/nvidia* devices on host."
+    fi
+
+    if [[ "$HAS_GPU" == "true" ]]; then
+        echo "GPU detected. Enabling GPU support..."
+        
+        # 1. Enable GPU config
+        if [[ "$MODE" == "auto" ]]; then
+            echo "Enabling gpu on $APP_NAME..."
+            juju config "$APP_NAME" enable-gpu=true
+            APP_OR_WORKER="$APP_NAME"
+        else
+            echo "Enabling gpu on $WORKER_APP..."
+            juju config "$WORKER_APP" enable-gpu=true
+            APP_OR_WORKER="$WORKER_APP"
+        fi
+
+        # 2. Pass GPU to LXD container (if on LXD)
+        # We assume LXD is being used if we can find the container
+        echo "Configuring LXD GPU pass-through..."
+        
+        # Find worker unit
+        if [[ "$MODE" == "auto" ]]; then
+            # Pick a unit that is NOT the leader (so it's a worker)
+            UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | to_entries[] | select(.value.leader != true) | .key" | head -1)
+        else
+            UNIT_TO_TEST=$(juju status "$WORKER_APP" --format=json | jq -r ".applications.\"$WORKER_APP\".units | keys[]" | head -1)
+        fi
+
+        MACHINE=$(juju status "$UNIT_TO_TEST" --format=json | jq -r ".applications.\"${UNIT_TO_TEST%%/*}\".units.\"$UNIT_TO_TEST\".machine")
+        CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+        
+        if [[ -n "$CONTAINER" ]]; then
+            echo "Found container $CONTAINER for unit $UNIT_TO_TEST"
+            echo "Adding GPU device..."
+            lxc config device remove "$CONTAINER" gpu0 >/dev/null 2>&1 || true
+            lxc config device add "$CONTAINER" gpu0 gpu
+        else
+            echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through (might be on bare metal or VM)."
+        fi
+
+        # 3. Wait for configuration
+        echo "Waiting for GPU configuration to apply..."
+        sleep 15
+        if command -v juju-wait >/dev/null 2>&1; then
+            juju-wait -m "$MODEL_NAME" -t 600
+        else
+            sleep 60
+        fi
+        
+        # 4. Verify GPU status
+        echo "Verifying GPU status..."
+        STATUS_OUTPUT=$(juju status "$APP_OR_WORKER")
+        if echo "$STATUS_OUTPUT" | grep -q "GPU"; then
+            echo "✓ Unit status reports GPU"
+        else
+            echo "WARNING: Unit status does not report GPU. Output:"
+            echo "$STATUS_OUTPUT"
+        fi
+
+        # 5. Run GPU Task
+        echo "Executing GPU test task..."
+        cat <<EOF > verify-gpu.yml
+platform: linux
+image_resource:
+  type: registry-image
+  source: {repository: busybox}
+run:
+  path: sh
+  args:
+  - -c
+  - |
+    echo "Checking for NVIDIA devices in container..."
+    if ls /dev/nvidia* >/dev/null 2>&1; then
+        echo "Found devices:"
+        ls -la /dev/nvidia*
+        exit 0
+    else
+        echo "No /dev/nvidia* devices found!"
+        # Check /dev for any nv devices
+        ls -la /dev/ | grep nv || true
+        exit 1
+    fi
+EOF
+
+        # We use --tag=gpu because the charm should have tagged the worker
+        # But we need to be sure the worker has picked up the tag.
+        # The charm adds tags: [gpu] when enabled.
+        # Let's try running with tag.
+        
+        echo "Checking if worker is tagged..."
+        ./fly -t test workers
+        
+        if ./fly -t test execute -c verify-gpu.yml --tag=gpu; then
+            echo "✓ GPU task execution passed"
+        else
+            echo "✗ GPU task execution failed"
+            # Fallback: try without tag if maybe tagging failed but device is there?
+            # But the point is to test the integration.
+            exit 1
+        fi
+
+    else
+        echo "No GPU detected on host. Skipping GPU tests."
+    fi
+else
+    echo "Skipping gpu step..."
 fi
 
 if should_run "upgrade"; then
