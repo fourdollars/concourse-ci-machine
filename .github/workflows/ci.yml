@@ -606,7 +606,11 @@ jobs:
 
       - name: Wait for initial deployment
         run: |
-          timeout 900 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage mount"; do sleep 5; juju debug-log -n 30; juju status -m concourse-shared; juju status; done'
+          juju debug-log &
+          PID="$!"
+          timeout 600 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage mount"; do sleep 5; juju status -m concourse-shared; done'
+          kill "$PID"
+          fg
 
       - name: Configure shared storage (initial)
         run: |
