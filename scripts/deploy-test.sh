@@ -2,9 +2,31 @@
 set -e
 
 # Usage function
-usage() {
-    echo "Usage: $0 --mode=[auto|web+worker] --shared-storage=[none|lxc] [--skip-cleanup]"
-    exit 1
+help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Deploy and test Concourse CI charm locally using Juju."
+    echo ""
+    echo "Options:"
+    echo "  --mode=[auto|web+worker]      Deployment mode (default: auto)"
+    echo "                                - auto: Single app scaling (web+worker roles)"
+    echo "                                - web+worker: Separate web and worker apps"
+    echo ""
+    echo "  --shared-storage=[none|lxc]   Shared storage configuration (default: none)"
+    echo "                                - none: No shared storage"
+    echo "                                - lxc: Setup shared storage on LXD host"
+    echo ""
+    echo "  --skip-cleanup                Do not destroy model after test (default: false)"
+    echo ""
+    echo "  --goto=[step]                 Start from specific step (default: deploy)"
+    echo "                                Steps: deploy, verify, mounts, tagged, upgrade"
+    echo ""
+    echo "  --help, -h                    Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --mode=web+worker --shared-storage=lxc"
+    echo "  $0 --goto=verify --skip-cleanup"
+    exit 0
 }
 
 # Default values
@@ -20,7 +42,8 @@ while [[ "$#" -gt 0 ]]; do
         --shared-storage=*) SHARED_STORAGE="${1#*=}"; shift ;;
         --skip-cleanup) SKIP_CLEANUP="true"; shift ;;
         --goto=*) GOTO_STEP="${1#*=}"; shift ;;
-        *) usage ;;
+        --help|-h) help ;;
+        *) echo "Unknown option: $1"; help ;;
     esac
 done
 
