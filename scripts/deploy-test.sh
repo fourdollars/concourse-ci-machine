@@ -291,7 +291,14 @@ if should_run "verify"; then
     fi
 
     echo "=== Setting up CLI ==="
-    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "N/A")
+    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
+    
+    if [[ -z "$PASSWORD" ]]; then
+        echo "Error: Failed to retrieve admin password. Full output:"
+        juju run "$LEADER" get-admin-password
+        exit 1
+    fi
+
     IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
 
     if [[ "$IP" == "null" || -z "$IP" ]]; then
@@ -369,7 +376,14 @@ EOF
 else
     echo "Skipping verify step..."
     # Need to setup fly and password/IP for subsequent steps if skipping verify
-    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "N/A")
+    PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
+    
+    if [[ -z "$PASSWORD" ]]; then
+        echo "Error: Failed to retrieve admin password. Full output:"
+        juju run "$LEADER" get-admin-password
+        exit 1
+    fi
+
     IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
     # Assuming fly is already there or we need it? 
     # If verify skipped, we might not have fly.

@@ -118,6 +118,11 @@ jobs:
         run: |
           juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
+          if [ ! -s admin-password.txt ]; then
+            echo "Password not found, dumping full action output:"
+            juju run concourse-ci/leader get-admin-password
+            exit 1
+          fi
 
       - name: Get Concourse IP
         run: |
@@ -370,6 +375,11 @@ jobs:
         run: |
           juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
+          if [ ! -s admin-password.txt ]; then
+            echo "Password not found, dumping full action output:"
+            juju run web/leader get-admin-password
+            exit 1
+          fi
 
       - name: Get Concourse server IP
         run: |
@@ -657,6 +667,11 @@ jobs:
         run: |
           juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
+          if [ ! -s admin-password.txt ]; then
+            echo "Password not found, dumping full action output:"
+            juju run concourse-ci/leader get-admin-password
+            exit 1
+          fi
 
       - name: Get Concourse IP
         run: |
@@ -840,6 +855,11 @@ jobs:
         run: |
           juju run concourse-web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
+          if [ ! -s admin-password.txt ]; then
+            echo "Password not found, dumping full action output:"
+            juju run concourse-web/leader get-admin-password
+            exit 1
+          fi
 
       - name: Get Concourse IP
         run: |
