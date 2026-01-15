@@ -174,7 +174,17 @@ trap trap_cleanup EXIT
 
 # Helper to ensure CLI is set up
 ensure_cli() {
+    # Restore vars from files if present
+    if [[ -z "$PASSWORD" && -f "admin-password.txt" ]]; then
+        PASSWORD=$(cat admin-password.txt)
+    fi
+    if [[ -z "$IP" && -f "concourse-ip.txt" ]]; then
+        IP=$(cat concourse-ip.txt)
+    fi
+
     if [[ -f "fly" && -n "$PASSWORD" && -n "$IP" ]]; then
+        # Already setup, just ensure login
+        ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
         return
     fi
     
@@ -187,6 +197,7 @@ ensure_cli() {
             echo "Error: Failed to retrieve admin password."
             exit 1
         fi
+        echo "$PASSWORD" > admin-password.txt
     fi
 
     # Get IP if missing
@@ -196,6 +207,7 @@ ensure_cli() {
             echo "Error: Could not determine Concourse IP."
             exit 1
         fi
+        echo "$IP" > concourse-ip.txt
     fi
 
     # Download fly if missing
@@ -273,7 +285,7 @@ step_deploy() {
         juju deploy postgresql --channel "$POSTGRES_CHANNEL"
         
         echo "Relating..."
-        juju relate "$APP_NAME:postgresql" postgresql:database
+        juju integrate "$APP_NAME" postgresql
 
     elif [[ "$MODE" == "web+worker" ]]; then
         echo "Deploying Concourse Web..."
@@ -292,8 +304,8 @@ step_deploy() {
         juju deploy postgresql --channel "$POSTGRES_CHANNEL"
         
         echo "Relating..."
-        juju relate "$WEB_APP:postgresql" postgresql:database
-        juju relate "$WEB_APP:web-tsa" "$WORKER_APP:worker-tsa"
+        juju integrate "$WEB_APP" postgresql
+        juju integrate "$WEB_APP:web-tsa" "$WORKER_APP:worker-tsa"
     fi
 
     # Shared Storage Setup
@@ -321,6 +333,9 @@ step_deploy() {
         sleep 60
         juju status -m "$MODEL_NAME"
     fi
+
+    # Ensure CLI is ready (and cache credentials)
+    ensure_cli
 }
 
 step_verify() {
@@ -644,6 +659,8 @@ step_upgrade() {
             echo "✗ Shared storage version mismatch or file missing"
         fi
     fi
+    
+    ensure_cli
 }
 
 step_scale_out() {
