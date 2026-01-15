@@ -160,10 +160,13 @@ trap_cleanup() {
     fi
     
     if [[ "$SKIP_CLEANUP" == "true" ]]; then
-        echo ""
-        echo "Skipping cleanup as requested."
-        echo "To clean up manually:"
-        echo "  juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait -y"
+        # Only show manual cleanup info if we ran deployment and aren't destroying
+        if [[ " ${STEPS_TO_RUN[*]} " =~ " deploy " ]] && [[ ! " ${STEPS_TO_RUN[*]} " =~ " destroy " ]]; then
+            echo ""
+            echo "Skipping cleanup as requested."
+            echo "To clean up manually:"
+            echo "  echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait"
+        fi
     else
         echo ""
         cleanup_model
@@ -761,8 +764,10 @@ done
 
 echo ""
 echo "Test execution complete."
-echo "Access Info (if model still exists):"
-echo "  URL:      http://$IP:8080"
-echo "  Username: admin"
-echo "  Password: $PASSWORD"
-echo ""
+if [[ "$SKIP_CLEANUP" == "true" ]]; then
+    echo "Access Info (if model still exists):"
+    echo "  URL:      http://$IP:8080"
+    echo "  Username: admin"
+    echo "  Password: $PASSWORD"
+    echo ""
+fi
