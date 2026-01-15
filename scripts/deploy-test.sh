@@ -240,7 +240,7 @@ if should_run "deploy"; then
     # Shared Storage Setup
     if [[ "$SHARED_STORAGE" == "lxc" ]]; then
         echo "Waiting for units to signal shared storage requirement..."
-        timeout 900 bash -c "while ! juju status -m $MODEL_NAME | grep -q 'Waiting for shared storage mount'; do sleep 5; done"
+        timeout 300 bash -c "while ! juju status -m $MODEL_NAME | grep -q 'Waiting for shared storage'; do sleep 5; done"
         
         mkdir -p "$SHARED_PATH"
         
