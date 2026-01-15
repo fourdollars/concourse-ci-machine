@@ -190,20 +190,19 @@ if should_run "deploy"; then
         STORAGE_ARGS+=("--config" "shared-storage=lxc")
     fi
 
-    DEPLOY_SOURCE=""
+    DEPLOY_SOURCE=()
     if [[ -n "$CHANNEL" ]]; then
         echo "Deploying from Charmhub channel: $CHANNEL"
-        DEPLOY_SOURCE="$CHARM_NAME --channel=$CHANNEL"
+        DEPLOY_SOURCE=("$CHARM_NAME" "--channel=$CHANNEL")
     else
         echo "Deploying from local file: $CHARM_FILE"
-        DEPLOY_SOURCE="$CHARM_FILE"
+        DEPLOY_SOURCE=("$CHARM_FILE")
     fi
 
     if [[ "$MODE" == "auto" ]]; then
         APP_NAME="concourse-ci"
         echo "Deploying Concourse (auto mode)..."
-        # shellcheck disable=SC2086
-        juju deploy $DEPLOY_SOURCE "$APP_NAME" \
+        juju deploy "${DEPLOY_SOURCE[@]}" "$APP_NAME" \
             --config mode=auto \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
@@ -219,15 +218,13 @@ if should_run "deploy"; then
         WORKER_APP="concourse-worker"
         
         echo "Deploying Concourse Web..."
-        # shellcheck disable=SC2086
-        juju deploy $DEPLOY_SOURCE "$WEB_APP" \
+        juju deploy "${DEPLOY_SOURCE[@]}" "$WEB_APP" \
             --config mode=web \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
             
         echo "Deploying Concourse Worker..."
-        # shellcheck disable=SC2086
-        juju deploy $DEPLOY_SOURCE "$WORKER_APP" \
+        juju deploy "${DEPLOY_SOURCE[@]}" "$WORKER_APP" \
             --config mode=worker \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
