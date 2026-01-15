@@ -135,9 +135,6 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(
             self.on.get_admin_password_action, self._on_get_admin_password_action
         )
-        self.framework.observe(
-            self.on.upgrade_action, self._on_update_concourse_version_action
-        )
 
     def _get_deployment_mode(self) -> str:
         """
@@ -460,7 +457,6 @@ class ConcourseCharm(CharmBase):
             self._ensure_role_directories()
 
             # Check for version change and upgrade if needed
-            # Only leader should download binaries in shared storage mode
             desired_version = get_concourse_version(self.config)
             if desired_version:
                 installed_version = self._get_installed_concourse_version()
@@ -474,48 +470,21 @@ class ConcourseCharm(CharmBase):
                         logger.info(f"Found version {installed_version} in shared storage")
                 
                 if installed_version != desired_version:
-                    # In shared storage mode, only leader downloads
-                    if self.config.get("shared-storage", "none") != "none" and not self.unit.is_leader():
-                        logger.info(f"Worker unit: waiting for leader to upgrade to {desired_version}")
-                        self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse {desired_version}")
-                        return
+                    # Check if we should use coordinated upgrade (shared storage mode)
+                    shared_storage_mode = self.config.get("shared-storage", "none")
+                    use_coordinated_upgrade = (shared_storage_mode != "none" and 
+                                              self.model.get_relation("concourse-peer") is not None)
                     
-                    logger.info(f"Upgrading Concourse CI from {installed_version} to {desired_version}")
-                    self.unit.status = MaintenanceStatus(f"Upgrading Concourse CI to {desired_version}...")
-                    
-                    # Stop services before upgrading to avoid "text file busy" error
-                    if self._should_run_worker():
-                        self.worker_helper.stop_service()
-                    if self._should_run_web():
-                        self.web_helper.stop_service()
-                    
-                    # Use shared storage installation if configured
-                    if self.config.get("shared-storage", "none") != "none":
-                        storage_coordinator = None
-                        if self._should_run_web():
-                            storage_coordinator = self.web_helper.initialize_shared_storage()
-                        elif self._should_run_worker():
-                            storage_coordinator = self.worker_helper.initialize_shared_storage()
-                        
-                        if storage_coordinator:
-                            from concourse_installer import download_and_install_concourse_with_storage
-                            download_and_install_concourse_with_storage(
-                                self, desired_version, storage_coordinator
-                            )
+                    if use_coordinated_upgrade:
+                        if self.unit.is_leader():
+                            self._orchestrate_coordinated_upgrade(event, desired_version)
                         else:
-                            logger.warning("Shared storage configured but not available, skipping upgrade")
-                            self.unit.status = WaitingStatus("Waiting for shared storage mount")
-                            return
+                            logger.info(f"Worker unit: waiting for leader to upgrade to {desired_version}")
+                            self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse {desired_version}")
+                            # Worker logic continues below (might restart service with old binary, but that's ok)
                     else:
-                        # Local installation
-                        download_and_install_concourse(self, desired_version)
-                    
-                    self._restart_concourse_service()
-                    
-                    # If web server, publish version to relations
-                    if self._should_run_web():
-                        self._publish_version_to_tsa_relations()
-                        self._publish_version_to_peer_relation()
+                        # Simple upgrade (single unit or no shared storage)
+                        self._perform_simple_upgrade(event, desired_version)
 
             # Update configuration based on role
             # Ensure systemd services are set up for the current role(s)
@@ -604,6 +573,16 @@ class ConcourseCharm(CharmBase):
         - If unit is waiting for shared storage, check if it's now available
         - If storage became available, trigger installation
         """
+        # Fallback: check for upgrade signals periodically (T046)
+        # This ensures workers pick up signals even if relation-changed is delayed
+        if not self.unit.is_leader() and self.config.get("shared-storage", "none") != "none":
+            peer_relation = self.model.get_relation("concourse-peer")
+            if peer_relation:
+                class SignalEvent:
+                    def __init__(self, relation):
+                        self.relation = relation
+                self._handle_upgrade_signals(SignalEvent(peer_relation))
+
         from pathlib import Path
         
         # Check if unit is waiting for storage, leader, or installation
@@ -1351,32 +1330,6 @@ class ConcourseCharm(CharmBase):
             logger.debug(f"Could not detect installed version: {e}")
         return None
 
-    def _on_update_concourse_version_action(self, event):
-        """Handle upgrade action with coordinated multi-unit upgrade support (T043-T045)"""
-        try:
-            version = event.params.get("version") or self.config.get("version") or get_concourse_version(self.config)
-            
-            # Check if we should use coordinated upgrade (shared storage mode)
-            shared_storage_mode = self.config.get("shared-storage", "none")
-            use_coordinated_upgrade = (shared_storage_mode != "none" and 
-                                      self.model.get_relation("concourse-peer") is not None)
-            
-            if use_coordinated_upgrade and self.unit.is_leader():
-                # T044: Web/leader orchestrates coordinated upgrade
-                self._orchestrate_coordinated_upgrade(event, version)
-            elif use_coordinated_upgrade and not self.unit.is_leader():
-                # Workers should not trigger upgrade action
-                event.fail("Only the leader unit can trigger coordinated upgrades. "
-                          "Run this action on the leader unit.")
-                return
-            else:
-                # T044: Fallback to simple upgrade for single-unit or no shared storage
-                self._perform_simple_upgrade(event, version)
-                
-        except Exception as e:
-            event.fail(f"Upgrade failed: {e}")
-            logger.error(f"Upgrade action failed: {e}", exc_info=True)
-    
     def _orchestrate_coordinated_upgrade(self, event, version: str):
         """Orchestrate coordinated upgrade across multiple units (T045)"""
         try:
@@ -1447,11 +1400,12 @@ class ConcourseCharm(CharmBase):
             time.sleep(5)
             upgrade_coordinator.reset_upgrade_state()
             
-            event.set_results({
-                "version": version,
-                "message": f"Coordinated upgrade to v{version} completed",
-                "workers": worker_count
-            })
+            if event and hasattr(event, "set_results"):
+                event.set_results({
+                    "version": version,
+                    "message": f"Coordinated upgrade to v{version} completed",
+                    "workers": worker_count
+                })
             logger.info(f"Coordinated upgrade to v{version} completed successfully")  # T052
             self._update_status()
             
@@ -1485,8 +1439,9 @@ class ConcourseCharm(CharmBase):
             self._publish_version_to_tsa_relations()
             self._publish_version_to_peer_relation()
         
-        event.set_results({"version": version, "message": "Concourse upgraded"})
-        logger.info(f"Concourse upgraded to {version} via action")
+        if event and hasattr(event, "set_results"):
+            event.set_results({"version": version, "message": "Concourse upgraded"})
+        logger.info(f"Concourse upgraded to {version}")
         self._update_status()
     
     def _handle_upgrade_signals(self, event):

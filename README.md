@@ -217,11 +217,11 @@ Use the `upgrade` action to change Concourse CI version (update the `version` co
 juju config concourse-ci version=7.14.3
 
 # Trigger the upgrade action (automatically upgrades all workers)
-juju run concourse-ci/leader upgrade version=7.14.3
+juju config concourse-ci version=7.14.3
 
 # Downgrade is also supported (update config then run action)
 juju config concourse-ci version=7.12.1
-juju run concourse-ci/leader upgrade version=7.12.1
+juju config concourse-ci version=7.12.1
 ```
 
 **Auto-upgrade behavior:**

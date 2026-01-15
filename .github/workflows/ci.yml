@@ -177,9 +177,6 @@ jobs:
           echo "=== Setting version configuration for persistence ==="
           juju config concourse-ci version=$UPGRADE_VERSION
           
-          echo "=== Upgrading leader (workers should auto-upgrade) ==="
-          juju run concourse-ci/leader upgrade version=$UPGRADE_VERSION
-          
           echo "=== Waiting for leader upgrade to complete ==="
           sleep 30
           
@@ -468,14 +465,6 @@ jobs:
           juju config web version=$UPGRADE_VERSION
           juju config worker version=$UPGRADE_VERSION
           
-          echo "=== Upgrading web server (all workers should auto-upgrade via TSA relation) ==="
-          juju run web/leader upgrade version=$UPGRADE_VERSION --format=json > upgrade.json
-          cat upgrade.json
-          if jq -e '.. | .status? | select(. == "failed")' upgrade.json > /dev/null; then
-            echo "Upgrade action failed"
-            exit 1
-          fi
-          
           echo "=== Waiting for web upgrade to complete ==="
           sleep 30
           
@@ -730,12 +719,6 @@ jobs:
         run: |
           UPGRADE_VERSION="7.14.3"
           juju config concourse-ci version=$UPGRADE_VERSION
-          juju run concourse-ci/leader upgrade version=$UPGRADE_VERSION --format=json > upgrade.json
-          cat upgrade.json
-          if jq -e '.. | .status? | select(. == "failed")' upgrade.json > /dev/null; then
-            echo "Upgrade action failed"
-            exit 1
-          fi
 
       - name: Wait for Upgrade
         run: |
@@ -943,12 +926,6 @@ jobs:
           UPGRADE_VERSION="7.14.3"
           juju config concourse-web version=$UPGRADE_VERSION
           juju config concourse-worker version=$UPGRADE_VERSION
-          juju run concourse-web/leader upgrade version=$UPGRADE_VERSION --format=json > upgrade.json
-          cat upgrade.json
-          if jq -e '.. | .status? | select(. == "failed")' upgrade.json > /dev/null; then
-            echo "Upgrade action failed"
-            exit 1
-          fi
 
       - name: Wait for Upgrade
         run: |

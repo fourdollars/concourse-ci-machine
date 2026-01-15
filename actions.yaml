@@ -24,10 +24,3 @@ run-migrations:
 
 get-admin-password:
   description: Get or generate initial admin password
-
-upgrade:
-  description: Upgrade Concourse CI to a specific version
-  params:
-    version:
-      description: Target Concourse version (e.g., 7.14.3)
-      type: string

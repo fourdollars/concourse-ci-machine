@@ -173,7 +173,6 @@ juju run concourse-ci/0 check-status
 # Restart services
 juju run concourse-ci/0 restart-services
 
-# Upgrade Concourse version (set config first for persistence)
+# Upgrade Concourse version
 juju config concourse-ci version=7.14.3
-juju run concourse-ci/leader upgrade version=7.14.3
 ```

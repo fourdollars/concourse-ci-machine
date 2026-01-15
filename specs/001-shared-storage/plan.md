@@ -384,7 +384,6 @@ test-shared-storage-auto:
       run: |
         echo "=== Upgrading to 7.14.3 ==="
         juju config concourse-ci version=7.14.3
-        juju run concourse-ci/leader upgrade version=7.14.3
         
         sleep 30
         juju-wait -m shared-auto -t 600
@@ -586,7 +585,6 @@ test-shared-storage-web-worker:
         echo "=== Upgrading web to 7.14.3 ==="
         juju config web version=7.14.3
         juju config worker version=7.14.3
-        juju run web/leader upgrade version=7.14.3
         
         sleep 30
         juju-wait -m shared-web-worker -t 600
@@ -763,7 +761,6 @@ publish-charm:
         
         echo "=== Upgrading to 7.14.3 ==="
         juju config concourse-ci version=7.14.3
-        juju run concourse-ci/leader upgrade version=7.14.3
         
         echo "=== Waiting for upgrade to complete ==="
         sleep 30

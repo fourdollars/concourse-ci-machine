@@ -229,16 +229,14 @@ Trigger an upgrade to see coordinated download:
 # Step 1: Set desired version (source of truth)
 juju config concourse-ci-machine version=7.14.4
 
-# Step 2: Trigger the upgrade action on leader
-juju run concourse-ci-machine/leader upgrade version=7.14.4
+# Step 2: Trigger the upgrade by setting config
+juju config concourse-ci-machine version=7.14.4
 
 # Watch upgrade coordination
 juju debug-log --replay --include concourse-ci-machine
 ```
 
-**Important**: Both commands are required:
-1. `juju config` sets the target version in application config (source of truth)
-2. `juju run .../leader upgrade` executes the upgrade action
+**Note**: Setting the config triggers the upgrade process automatically.
 
 **Expected Flow**:
 1. Web/leader sets `upgrade-state=prepare` in peer relation
@@ -319,19 +317,6 @@ juju ssh concourse-ci-machine/1 "df /var/lib/concourse | tail -1"
 # Device should be SAME across units
 ```
 
-### Issue: Config vs Action Mismatch
-**Symptoms**: Version not upgrading despite running action
-
-**Resolution**:
-```bash
-# Always set config FIRST, then run action
-juju config concourse-ci-machine version=7.14.4
-juju run concourse-ci-machine/leader upgrade version=7.14.4
-
-# Verify config matches desired version
-juju config concourse-ci-machine version
-```
-
 ## Performance Metrics
 
 Expected performance after shared storage deployment:
@@ -403,9 +388,8 @@ juju run concourse-ci-machine/leader restart-services force=true
 # Get admin password
 juju run concourse-ci-machine/leader get-admin-password
 
-# Upgrade to specific version (requires config set first)
+# Upgrade to specific version
 juju config concourse-ci-machine version=7.14.4
-juju run concourse-ci-machine/leader upgrade version=7.14.4
 
 # Run database migrations (if using PostgreSQL)
 juju run concourse-ci-machine/leader run-migrations

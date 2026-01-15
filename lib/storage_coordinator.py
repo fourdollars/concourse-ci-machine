@@ -1103,9 +1103,9 @@ class UpgradeCoordinator:
             ready_count = 0
             if hasattr(self.relation, 'relation') and self.relation.relation:
                 for unit in self.relation.relation.units:
-                    # Check if unit has set ready flag
-                    unit_data = self.relation.relation.data.get(unit, {})
-                    if unit_data.get("upgrade-ready") == "true":
+                    # Check if unit has set ready flag (use fresh data)
+                    val = self.relation.get_fresh_unit_data(unit.name, "upgrade-ready")
+                    if val == "true":
                         ready_count += 1
             else:
                 # Fallback for testing
@@ -1403,6 +1403,14 @@ class RelationDataAccessor:
             try:
                 # Try to use ops.Relation API
                 self.relation.data[self.relation.app][key] = value
+                
+                # Force immediate update via CLI to avoid deadlock in blocking actions
+                # ops framework commits changes at hook end, but we need workers 
+                # to see this while we wait in the action
+                import subprocess
+                cmd = ["relation-set", "-r", str(self.relation.id), f"{key}={value}", "--app"]
+                subprocess.run(cmd, check=True)
+                
             except Exception as e:
                 self.logger.warning(f"Failed to set app data via relation: {e}")
                 self._mock_app_data[key] = value
@@ -1473,6 +1481,31 @@ class RelationDataAccessor:
                 self.logger.warning(f"Failed to get unit data via relation: {e}")
         
         return self._mock_unit_data.get(unit_name, {}).get(key)
+    
+    def get_fresh_unit_data(self, unit_name: str, key: str) -> Optional[str]:
+        """Get fresh data from specific unit using CLI tools (bypassing ops cache).
+        
+        Necessary when waiting for updates within a single hook execution.
+        """
+        if self.relation and hasattr(self.relation, 'id'):
+            import subprocess
+            try:
+                # relation-get <key> <unit> -r <id>
+                cmd = ["relation-get", "-r", str(self.relation.id), key, unit_name]
+                self.logger.debug(f"Executing: {' '.join(cmd)}")
+                # Use --app is false (default)
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    val = result.stdout.strip()
+                    self.logger.debug(f"relation-get result: {val}")
+                    return val if val else None
+                else:
+                    self.logger.warning(f"relation-get failed: {result.stderr}")
+            except Exception as e:
+                self.logger.warning(f"Failed to get fresh unit data: {e}")
+        
+        # Fallback to cached data
+        return self.get_unit_data(unit_name, key)
     
     def get_all_units(self) -> list[str]:
         """Get list of all units in relation.

@@ -52,10 +52,10 @@ class ConcourseWebHelper:
             logger.info("Storage coordinator not available, skipping shared storage")
             return None
         
+        # Check shared-storage config
+        shared_storage_mode = self.charm.config.get("shared-storage", "none")
+
         try:
-            # Check shared-storage config
-            shared_storage_mode = self.charm.config.get("shared-storage", "none")
-            
             if shared_storage_mode == "none":
                 logger.info("Shared storage disabled (shared-storage=none)")
                 return None
@@ -105,6 +105,10 @@ class ConcourseWebHelper:
             
         except Exception as e:
             logger.error(f"Failed to initialize shared storage: {e}")
+            # If shared storage is configured but failed to init, we should probably know why
+            if shared_storage_mode != "none":
+                logger.error("Raising exception because shared-storage is enabled")
+                raise
             # Non-fatal: fall back to local installation
             return None
 
