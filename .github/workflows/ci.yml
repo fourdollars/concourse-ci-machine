@@ -118,11 +118,6 @@ jobs:
         run: |
           juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
-          if [ ! -s admin-password.txt ]; then
-            echo "Password not found, dumping full action output:"
-            juju run concourse-ci/leader get-admin-password
-            exit 1
-          fi
 
       - name: Get Concourse IP
         run: |
@@ -154,7 +149,7 @@ jobs:
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
           fly -t ci execute -c task.yml
 
       - name: Verify workers are registered
@@ -214,7 +209,7 @@ jobs:
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
           sudo chown $(whoami) /usr/local/bin/fly
           fly -t ci sync
           fly -t ci execute -c task.yml
@@ -245,7 +240,7 @@ jobs:
           cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
           
           cat <<EOF > verify-mounts.yml
           platform: linux
@@ -284,7 +279,7 @@ jobs:
           cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
           
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
           
           cat <<EOF > verify-tagged.yml
           platform: linux
@@ -375,11 +370,6 @@ jobs:
         run: |
           juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
-          if [ ! -s admin-password.txt ]; then
-            echo "Password not found, dumping full action output:"
-            juju run web/leader get-admin-password
-            exit 1
-          fi
 
       - name: Get Concourse server IP
         run: |
@@ -462,7 +452,7 @@ jobs:
           export CONCOURSE_URL=$(cat concourse-ip.txt)
           cat admin-password.txt
           export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
+          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run web/leader get-admin-password && exit 1)
           fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
 
       - name: Test version upgrade across separate apps (7.14.2 → 7.14.3)
@@ -671,11 +661,6 @@ jobs:
         run: |
           juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
-          if [ ! -s admin-password.txt ]; then
-            echo "Password not found, dumping full action output:"
-            juju run concourse-ci/leader get-admin-password
-            exit 1
-          fi
 
       - name: Get Concourse IP
         run: |
@@ -863,11 +848,6 @@ jobs:
         run: |
           juju run concourse-web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
           cat admin-password.txt
-          if [ ! -s admin-password.txt ]; then
-            echo "Password not found, dumping full action output:"
-            juju run concourse-web/leader get-admin-password
-            exit 1
-          fi
 
       - name: Get Concourse IP
         run: |
