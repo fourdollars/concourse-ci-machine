@@ -23,6 +23,7 @@ help() {
     echo ""
     echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
+    echo "                                Additional steps: scale-out"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, gpu, upgrade"
@@ -77,7 +78,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade" "destroy")
+ALL_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade" "scale-out" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -645,6 +646,82 @@ step_upgrade() {
     fi
 }
 
+step_scale_out() {
+    echo "=== Testing Scale Out ==="
+    ensure_cli
+    
+    # Determine app to scale
+    if [[ "$MODE" == "auto" ]]; then
+        SCALE_APP="$APP_NAME"
+    else
+        SCALE_APP="$WORKER_APP"
+    fi
+
+    INITIAL_COUNT=$(juju status -m "$MODEL_NAME" "$SCALE_APP" --format=json | jq -r ".applications.\"$SCALE_APP\".units | length")
+    TARGET_COUNT=$((INITIAL_COUNT + 1))
+    
+    echo "Scaling $SCALE_APP from $INITIAL_COUNT to $TARGET_COUNT units..."
+    juju add-unit -m "$MODEL_NAME" "$SCALE_APP"
+    
+    # Handle shared storage for new unit
+    if [[ "$SHARED_STORAGE" == "lxc" ]]; then
+        echo "Waiting for new unit to be ready for storage configuration..."
+        # Wait for unit to appear and ask for storage (or fail if we're too fast, loop handles it)
+        # We look for unit count increase AND specific status if possible, 
+        # but just waiting for unit count change + status loop is robust.
+        
+        # Wait for unit count to increase
+        timeout 300 bash -c "while [ \$(juju status -m $MODEL_NAME $SCALE_APP --format=json | jq -r '.applications.\"$SCALE_APP\".units | length') -lt $TARGET_COUNT ]; do sleep 5; done"
+        
+        # Wait for the "Waiting for shared storage" message or active (if it somehow works magically)
+        echo "Waiting for unit to signal storage requirement..."
+        timeout 300 bash -c "while ! juju status -m $MODEL_NAME | grep -q 'Waiting for shared storage'; do sleep 5; done" || true
+        
+        echo "Configuring shared storage for scaled units..."
+        ./scripts/setup-shared-storage.sh "$SCALE_APP" "$SHARED_PATH"
+    fi
+
+    echo "Waiting for new unit to settle..."
+    if command -v juju-wait >/dev/null 2>&1; then
+        juju-wait -m "$MODEL_NAME" -t 900
+    else
+        sleep 60
+    fi
+    
+    echo "Verifying worker registration..."
+    # Retry worker check a few times as registration happens after unit is active
+    for i in {1..12}; do
+        WORKER_COUNT=$(./fly -t test workers | grep -c "running" || true)
+        echo "Active workers: $WORKER_COUNT (Target: >=$TARGET_COUNT)"
+        
+        # Note: In auto mode, leader is also a worker, so total workers = total units
+        # In web+worker mode, web is not a worker, so we check just the worker app units? 
+        # Actually fly workers lists all registered workers.
+        # Let's just check if count increased from verification step or equals expected.
+        # Simplified: Just check if we have enough workers.
+        
+        # Expected workers calculation
+        if [[ "$MODE" == "auto" ]]; then
+             EXPECTED_WORKERS=$TARGET_COUNT
+        else
+             # Web units don't register as workers? Assuming standard concourse architecture
+             # In our charm, web unit IS just a web node. 
+             # So expected workers = units of worker app.
+             EXPECTED_WORKERS=$TARGET_COUNT
+        fi
+        
+        if [[ "$WORKER_COUNT" -ge "$EXPECTED_WORKERS" ]]; then
+            echo "✓ Scaled out successfully: Found $WORKER_COUNT workers"
+            return 0
+        fi
+        sleep 5
+    done
+    
+    echo "❌ Scale out verification failed: Expected $EXPECTED_WORKERS workers, found $WORKER_COUNT"
+    ./fly -t test workers
+    exit 1
+}
+
 step_destroy() {
     cleanup_model
     DESTROYED=true
@@ -659,6 +736,7 @@ for step in "${STEPS_TO_RUN[@]}"; do
         tagged) step_tagged ;;
         gpu) step_gpu ;;
         upgrade) step_upgrade ;;
+        scale-out) step_scale_out ;;
         destroy) step_destroy ;;
         *) echo "Warning: Unknown step '$step'";;
     esac

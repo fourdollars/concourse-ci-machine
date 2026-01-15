@@ -81,219 +81,39 @@ jobs:
       - name: Bootstrap Juju
         run: juju bootstrap localhost test-controller --config test-mode=true
 
-      - name: Add Juju Model
-        run: juju add-model concourse-auto
+      - name: Make script executable
+        run: chmod +x ./scripts/deploy-test.sh
 
-      - name: Deploy charms (2 units in auto mode)
-        run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-ci --config mode=auto --config version=7.14.2 -n 2
-          juju deploy postgresql --channel 16/stable
+      - name: Deploy
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=deploy
 
-      - name: Remove charm file
-        run: rm concourse-ci-machine_amd64.charm
+      - name: Verify
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=verify
 
-      - name: Relate charms
-        run: juju relate concourse-ci:postgresql postgresql:database
+      - name: Test Mounts
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=mounts
 
-      - name: Wait for model to settle
-        run: juju-wait -m concourse-auto -t 900
+      - name: Test Tagged
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=tagged
 
-      - name: Wait for services to stabilize
-        run: sleep 30
+      - name: Test GPU (if available)
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=gpu
 
-      - name: Juju Status
-        if: always()
-        run: |
-          juju status -m concourse-auto --relations --storage
+      - name: Test Upgrade
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=upgrade
 
-      - name: Verify deployment
-        run: |
-          echo "=== Checking leader (should run server) ==="
-          juju exec --unit concourse-ci/leader -- systemctl status concourse-server || echo "Server not running on leader (unexpected)"
-          
-          echo "=== Checking non-leader unit (should run worker) ==="
-          juju exec --unit concourse-ci/1 -- systemctl status concourse-worker || echo "Worker not running on unit 1"
+      - name: Test Scale Out
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=scale-out
 
-      - name: Get admin password
-        run: |
-          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
-          cat admin-password.txt
-
-      - name: Get Concourse IP
-        run: |
-          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
-          cat concourse-ip.txt
-
-      - name: Install fly CLI
-        run: |
-          CONCOURSE_IP=$(cat concourse-ip.txt)
-          curl -Lo fly "http://${CONCOURSE_IP}:8080/api/v1/cli?arch=amd64&platform=linux"
-          chmod +x ./fly
-          sudo mv ./fly /usr/local/bin/
-
-      - name: Create test task
-        run: |
-          cat <<EOF > task.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source:
-              repository: busybox
-          run:
-            path: echo
-            args: ["Hello from mode=auto!"]
-          EOF
-
-      - name: Execute test task
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
-          fly -t ci execute -c task.yml
-
-      - name: Verify workers are registered
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          fly -t ci workers
-          WORKER_COUNT=$(fly -t ci workers | grep -c "running" || true)
-          echo "Registered workers: $WORKER_COUNT"
-          if [ "$WORKER_COUNT" -lt 1 ]; then
-            echo "Expected at least 1 workers, found $WORKER_COUNT"
-            exit 1
-          fi
-
-      - name: Test version upgrade with auto worker upgrade (7.14.2 → 7.14.3)
-        run: |
-          echo "=== Current version on all units ==="
-          juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | "\(.key): \(.value."workload-status".message)"'
-          
-          UPGRADE_VERSION="7.14.3"
-          echo "Upgrade version: $UPGRADE_VERSION"
-          
-          echo "=== Setting version configuration for persistence ==="
-          juju config concourse-ci version=$UPGRADE_VERSION
-          
-          echo "=== Waiting for leader upgrade to complete ==="
-          sleep 30
-          
-          echo "=== Checking if workers are auto-upgrading ==="
-          juju status concourse-ci
-          
-          echo "=== Waiting for all units to settle ==="
-          juju-wait -m concourse-auto -t 900
-          
-          echo "=== Verifying all units upgraded ==="
-          juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | "\(.key): \(.value."workload-status".message)"'
-          
-          # Verify all units show the new version
-          UNIT_COUNT=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | length')
-          VERSION_COUNT=$(juju status concourse-ci --format=json | jq -r '.applications."concourse-ci".units | to_entries[].value."workload-status".message' | grep -c "v$UPGRADE_VERSION" || true)
-          
-          echo "Total units: $UNIT_COUNT, Units at v$UPGRADE_VERSION: $VERSION_COUNT"
-          
-          if [ "$VERSION_COUNT" -ne "$UNIT_COUNT" ]; then
-            echo "❌ Auto-upgrade verification failed: not all workers upgraded"
-            exit 1
-          fi
-          echo "✅ All units auto-upgraded to $UPGRADE_VERSION successfully"
-
-      - name: Verify upgraded deployment still works
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
-          sudo chown $(whoami) /usr/local/bin/fly
-          fly -t ci sync
-          fly -t ci execute -c task.yml
-
-      - name: Verify Folder Mounts
-        run: |
-          # Create test directories
-          mkdir -p /tmp/config-test-mount
-          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
-          
-          mkdir -p /tmp/config-test-mount-writable
-          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
-          chmod 777 /tmp/config-test-mount-writable
-
-          # Get container name for unit 1 (worker)
-          UNIT="concourse-ci/1"
-          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-ci\".units.\"$UNIT\".machine")
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
-          
-          # Add mounts
-          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
-          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
-          
-          # Run verification task
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
-          
-          cat <<EOF > verify-mounts.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: {repository: busybox}
-          run:
-            path: sh
-            args:
-            - -c
-            - |
-              echo "Checking Read-Only Mount..."
-              cat /srv/config_test/test_ro.txt
-              if touch /srv/config_test/should_fail; then
-                echo "Error: Was able to write to read-only mount"
-                exit 1
-              fi
-              
-              echo "Checking Read-Write Mount..."
-              cat /srv/config_test_writable/test_rw.txt
-              echo "Writing test" > /srv/config_test_writable/write_test.txt
-              cat /srv/config_test_writable/write_test.txt
-          EOF
-          
-          fly -t ci execute -c verify-mounts.yml
-
-      - name: Configure tagged worker
-        run: |
-          juju config concourse-ci tag="special-worker"
-          sleep 10
-          juju-wait -m concourse-auto -t 300
-
-      - name: Verify tagged task execution
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run concourse-ci/leader get-admin-password && exit 1)
-          
-          cat <<EOF > verify-tagged.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: {repository: busybox}
-          run:
-            path: echo
-            args: ["Hello from tagged worker"]
-          EOF
-          
-          fly -t ci execute -c verify-tagged.yml --tag=special-worker
+      - name: Verify Tagged After Upgrade
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=tagged
 
       - name: Cleanup
         if: always()
         run: |
-          yes concourse-auto | juju destroy-model concourse-auto --destroy-storage --force --no-wait || true
+          # Cleanup model used by script
+          MODEL_NAME="concourse-test-auto-none"
+          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
           
           # Purge tools
           sudo snap remove juju --purge
@@ -332,219 +152,40 @@ jobs:
       - name: Bootstrap Juju
         run: juju bootstrap localhost test-controller --config test-mode=true
 
-      - name: Add Juju Model
-        run: juju add-model concourse-ci
+      - name: Make script executable
+        run: chmod +x ./scripts/deploy-test.sh
 
-      - name: Deploy server and worker separately
-        run: |
-          juju deploy ./concourse-ci-machine_amd64.charm web --config mode=web --config version=7.14.2
-          juju deploy ./concourse-ci-machine_amd64.charm worker --config mode=worker --config version=7.14.2
-          juju deploy postgresql --channel 16/stable
+      - name: Deploy
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=deploy
 
-      - name: Remove charm file
-        run: rm concourse-ci-machine_amd64.charm
+      - name: Verify
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=verify
 
-      - name: Relate charms
-        run: |
-          juju relate web:postgresql postgresql:database
-          juju relate worker:worker-tsa web:web-tsa
+      - name: Test Mounts
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=mounts
 
-      - name: Wait for model to settle
-        run: juju-wait -m concourse-ci -t 900
+      - name: Test Tagged
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=tagged
 
-      - name: Juju Status
-        run: juju status
+      - name: Test GPU (if available)
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=gpu
 
-      - name: Verify deployment
-        run: |
-          echo "=== Checking server unit ==="
-          juju exec --unit web/leader -- systemctl status concourse-server || echo "Server not running (unexpected)"
+      - name: Test Upgrade
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=upgrade
 
-          echo "=== Checking worker units ==="
-          juju exec --unit worker/0 -- systemctl status concourse-worker || echo "Worker not running on unit 0"
+      - name: Test Scale Out
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=scale-out
 
-      - name: Get admin password
-        run: |
-          juju run web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
-          cat admin-password.txt
-
-      - name: Get Concourse server IP
-        run: |
-          juju status --format=json | jq -r '.applications.web.units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
-          cat concourse-ip.txt
-
-      - name: Install fly CLI
-        run: |
-          CONCOURSE_IP=$(cat concourse-ip.txt)
-          curl -Lo fly "http://${CONCOURSE_IP}:8080/api/v1/cli?arch=amd64&platform=linux"
-          chmod +x ./fly
-          sudo mv ./fly /usr/local/bin/
-
-      - name: Prepare host mounts
-        run: |
-          mkdir -p /tmp/config-test-mount
-          echo "config-test-marker" > /tmp/config-test-mount/marker.txt
-          mkdir -p /tmp/config-test-mount-writable
-          echo "config-test-writable-marker" > /tmp/config-test-mount-writable/marker.txt
-          ls -lah /tmp/config-test-mount /tmp/config-test-mount-writable
-
-      - name: Mount folders into worker containers
-        run: |
-          # Discover worker units and add per-container devices for mounts
-          UNITS=$(juju status worker --format=json | jq -r '.applications.worker.units | keys[]' || true)
-          if [ -z "$UNITS" ]; then echo "No worker units found"; exit 1; fi
-          for UNIT in $UNITS; do
-            MACHINE=$(juju status $UNIT --format=json | jq -r '.applications.worker.units["'"$UNIT"'"].machine')
-            CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-            if [ -z "$CONTAINER" ]; then echo "No container for machine $MACHINE"; continue; fi
-            echo "Adding mounts to $CONTAINER"
-            # remove any existing devices with the same names
-            lxc config device remove $CONTAINER config_test_ro || true
-            lxc config device remove $CONTAINER config_test_rw || true
-            # add a read-only mount
-            lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
-            # add a writable mount (suffix-based test)
-            lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
-          done
-
-      - name: Create mount verification task
-        run: |
-          cat <<'EOF' > task.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source:
-              repository: busybox
-          run:
-            path: sh
-            args:
-              - -c
-              - |
-                echo "=== Listing /srv/config_test ==="
-                ls -lah /srv/config_test || (echo "MOUNT_MISSING" && exit 2)
-                echo "=== Showing marker file ==="
-                cat /srv/config_test/marker.txt || (echo "FILE_MISSING" && exit 3)
-                echo "=== Verifying read-only mount (touch should fail) ==="
-                if touch /srv/config_test/write-test 2>/dev/null; then
-                  echo "WRITE_SUCCEEDED (unexpected)"
-                  exit 4
-                else
-                  echo "Confirmed read-only mount"
-                fi
-                echo "=== Listing /srv/config_test_writable ==="
-                ls -lah /srv/config_test_writable || (echo "MOUNT_MISSING_WRITABLE" && exit 6)
-                echo "=== Showing writable marker file ==="
-                cat /srv/config_test_writable/marker.txt || (echo "FILE_MISSING_WRITABLE" && exit 7)
-                echo "=== Verifying writable mount (touch should succeed) ==="
-                if sh -c 'echo writable > /srv/config_test_writable/write-test' 2>/dev/null; then
-                  echo "WRITE_SUCCEEDED on writable mount"
-                else
-                  echo "WRITE_FAILED on writable mount"
-                  exit 5
-                fi
-          EOF
-
-      - name: Execute mount verification task
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD" || (echo "Concourse login failed" && juju run web/leader get-admin-password && exit 1)
-          fly -t ci execute -c task.yml || (echo "Concourse task failed to see mount" && exit 1)
-
-      - name: Test version upgrade across separate apps (7.14.2 → 7.14.3)
-        run: |
-          echo "=== Current version on all applications ==="
-          juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value."workload-status".message)"'
-          juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value."workload-status".message)"'
-          
-          UPGRADE_VERSION="7.14.3"
-          echo "Upgrade version: $UPGRADE_VERSION"
-          
-          echo "=== Setting version configuration for persistence on all applications ==="
-          juju config web version=$UPGRADE_VERSION
-          juju config worker version=$UPGRADE_VERSION
-          
-          echo "=== Waiting for web upgrade to complete ==="
-          sleep 30
-          
-          echo "=== Checking if workers are auto-upgrading ==="
-          juju status
-          
-          echo "=== Waiting for all applications to settle ==="
-          juju-wait -m concourse-ci -t 900
-          
-          echo "=== Verifying all units upgraded ==="
-          juju status web --format=json | jq -r '.applications.web.units | to_entries[] | "web/\(.key): \(.value."workload-status".message)"'
-          juju status worker --format=json | jq -r '.applications.worker.units | to_entries[] | "worker/\(.key): \(.value."workload-status".message)"'
-          
-          # Verify web server upgraded
-          WEB_VERSION_CHECK=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[].value."workload-status".message' | grep -c "v$UPGRADE_VERSION" || true)
-          if [ "$WEB_VERSION_CHECK" -lt 1 ]; then
-            echo "❌ Web server upgrade failed"
-            exit 1
-          fi
-          
-          # Verify all workers auto-upgraded
-          WORKER_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | length')
-          WORKER_VERSION_COUNT=$(juju status worker --format=json | jq -r '.applications.worker.units | to_entries[].value."workload-status".message' | grep -c "v$UPGRADE_VERSION" || true)
-          
-          echo "Regular workers: $WORKER_COUNT, Upgraded: $WORKER_VERSION_COUNT"
-          
-          if [ "$WORKER_VERSION_COUNT" -ne "$WORKER_COUNT" ]; then
-            echo "❌ Auto-upgrade verification failed: not all workers upgraded"
-            exit 1
-          fi
-          
-          echo "✅ Web and all workers auto-upgraded to $UPGRADE_VERSION successfully"
-
-      - name: Verify upgraded deployment still works
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          sudo chown $(whoami) /usr/local/bin/fly
-          fly -t ci sync
-          fly -t ci execute -c task.yml
-
-      - name: Configure tagged worker
-        run: |
-          echo "=== Applying tag to existing worker ==="
-          juju config worker tag="special-worker"
-          sleep 10
-          juju-wait -m concourse-ci -t 300
-
-      - name: Test worker tag targeting
-        run: |
-          echo "=== Checking registered workers and their tags ==="
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          cat admin-password.txt
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          fly -t ci workers
-          
-          echo "=== Verifying tagged worker exists ==="
-          TAGGED_WORKER_COUNT=$(fly -t ci workers | grep -c "special-worker" || true)
-          echo "Workers with special-worker tag: $TAGGED_WORKER_COUNT"
-          if [ "$TAGGED_WORKER_COUNT" -lt 1 ]; then
-            echo "❌ No worker found with special-worker tag"
-            exit 1
-          fi
-          echo "✅ Tagged worker verified"
-          
-          echo "=== Executing task on worker with special-worker tag ==="
-          fly -t ci execute -c task.yml --tag=special-worker || (echo "❌ Failed to run on tagged worker" && exit 1)
-          
-          echo "✅ Worker tag targeting successful"
+      - name: Verify Tagged After Upgrade
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=tagged
 
       - name: Cleanup
         if: always()
         run: |
-          yes concourse-ci | juju destroy-model concourse-ci --destroy-storage --force --no-wait || true
-          rm -rf /tmp/config-test-mount || true
-          rm -rf /tmp/config-test-mount-writable || true
-
+          # Cleanup model used by script
+          MODEL_NAME="concourse-test-web-worker-none"
+          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
@@ -583,166 +224,47 @@ jobs:
       - name: Bootstrap Juju
         run: juju bootstrap localhost test-controller --config test-mode=true
 
-      - name: Add Juju Model
-        run: juju add-model concourse-shared
+      - name: Make script executable
+        run: chmod +x ./scripts/deploy-test.sh
 
-      - name: Deploy initial unit (mode=auto)
-        run: |
-          # The charm supports 'shared-storage=lxc' where it expects /var/lib/concourse to be shared.
-          juju deploy --debug --verbose ./concourse-ci-machine_amd64.charm concourse-ci \
-            --config mode=auto \
-            --config version=7.14.2 \
-            --config shared-storage=lxc
-          juju deploy postgresql --channel 16/stable
+      - name: Deploy
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=deploy
 
-      - name: Relate charms
-        run: juju relate concourse-ci:postgresql postgresql:database
+      - name: Verify
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=verify
 
-      - name: Wait for initial deployment
-        run: |
-          juju debug-log &
-          timeout 300 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-shared; done'
+      - name: Test Mounts
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=mounts
 
-      - name: Configure shared storage (initial)
-        run: |
-          # Setup shared storage using the provided script
-          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
+      - name: Test Tagged
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=tagged
 
-      - name: Wait for storage integration
-        run: |
-          sleep 15
-          juju-wait -m concourse-shared -t 900
+      - name: Test GPU (if available)
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=gpu
 
-      - name: Verify binaries in storage
-        run: |
-          juju status -m concourse-shared
-          echo "Verifying binaries in shared storage..."
-          ls -lh $(pwd)/concourse-shared/bin/concourse || (find $(pwd)/concourse-shared -name concourse; echo "❌ Failed to find concourse binary" && exit 1)
-          
-      - name: Add second unit
-        run: |
-          juju add-unit concourse-ci
+      - name: Test Upgrade
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=upgrade
 
-      - name: Wait for second unit
-        run: |
-          juju debug-log &
-          timeout 300 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-shared; done'
+      - name: Test Scale Out
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=scale-out
 
-      - name: Configure shared storage (second unit)
-        run: |
-          ./scripts/setup-shared-storage.sh concourse-ci $(pwd)/concourse-shared
-
-      - name: Wait for second unit integration
-        run: |
-          sleep 15
-          juju-wait -m concourse-shared -t 900
-          
-      - name: Verify unit 1 is active
-        run: juju status concourse-ci/1
-
-      - name: Verify Shared Storage Usage
-        run: |
-          # Check if unit 1 reused binaries (log check or just status)
-          juju debug-log --replay --include concourse-ci/1 | grep "Binaries .* already installed" || true
-
-      - name: Get admin password
-        run: |
-          juju run concourse-ci/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
-          cat admin-password.txt
-
-      - name: Get Concourse IP
-        run: |
-          juju status --format=json | jq -r '.applications."concourse-ci".units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
-          cat concourse-ip.txt
-
-      - name: Install fly CLI
-        run: |
-          CONCOURSE_IP=$(cat concourse-ip.txt)
-          curl -Lo fly "http://${CONCOURSE_IP}:8080/api/v1/cli?arch=amd64&platform=linux"
-          chmod +x ./fly
-          sudo mv ./fly /usr/local/bin/
-
-      - name: Prepare host mounts
-        run: |
-          mkdir -p /tmp/config-test-mount
-          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
-          
-          mkdir -p /tmp/config-test-mount-writable
-          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
-          chmod 777 /tmp/config-test-mount-writable
-
-      - name: Configure container mounts
-        run: |
-          # Get container name for unit 1 (worker)
-          UNIT="concourse-ci/1"
-          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-ci\".units.\"$UNIT\".machine")
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
-          
-          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
-          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
-          
-      - name: Create mount verification task
-        run: |
-          cat <<EOF > verify-mounts.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: {repository: busybox}
-          run:
-            path: sh
-            args:
-            - -c
-            - |
-              echo "Checking Read-Only Mount..."
-              cat /srv/config_test/test_ro.txt
-              if touch /srv/config_test/should_fail; then
-                echo "Error: Was able to write to read-only mount"
-                exit 1
-              fi
-              
-              echo "Checking Read-Write Mount..."
-              cat /srv/config_test_writable/test_rw.txt
-              echo "Writing test" > /srv/config_test_writable/write_test.txt
-              cat /srv/config_test_writable/write_test.txt
-          EOF
-
-      - name: Execute mount verification task
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          fly -t ci execute -c verify-mounts.yml
-
-      - name: Trigger Upgrade
-        run: |
-          UPGRADE_VERSION="7.14.3"
-          juju config concourse-ci version=$UPGRADE_VERSION
-
-      - name: Wait for Upgrade
-        run: |
-          sleep 30
-          juju-wait -m concourse-shared -t 900
-
-      - name: Verify Upgrade
-        run: |
-          UPGRADE_VERSION="7.14.3"
-          juju status concourse-ci
-          juju status concourse-ci --format=json | jq -e '.applications."concourse-ci".units | to_entries | all(.value["workload-status"].status == "active")' || (echo "All workers must be active" && exit 1)
-          cat $(pwd)/concourse-shared/.installed_version | grep "$UPGRADE_VERSION"
-
-      - name: Verify Locking
-        run: |
-          echo "Checking for lock acquisition in logs..."
-          juju debug-log --replay --include concourse-ci | grep "Acquiring shared storage lock" || true
+      - name: Verify Tagged After Upgrade
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=tagged
 
       - name: Cleanup
         if: always()
         run: |
-          yes concourse-shared | juju destroy-model concourse-shared --destroy-storage --force --no-wait || true
-          sudo rm -rf $(pwd)/concourse-shared || true
-
+          # Cleanup model used by script
+          MODEL_NAME="concourse-test-auto-lxc"
+          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          
+          # Cleanup shared storage dir
+          sudo rm -fr /tmp/${MODEL_NAME}-shared || true
+          
+          # Cleanup mount dirs
+          rm -rf /tmp/config-test-mount || true
+          rm -rf /tmp/config-test-mount-writable || true
+          
           # Purge tools
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
@@ -781,169 +303,46 @@ jobs:
       - name: Bootstrap Juju
         run: juju bootstrap localhost test-controller --config test-mode=true
 
-      - name: Add Juju Model
-        run: juju add-model concourse-ss-ww
+      - name: Make script executable
+        run: chmod +x ./scripts/deploy-test.sh
 
-      - name: Deploy applications
-        run: |
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-web \
-            --config mode=web \
-            --config version=7.14.2 \
-            --config shared-storage=lxc
-          juju deploy ./concourse-ci-machine_amd64.charm concourse-worker \
-            --config mode=worker \
-            --config version=7.14.2 \
-            --config shared-storage=lxc
-          juju deploy postgresql --channel 16/stable
+      - name: Deploy
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=deploy
 
-      - name: Relate charms
-        run: |
-          juju relate concourse-web:postgresql postgresql:database
-          juju relate concourse-web:web-tsa concourse-worker:worker-tsa
+      - name: Verify
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=verify
 
-      - name: Wait for deployment
-        run: |
-          juju debug-log &
-          timeout 300 bash -c 'while ! juju status -m concourse-ss-ww | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-ss-ww; done'
+      - name: Test Mounts
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=mounts
 
-      - name: Configure shared storage (web)
-        run: ./scripts/setup-shared-storage.sh concourse-web $(pwd)/concourse-shared-ww
+      - name: Test Tagged
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=tagged
 
-      - name: Configure shared storage (worker)
-        run: ./scripts/setup-shared-storage.sh concourse-worker $(pwd)/concourse-shared-ww
+      - name: Test GPU (if available)
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=gpu
 
-      - name: Wait for storage integration
-        run: |
-          sleep 15
-          juju-wait -m concourse-ss-ww -t 900
+      - name: Test Upgrade
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=upgrade
 
-      - name: Verify binaries in storage
-        run: |
-          juju status -m concourse-ss-ww
-          echo "Verifying binaries in shared storage..."
-          ls -lh $(pwd)/concourse-shared-ww/bin/concourse || (find $(pwd)/concourse-shared-ww -name concourse; echo "❌ Failed to find concourse binary" && exit 1)
+      - name: Test Scale Out
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=scale-out
 
-      - name: Verify Deployment
-        run: |
-          juju status concourse-web/0
-          juju status concourse-worker/0
-          juju debug-log --replay --include concourse-worker/0 | grep "Binaries .* already installed" || true
-
-      - name: Get admin password
-        run: |
-          juju run concourse-web/leader get-admin-password | grep "password:" | awk '{print $2}' > admin-password.txt
-          cat admin-password.txt
-
-      - name: Get Concourse IP
-        run: |
-          juju status --format=json | jq -r '.applications."concourse-web".units | to_entries[] | select(.value."leader" == true) | .value."public-address"' > concourse-ip.txt
-          cat concourse-ip.txt
-
-      - name: Install fly CLI
-        run: |
-          CONCOURSE_IP=$(cat concourse-ip.txt)
-          curl -Lo fly "http://${CONCOURSE_IP}:8080/api/v1/cli?arch=amd64&platform=linux"
-          chmod +x ./fly
-          sudo mv ./fly /usr/local/bin/
-
-      - name: Prepare host mounts
-        run: |
-          mkdir -p /tmp/config-test-mount
-          echo "Hello Read-Only" > /tmp/config-test-mount/test_ro.txt
-          mkdir -p /tmp/config-test-mount-writable
-          echo "Hello Read-Write" > /tmp/config-test-mount-writable/test_rw.txt
-          chmod 777 /tmp/config-test-mount-writable
-
-      - name: Configure container mounts
-        run: |
-          UNIT="concourse-worker/0"
-          MACHINE=$(juju status $UNIT --format=json | jq -r ".applications.\"concourse-worker\".units.\"$UNIT\".machine")
-          CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-          
-          echo "Configuring mounts for $UNIT (Container: $CONTAINER)"
-          
-          lxc config device add $CONTAINER config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true
-          lxc config device add $CONTAINER config_test_rw disk source="/tmp/config-test-mount-writable" path="/srv/config_test_writable" readonly=false shift=true
-
-      - name: Create mount verification task
-        run: |
-          cat <<EOF > verify-mounts.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: {repository: busybox}
-          run:
-            path: sh
-            args:
-            - -c
-            - |
-              echo "Checking Read-Only Mount..."
-              cat /srv/config_test/test_ro.txt
-              if touch /srv/config_test/should_fail; then
-                echo "Error: Was able to write to read-only mount"
-                exit 1
-              fi
-              
-              echo "Checking Read-Write Mount..."
-              cat /srv/config_test_writable/test_rw.txt
-              echo "Writing test" > /srv/config_test_writable/write_test.txt
-              cat /srv/config_test_writable/write_test.txt
-          EOF
-
-      - name: Execute mount verification task
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          fly -t ci execute -c verify-mounts.yml
-
-      - name: Configure tagged worker
-        run: |
-          juju config concourse-worker tag="special-worker"
-          sleep 10
-          juju-wait -m concourse-ss-ww -t 300
-
-      - name: Verify tagged task execution
-        run: |
-          export CONCOURSE_URL=$(cat concourse-ip.txt)
-          export CONCOURSE_PASSWORD=$(cat admin-password.txt)
-          fly -t ci login -c http://$CONCOURSE_URL:8080 -u admin -p "$CONCOURSE_PASSWORD"
-          
-          cat <<EOF > verify-tagged.yml
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: {repository: busybox}
-          run:
-            path: echo
-            args: ["Hello from tagged worker"]
-          EOF
-          
-          fly -t ci execute -c verify-tagged.yml --tag=special-worker
-
-      - name: Trigger Upgrade
-        run: |
-          UPGRADE_VERSION="7.14.3"
-          juju config concourse-web version=$UPGRADE_VERSION
-          juju config concourse-worker version=$UPGRADE_VERSION
-
-      - name: Wait for Upgrade
-        run: |
-          sleep 30
-          juju-wait -m concourse-ss-ww -t 900
-
-      - name: Verify Upgrade
-        run: |
-          juju status concourse-web
-          juju status concourse-worker
-          juju status concourse-web --format=json | jq -e '.applications."concourse-web".units | to_entries | all(.value["workload-status"].status == "active")' || (echo "Web must be active" && exit 1)
-          juju status concourse-worker --format=json | jq -e '.applications."concourse-worker".units | to_entries | all(.value["workload-status"].status == "active")' || (echo "Workers must be active" && exit 1)
+      - name: Verify Tagged After Upgrade
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=tagged
 
       - name: Cleanup
         if: always()
         run: |
-          yes concourse-ss-ww | juju destroy-model concourse-ss-ww --destroy-storage --force --no-wait || true
-          sudo rm -rf $(pwd)/concourse-shared-ww || true
+          # Cleanup model used by script
+          MODEL_NAME="concourse-test-web-worker-lxc"
+          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          
+          # Cleanup shared storage dir
+          sudo rm -fr /tmp/${MODEL_NAME}-shared || true
+          
+          # Cleanup mount dirs
+          rm -rf /tmp/config-test-mount || true
+          rm -rf /tmp/config-test-mount-writable || true
 
           # Purge tools
           sudo snap remove juju --purge
