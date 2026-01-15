@@ -16,6 +16,9 @@ help() {
     echo "                                - none: No shared storage"
     echo "                                - lxc: Setup shared storage on LXD host"
     echo ""
+    echo "  --channel=[channel]           Deploy from Charmhub channel (e.g. edge, stable)"
+    echo "                                If not specified, deploys local charm file"
+    echo ""
     echo "  --skip-cleanup                Do not destroy model after test (default: false)"
     echo ""
     echo "  --goto=[step]                 Start from specific step (default: deploy)"
@@ -25,6 +28,7 @@ help() {
     echo ""
     echo "Examples:"
     echo "  $0 --mode=web+worker --shared-storage=lxc"
+    echo "  $0 --channel=edge"
     echo "  $0 --goto=verify --skip-cleanup"
 }
 
@@ -33,12 +37,14 @@ MODE="auto"
 SHARED_STORAGE="none"
 SKIP_CLEANUP="false"
 GOTO_STEP="deploy"
+CHANNEL=""
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --mode=*) MODE="${1#*=}"; shift ;;
         --shared-storage=*) SHARED_STORAGE="${1#*=}"; shift ;;
+        --channel=*) CHANNEL="${1#*=}"; shift ;;
         --skip-cleanup) SKIP_CLEANUP="true"; shift ;;
         --goto=*) GOTO_STEP="${1#*=}"; shift ;;
         --help|-h) help; exit 0 ;;
@@ -171,8 +177,9 @@ if should_run "deploy"; then
     CHARM_FILE="./concourse-ci-machine_amd64.charm"
     POSTGRES_CHANNEL="16/stable"
     CONCOURSE_VERSION="7.14.2"
+    CHARM_NAME="concourse-ci-machine"
 
-    if [[ ! -f "$CHARM_FILE" ]]; then
+    if [[ -z "$CHANNEL" && ! -f "$CHARM_FILE" ]]; then
         echo "Error: Charm file $CHARM_FILE not found. Run 'charmcraft pack' first."
         exit 1
     fi
@@ -183,10 +190,20 @@ if should_run "deploy"; then
         STORAGE_ARGS+=("--config" "shared-storage=lxc")
     fi
 
+    DEPLOY_SOURCE=""
+    if [[ -n "$CHANNEL" ]]; then
+        echo "Deploying from Charmhub channel: $CHANNEL"
+        DEPLOY_SOURCE="$CHARM_NAME --channel=$CHANNEL"
+    else
+        echo "Deploying from local file: $CHARM_FILE"
+        DEPLOY_SOURCE="$CHARM_FILE"
+    fi
+
     if [[ "$MODE" == "auto" ]]; then
         APP_NAME="concourse-ci"
         echo "Deploying Concourse (auto mode)..."
-        juju deploy "$CHARM_FILE" "$APP_NAME" \
+        # shellcheck disable=SC2086
+        juju deploy $DEPLOY_SOURCE "$APP_NAME" \
             --config mode=auto \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
@@ -202,13 +219,15 @@ if should_run "deploy"; then
         WORKER_APP="concourse-worker"
         
         echo "Deploying Concourse Web..."
-        juju deploy "$CHARM_FILE" "$WEB_APP" \
+        # shellcheck disable=SC2086
+        juju deploy $DEPLOY_SOURCE "$WEB_APP" \
             --config mode=web \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
             
         echo "Deploying Concourse Worker..."
-        juju deploy "$CHARM_FILE" "$WORKER_APP" \
+        # shellcheck disable=SC2086
+        juju deploy $DEPLOY_SOURCE "$WORKER_APP" \
             --config mode=worker \
             --config version="$CONCOURSE_VERSION" \
             "${STORAGE_ARGS[@]}"
