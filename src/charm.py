@@ -1389,6 +1389,8 @@ class ConcourseCharm(CharmBase):
             # Initialize upgrade coordinator
             storage_coordinator = self.web_helper.storage_coordinator
             if not storage_coordinator:
+                storage_coordinator = self.web_helper.initialize_shared_storage()
+            if not storage_coordinator:
                 raise Exception("Storage coordinator not initialized for coordinated upgrade")
             
             peer_relation = self.model.get_relation("concourse-peer")
@@ -1507,6 +1509,8 @@ class ConcourseCharm(CharmBase):
             
             # Initialize coordinators
             storage_coordinator = self.worker_helper.storage_coordinator
+            if not storage_coordinator:
+                storage_coordinator = self.worker_helper.initialize_shared_storage()
             if not storage_coordinator:
                 logger.warning("Storage coordinator not available for upgrade coordination")
                 return

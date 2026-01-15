@@ -1099,7 +1099,18 @@ class UpgradeCoordinator:
             if not state:
                 raise SharedStorageError("Upgrade state lost during wait")
             
-            ready_count = state.worker_ready_count
+            # Count workers who have set upgrade-ready=true
+            ready_count = 0
+            if hasattr(self.relation, 'relation') and self.relation.relation:
+                for unit in self.relation.relation.units:
+                    # Check if unit has set ready flag
+                    unit_data = self.relation.relation.data.get(unit, {})
+                    if unit_data.get("upgrade-ready") == "true":
+                        ready_count += 1
+            else:
+                # Fallback for testing
+                ready_count = state.worker_ready_count
+            
             expected_count = state.expected_worker_count
             
             self.logger.debug(
@@ -1259,11 +1270,11 @@ class UpgradeCoordinator:
             raise
         
         # Increment ready count
-        state.worker_ready_count += 1
+        # state.worker_ready_count += 1  # Cannot update global count from worker
         state.timestamp = datetime.now(timezone.utc)
         
-        for key, value in state.to_relation_data().items():
-            self.relation.set_app_data(key, value)
+        # for key, value in state.to_relation_data().items():
+        #     self.relation.set_app_data(key, value)
         
         # Set unit-specific flag
         self.relation.set_unit_data("upgrade-ready", "true")
@@ -1271,8 +1282,7 @@ class UpgradeCoordinator:
                                    datetime.now(timezone.utc).isoformat())
         
         self.logger.info(
-            f"Acknowledged PREPARE signal "
-            f"({state.worker_ready_count}/{state.expected_worker_count} ready)"
+            f"Acknowledged PREPARE signal (set upgrade-ready=true)"
         )
     
     def handle_complete_signal(self) -> None:
