@@ -607,10 +607,7 @@ jobs:
       - name: Wait for initial deployment
         run: |
           juju debug-log &
-          PID="$!"
           timeout 300 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-shared; done'
-          kill "$PID"
-          fg
 
       - name: Configure shared storage (initial)
         run: |
@@ -635,10 +632,7 @@ jobs:
       - name: Wait for second unit
         run: |
           juju debug-log &
-          PID="$!"
           timeout 300 bash -c 'while ! juju status -m concourse-shared | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-shared; done'
-          kill "$PID"
-          fg
 
       - name: Configure shared storage (second unit)
         run: |
@@ -816,10 +810,7 @@ jobs:
       - name: Wait for deployment
         run: |
           juju debug-log &
-          PID="$!"
           timeout 300 bash -c 'while ! juju status -m concourse-ss-ww | grep -q "Waiting for shared storage"; do sleep 5; juju status -m concourse-ss-ww; done'
-          kill "$PID"
-          fg
 
       - name: Configure shared storage (web)
         run: ./scripts/setup-shared-storage.sh concourse-web $(pwd)/concourse-shared-ww
