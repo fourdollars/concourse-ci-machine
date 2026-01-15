@@ -36,7 +36,8 @@ The charm supports flexible deployment architectures:
     - **`concourse_worker.py`**: Logic specific to the Worker component (containerd setup, GPU configuration, TSA connection).
         - `initialize_shared_storage()`: Sets up StorageCoordinator for shared storage mode
         - `update_config()`: Creates worker-config.env file at the correct path (shared or local). **Crucial**: Injects `PATH` to prioritize `/opt/bin` for the runc wrapper.
-        - `install_folder_mount_wrapper()`: Backs up original `runc` and symlinks `/var/lib/concourse/bin/runc` to the wrapper to force its usage.
+        - `install_folder_mount_wrapper()`: Backs up original `runc` and symlinks `/var/lib/concourse/bin/runc` to the folder mount wrapper.
+        - `install_gpu_wrapper()`: Installs the NVIDIA GPU wrapper and symlinks `/var/lib/concourse/bin/runc` to it when `enable-gpu=true`.
     - **`concourse_installer.py`**: Handles downloading and installing Concourse binaries.
     - **`folder_mount_manager.py`**: Manages the discovery and mounting of host folders into worker containers.
     - **`storage_coordinator.py`**: Manages shared storage coordination between web and worker units.
@@ -44,6 +45,7 @@ The charm supports flexible deployment architectures:
     - **`setup-shared-storage.sh`**: Configures LXC shared storage for units (run before or after deployment).
 - **`hooks/`**:
     - **`runc-wrapper`**: Intercepts OCI runtime calls to inject host folder mounts into the container's `config.json`.
+    - **`runc-gpu-wrapper`**: Intercepts OCI runtime calls to inject both folder mounts and NVIDIA GPU devices.
 - **`specs/`**: Contains design specifications for features. **Always check here before starting complex tasks.**
 - **`metadata.yaml`**: Defines the charm's relations, storage, and containers.
 - **`config.yaml`**: Defines the configuration options available to the user.
@@ -64,7 +66,21 @@ The charm supports flexible deployment architectures:
 charmcraft pack
 ```
 
-### Deploy & Test (Local LXD)
+### Deploy & Test (Automated Script)
+The `deploy-test.sh` script handles the entire lifecycle: build, deploy, verify, and cleanup.
+
+```bash
+# Run full regression test (deploy -> verify -> mounts -> tagged -> gpu -> upgrade)
+./scripts/deploy-test.sh
+
+# Skip cleanup to keep the environment for debugging
+./scripts/deploy-test.sh --skip-cleanup
+
+# Start from a specific step (useful for iterating)
+./scripts/deploy-test.sh --goto=gpu --skip-cleanup
+```
+
+### Manual Deploy & Test (Local LXD)
 ```bash
 # 1. Bootstrap a test controller (if not exists)
 # Note: --config test-mode=true sets update-status-hook-interval to 10s (vs 5m) for faster feedback
