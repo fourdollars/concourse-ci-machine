@@ -720,6 +720,9 @@ step_scale_out() {
     INITIAL_COUNT=$(juju status -m "$MODEL_NAME" "$SCALE_APP" --format=json | jq -r ".applications.\"$SCALE_APP\".units | length")
     TARGET_COUNT=$((INITIAL_COUNT + 1))
     
+    echo "Status before scaling:"
+    juju status -m "$MODEL_NAME"
+    
     echo "Scaling $SCALE_APP from $INITIAL_COUNT to $TARGET_COUNT units..."
     juju add-unit -m "$MODEL_NAME" "$SCALE_APP"
     
@@ -747,6 +750,9 @@ step_scale_out() {
     else
         sleep 60
     fi
+    
+    echo "Status after scaling:"
+    juju status -m "$MODEL_NAME"
     
     echo "Verifying worker registration..."
     # Retry worker check a few times as registration happens after unit is active
