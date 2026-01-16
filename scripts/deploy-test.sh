@@ -496,6 +496,7 @@ EOF
         echo "✓ Mount verification passed"
     else
         echo "✗ Mount verification failed"
+        exit 1
     fi
 }
 
@@ -532,6 +533,7 @@ EOF
         echo "✓ Tagged task execution passed"
     else
         echo "✗ Tagged task execution failed"
+        exit 1
     fi
 }
 
