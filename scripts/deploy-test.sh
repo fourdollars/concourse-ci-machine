@@ -217,7 +217,7 @@ ensure_cli() {
     
     # Get password if missing
     if [[ -z "$PASSWORD" ]]; then
-        PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' || echo "")
+        PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' | sed "s/^'//;s/'$//" || echo "")
         if [[ -z "$PASSWORD" ]]; then
             echo "Error: Failed to retrieve admin password."
             exit 1
