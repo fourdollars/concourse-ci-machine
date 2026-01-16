@@ -163,6 +163,11 @@ trap_cleanup() {
         echo "Dumping model status..."
         juju status -m "$MODEL_NAME" --storage --relations || true
         echo ""
+        echo "Access Info (if model still exists):"
+        echo "  URL:      http://${IP:-<unknown>}:8080"
+        echo "  Username: admin"
+        echo "  Password: ${PASSWORD:-<unknown>}"
+        echo ""
     fi
 
     if [[ "$DESTROYED" == "true" ]]; then
