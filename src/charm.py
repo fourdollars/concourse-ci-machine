@@ -476,12 +476,14 @@ class ConcourseCharm(CharmBase):
                                               self.model.get_relation("concourse-peer") is not None)
                     
                     if use_coordinated_upgrade:
-                        if self.unit.is_leader():
+                        # Only web nodes should orchestrate downloads (T054)
+                        if self.unit.is_leader() and self._should_run_web():
                             self._orchestrate_coordinated_upgrade(event, desired_version)
                         else:
                             logger.info(f"Worker unit: waiting for leader to upgrade to {desired_version}")
                             self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse {desired_version}")
-                            # Worker logic continues below (might restart service with old binary, but that's ok)
+                            # Skip further configuration until version matches
+                            return
                     else:
                         # Simple upgrade (single unit or no shared storage)
                         self._perform_simple_upgrade(event, desired_version)
@@ -661,7 +663,7 @@ class ConcourseCharm(CharmBase):
                     
                     elif self._should_run_worker():
                         logger.info("Worker unit: starting installation with shared storage")
-                        self.unit.status = MaintenanceStatus(f"Waiting for binaries v{version}...")
+                        self.unit.status = WaitingStatus(f"Waiting for leader to install Concourse CI {version}.")
                         try:
                             storage_coordinator = self.worker_helper.initialize_shared_storage()
                             if storage_coordinator:
@@ -1364,16 +1366,17 @@ class ConcourseCharm(CharmBase):
             # Step 1: Initiate upgrade (sets PREPARE phase)
             logger.info(f"Step 1: Initiating upgrade, expecting {worker_count} workers")  # T052
             upgrade_coordinator.initiate_upgrade(version, worker_count)
-            self.unit.status = MaintenanceStatus(f"Waiting for {worker_count} workers...")  # T053
+            # self.unit.status = MaintenanceStatus(f"Waiting for {worker_count} workers...")  # T053
             
             # Step 2: Wait for workers to stop and acknowledge
-            try:
-                logger.info("Step 2: Waiting for workers to stop services...")  # T052
-                upgrade_coordinator.wait_for_workers_ready(timeout_seconds=120)
-                logger.info("All workers ready, proceeding with download")  # T052
-            except Exception as e:
-                logger.warning(f"Worker wait timeout or error: {e}")  # T052
-                # Continue anyway after timeout
+            # Skipped as per user request (T055)
+            # try:
+            #     logger.info("Step 2: Waiting for workers to stop services...")  # T052
+            #     upgrade_coordinator.wait_for_workers_ready(timeout_seconds=120)
+            #     logger.info("All workers ready, proceeding with download")  # T052
+            # except Exception as e:
+            #     logger.warning(f"Worker wait timeout or error: {e}")  # T052
+            #     # Continue anyway after timeout
             
             # Step 3: Mark download phase
             upgrade_coordinator.mark_download_phase()
