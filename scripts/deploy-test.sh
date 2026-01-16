@@ -168,6 +168,8 @@ trap_cleanup() {
         echo "  Username: admin"
         echo "  Password: ${PASSWORD:-<unknown>}"
         echo ""
+        # shellcheck disable=SC2015
+        ./fly -t test login -c "http://${IP:-<unknown>}:8080" -u admin -p "${PASSWORD:-<unknown>}" && ./fly -t test workers || true
     fi
 
     if [[ "$DESTROYED" == "true" ]]; then
