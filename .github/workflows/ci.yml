@@ -113,7 +113,7 @@ jobs:
         run: |
           # Cleanup model used by script
           MODEL_NAME="concourse-test-auto-none"
-          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
           
           # Purge tools
           sudo snap remove juju --purge
@@ -184,7 +184,7 @@ jobs:
         run: |
           # Cleanup model used by script
           MODEL_NAME="concourse-test-web-worker-none"
-          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
           
           # Purge tools
           sudo snap remove juju --purge
@@ -256,7 +256,7 @@ jobs:
         run: |
           # Cleanup model used by script
           MODEL_NAME="concourse-test-auto-lxc"
-          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
           
           # Cleanup shared storage dir
           sudo rm -fr /tmp/${MODEL_NAME}-shared || true
@@ -335,7 +335,7 @@ jobs:
         run: |
           # Cleanup model used by script
           MODEL_NAME="concourse-test-web-worker-lxc"
-          yes $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
           
           # Cleanup shared storage dir
           sudo rm -fr /tmp/${MODEL_NAME}-shared || true
