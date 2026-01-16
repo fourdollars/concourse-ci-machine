@@ -155,6 +155,16 @@ cleanup_model() {
 # Trap exit for cleanup
 trap_cleanup() {
     exit_code=$?
+    
+    # Dump status on error
+    if [[ $exit_code -ne 0 ]]; then
+        echo ""
+        echo "=== Abnormal Exit (Code: $exit_code) ==="
+        echo "Dumping model status..."
+        juju status -m "$MODEL_NAME" --storage --relations || true
+        echo ""
+    fi
+
     if [[ "$DESTROYED" == "true" ]]; then
         exit $exit_code
     fi
@@ -166,6 +176,13 @@ trap_cleanup() {
             echo "Skipping cleanup as requested."
             echo "To clean up manually:"
             echo "  echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait"
+            
+            echo ""
+            echo "Access Info (if model still exists):"
+            echo "  URL:      http://${IP:-<unknown>}:8080"
+            echo "  Username: admin"
+            echo "  Password: ${PASSWORD:-<unknown>}"
+            echo ""
         fi
     else
         echo ""
@@ -780,10 +797,3 @@ done
 
 echo ""
 echo "Test execution complete."
-if [[ "$SKIP_CLEANUP" == "true" ]]; then
-    echo "Access Info (if model still exists):"
-    echo "  URL:      http://$IP:8080"
-    echo "  Username: admin"
-    echo "  Password: $PASSWORD"
-    echo ""
-fi
