@@ -1188,8 +1188,21 @@ class ConcourseCharm(CharmBase):
         )
 
         keys_dir = Path(KEYS_DIR)
-        worker_dir = Path("/var/lib/concourse/worker")
-        worker_dir.mkdir(exist_ok=True)
+        
+        # Use worker-specific directory if shared storage is enabled (T067)
+        if self.config.get("shared-storage", "none") != "none":
+            if not self.worker_helper.worker_directory:
+                self.worker_helper.initialize_shared_storage()
+            
+            if self.worker_helper.worker_directory:
+                worker_dir = self.worker_helper.worker_directory.work_dir
+                logger.info(f"Using shared storage work_dir for merged config: {worker_dir}")
+            else:
+                worker_dir = Path("/var/lib/concourse/worker")
+                worker_dir.mkdir(exist_ok=True)
+        else:
+            worker_dir = Path("/var/lib/concourse/worker")
+            worker_dir.mkdir(exist_ok=True)
 
         import socket
 

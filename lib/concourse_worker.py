@@ -509,6 +509,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
 
     def update_config(self, tsa_host: str = "127.0.0.1:2222", keys_dir: Optional[str] = None):
         """Update Concourse worker configuration (T025: use shared storage work_dir if available)"""
+        # Ensure shared storage is initialized if configured (T067)
+        if not self.worker_directory and self.charm.config.get("shared-storage", "none") != "none":
+            self.initialize_shared_storage()
+
         if keys_dir:
             keys_dir = Path(keys_dir)
         else:
