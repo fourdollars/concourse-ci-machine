@@ -575,6 +575,18 @@ class ConcourseCharm(CharmBase):
                                 logger.info(
                                     f"Leader reports upgrade to {desired_version} is complete, proceeding"
                                 )
+                                # Perform upgrade immediately instead of just setting a flag
+                                self.unit.status = MaintenanceStatus(f"Upgrading to v{desired_version}...")
+                                if self._should_run_worker():
+                                    self.worker_helper.stop_service()
+                                    # Re-install wrappers
+                                    if self.config.get("enable-gpu", False):
+                                        self.worker_helper.configure_containerd_for_gpu()
+                                    else:
+                                        self.worker_helper.install_folder_mount_wrapper()
+                                
+                                # Update version published to peers
+                                self._publish_version_to_peer_relation()
                             else:
                                 logger.info(
                                     f"Worker unit: waiting for leader to upgrade to {desired_version}"
@@ -1171,6 +1183,8 @@ class ConcourseCharm(CharmBase):
             else:
                 logger.info("TSA configuration not yet available in peer relation")
 
+        self._update_status()
+
     def _update_merged_config(self):
         """Update config when running both web and worker"""
         from pathlib import Path
@@ -1649,7 +1663,7 @@ class ConcourseCharm(CharmBase):
             # Step 6: Reset state after a delay to ensure all workers have seen it
             import time
 
-            time.sleep(30)
+            time.sleep(10)
             upgrade_coordinator.reset_upgrade_state()
 
             if event and hasattr(event, "set_results"):
@@ -1757,6 +1771,28 @@ class ConcourseCharm(CharmBase):
                 upgrade_coordinator.handle_complete_signal()
                 self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
                 self._update_status()
+
+            elif upgrade_state.state == "idle":
+                # T060: Missed signal fallback - if idle but version mismatch, check binaries
+                desired_version = get_concourse_version(self.config)
+                installed_version = self._get_installed_concourse_version()
+
+                if desired_version and installed_version != desired_version:
+                    logger.info(
+                        f"Detected idle state but version mismatch ({installed_version} != {desired_version})"
+                    )
+                    if storage_coordinator.verify_binaries(desired_version):
+                        logger.info(
+                            f"Binaries v{desired_version} found in shared storage, upgrading immediately"
+                        )
+                        self.unit.status = MaintenanceStatus(
+                            f"Upgrading to v{desired_version} (missed signal)..."
+                        )
+                        upgrade_coordinator.handle_complete_signal()
+                        self._update_status()
+                elif desired_version and installed_version == desired_version:
+                    # Version already matches, ensure we're not stuck in WaitingStatus
+                    self._update_status()
 
         except Exception as e:
             logger.error(f"Failed to handle upgrade signal: {e}", exc_info=True)
