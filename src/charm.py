@@ -863,6 +863,39 @@ class ConcourseCharm(CharmBase):
                         f"Storage still not available (exists={storage_path.exists()}, marker={marker_file.exists() if storage_path.exists() else False})"
                     )
 
+        # T066a: Runtime storage monitoring for already-running units
+        # Verify storage mount accessibility (satisfies FR-007 runtime requirement)
+        if self.config.get("shared-storage", "none") == "lxc":
+            from pathlib import Path
+
+            storage_path = Path("/var/lib/concourse")
+            marker_file = storage_path / ".lxc_shared_storage"
+
+            # Only check if unit was previously running with shared storage
+            if not isinstance(self.unit.status, (WaitingStatus, MaintenanceStatus)):
+                # Verify storage is still accessible
+                if not storage_path.exists() or not marker_file.exists():
+                    logger.error(
+                        f"Shared storage mount lost! path_exists={storage_path.exists()}, marker_exists={marker_file.exists() if storage_path.exists() else False}"
+                    )
+                    self.unit.status = BlockedStatus(
+                        "Shared storage unavailable - mount may have been removed. "
+                        "Run: sudo /path/to/setup-shared-storage.sh to restore."
+                    )
+                    return
+
+                # Verify storage is writable (test write a temp file)
+                try:
+                    test_file = storage_path / ".write_test"
+                    test_file.write_text("test")
+                    test_file.unlink()
+                except (PermissionError, OSError) as e:
+                    logger.error(f"Shared storage not writable: {e}")
+                    self.unit.status = BlockedStatus(
+                        f"Shared storage not writable: {e}. Check mount permissions."
+                    )
+                    return
+
         self._update_status()
 
     def _on_stop(self, event):

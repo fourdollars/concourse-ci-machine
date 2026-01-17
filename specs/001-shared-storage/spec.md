@@ -67,7 +67,7 @@ As a Juju operator, when multiple units access shared storage concurrently, I wa
 
 ### Functional Requirements
 
-- **FR-001**: Charm MUST configure Juju storage such that multiple units can mount the same concourse-data volume
+- **FR-001**: Charm MUST support shared storage configuration via LXC disk mounts (with config option `shared-storage=lxc`), enabling multiple units to access the same `/var/lib/concourse` directory. (*Implementation Note: Initial design considered Juju storage with `--attach-storage`, but MVP uses LXC disk mounts for simpler testing and deployment.*)
 - **FR-002**: Charm MUST download Concourse binaries to shared storage on first deployment
 - **FR-003**: Subsequent units MUST detect existing binaries in shared storage and skip downloads
 - **FR-004**: Charm MUST implement file locking mechanisms to prevent concurrent write conflicts
@@ -89,7 +89,7 @@ As a Juju operator, when multiple units access shared storage concurrently, I wa
 
 ### Measurable Outcomes
 
-- **SC-001**: Multi-unit deployment (3+ units) uses <20% more disk space than single-unit deployment (target: ~1.15x rather than 3x)
+- **SC-001**: Multi-unit deployment (3+ units) uses ~1.15x disk space of single-unit deployment (vs 3x without sharing)
 - **SC-002**: Adding a new unit to existing deployment completes in <3 minutes when binaries already exist in shared storage (vs ~5 minutes with download)
 - **SC-003**: Upgrade operation across 5 units downloads binaries exactly once (verified via network traffic logs)
 - **SC-004**: Concurrent unit operations (startup, config-change) complete without storage-related errors in 99% of cases

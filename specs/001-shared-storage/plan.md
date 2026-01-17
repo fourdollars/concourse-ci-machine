@@ -203,16 +203,7 @@ STORAGE_ID=$(juju storage --format=json | jq -r '.storage | to_entries[] | selec
 juju add-unit concourse-ci --attach-storage $STORAGE_ID
 juju add-unit concourse-ci --attach-storage $STORAGE_ID
 
-# MODE=ALL testing (each unit runs both web and worker)
-juju deploy ./charm.charm concourse-ci \
-  --storage concourse-data=10G \
-  --config mode=all --config version=7.14.2
-
-# Get storage ID
-STORAGE_ID=$(juju storage --format=json | jq -r '.storage | to_entries[] | select(.value.attachments.units[] | contains("concourse-ci/0")) | .key')
-
-# Add second unit sharing storage (scales to 2 complete Concourse instances)
-juju add-unit concourse-ci --attach-storage $STORAGE_ID
+# NOTE: mode=all is deprecated and removed from shared storage testing
 
 # MODE=WEB+WORKER testing (separate apps)
 juju deploy ./charm.charm web \

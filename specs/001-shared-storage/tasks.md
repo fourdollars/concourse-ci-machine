@@ -79,7 +79,7 @@ description: "Task list for shared storage feature implementation"
 - [x] T026 [US1] Modify src/charm.py _on_install hook to detect unit role (web/leader vs worker) and branch logic accordingly
 - [x] T027 [US1] Update src/charm.py _on_install hook for web/leader path: acquire lock, download binaries, write marker, start server
 - [x] T028 [US1] Update src/charm.py _on_install hook for worker path: check existing binaries or wait, create worker directory, start worker service
-- [x] T029 [US1] Add storage coordination logging in lib/concourse_common.py with unit name prefix (e.g., "[concourse-ci/1] Waiting for binaries...")
+- [x] T029 [US1] Add storage coordination logging in lib/concourse_common.py with unit name prefix (e.g., "[concourse-ci/1] Waiting for binaries...") (Satisfies FR-009 access pattern logging with T061, T069)
 - [x] T030 [US1] Implement stale lock detection in lib/storage_coordinator.py LockCoordinator._is_stale method checking .download_in_progress age >10 minutes
 - [x] T031 [US1] Implement stale lock cleanup in lib/storage_coordinator.py LockCoordinator._clean_stale_markers method
 - [x] T032 [US1] Update lib/concourse_common.py to add get_storage_path helper that returns Path from storage-get command output
@@ -143,6 +143,7 @@ description: "Task list for shared storage feature implementation"
 - [x] T064 [US3] Implement binary corruption detection in lib/concourse_installer.py verify_binaries method using file hash comparison
 - [x] T065 [US3] Add lock cleanup logic in lib/storage_coordinator.py for orphaned locks from crashed units
 - [x] T066 [US3] Update lib/concourse_worker.py to handle concurrent worker starts gracefully with worker directory existence checks
+- [x] T066a [US3] Add runtime storage monitoring in src/charm.py _on_update_status hook: verify storage mount accessibility, set BlockedStatus("Shared storage unavailable") if mount lost (satisfies FR-007 runtime requirement)
 
 **Checkpoint**: All user stories should now be independently functional with proper contention handling
 
@@ -170,13 +171,13 @@ description: "Task list for shared storage feature implementation"
 **Purpose**: Add comprehensive E2E tests for all deployment modes with shared storage
 
 - [x] T077 [P] Add test-shared-storage-auto job to .github/workflows/ci.yml for mode=auto with 3 units using --attach-storage
-- [ ] T078 [DEPRECATED] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all (Removed)
+- [x] T078 [DEPRECATED] Add test-shared-storage-all job to .github/workflows/ci.yml for mode=all (Removed - mode=all deprecated)
 - [x] T079 [P] Add test-shared-storage-web-worker job to .github/workflows/ci.yml for separate apps with shared storage
 - [x] T080 Update publish-charm job dependencies in .github/workflows/ci.yml to include new shared storage test jobs
 - [x] T081 Add storage verification checks in test-shared-storage-auto: filesystem ID consistency, single download verification
 - [x] T082 Add disk usage measurement in test-shared-storage-auto: verify <1.2x binary size across all units
 - [x] T083 Add upgrade testing in test-shared-storage-auto: verify coordinated upgrade with single binary download
-- [ ] T084 [DEPRECATED] Add storage attachment verification in test-shared-storage-all (Removed)
+- [x] T084 [DEPRECATED] Add storage attachment verification in test-shared-storage-all (Removed - mode=all deprecated)
 - [x] T085 Add TSA relation verification in test-shared-storage-web-worker: verify workers connect with shared storage
 - [x] T086 Add concurrent operation test: simultaneously trigger config changes on multiple units (Covered in test-shared-storage-auto upgrade step)
 - [x] T087 Add new unit addition test: deploy 2 units, add 3rd with existing binaries, verify <3min addition time (Covered in test-shared-storage-auto add unit step)
