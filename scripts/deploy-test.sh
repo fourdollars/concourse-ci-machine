@@ -277,6 +277,7 @@ step_deploy() {
 
     echo "Adding model $MODEL_NAME..."
     juju add-model "$MODEL_NAME"
+    juju model-config test-mode=true
 
     # Configuration
     CHARM_FILE="./concourse-ci-machine_amd64.charm"
