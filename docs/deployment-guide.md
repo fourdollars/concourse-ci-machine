@@ -8,7 +8,9 @@ Quick reference guide for deploying Concourse CI with this charm.
 - Ubuntu 24.04 LTS environment
 - Access to Charmhub or local charm file
 
-## Basic Deployment (Single Unit)
+## Basic Deployment (Single Unit - Web Only)
+
+**Note**: In `mode=auto`, the leader unit acts as the Web node. You need at least **2 units** to have functional Workers. A single-unit deployment provides the Web UI but cannot execute pipelines.
 
 ```bash
 # Create model
@@ -18,7 +20,7 @@ juju add-model concourse
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI
-juju deploy concourse-ci-machine concourse-ci --config mode=all --base ubuntu@24.04
+juju deploy concourse-ci-machine concourse-ci --config mode=auto --base ubuntu@24.04
 
 # Integrate with database (uses Juju secrets)
 juju integrate concourse-ci:postgresql postgresql:database
@@ -171,7 +173,6 @@ juju run concourse-ci/0 check-status
 # Restart services
 juju run concourse-ci/0 restart-services
 
-# Upgrade Concourse version (set config first for persistence)
+# Upgrade Concourse version
 juju config concourse-ci version=7.14.3
-juju run concourse-ci/leader upgrade version=7.14.3
 ```

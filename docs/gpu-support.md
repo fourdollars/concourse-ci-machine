@@ -6,8 +6,8 @@ This implementation adds NVIDIA GPU support to Concourse CI workers, enabling ML
 
 ## Quick Links
 
-- 📊 **[Dataset Mounting Guide](DATASET_MOUNTING.md)** - Mount datasets for ML training workflows
-- 🚀 **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - General deployment instructions
+- 📊 **[Dataset Mounting Guide](dataset-mounting.md)** - Mount datasets for ML training workflows
+- 🚀 **[Deployment Guide](deployment-guide.md)** - General deployment instructions
 - 📘 **[Main README](README.md)** - Charm overview and features
 
 ## What's Been Added
@@ -145,7 +145,7 @@ jobs:
 
 **No pipeline modifications required!** The OCI wrapper automatically injects the mount.
 
-For detailed instructions, examples, and troubleshooting, see **[DATASET_MOUNTING.md](DATASET_MOUNTING.md)**.
+For detailed instructions, examples, and troubleshooting, see **[dataset-mounting.md](dataset-mounting.md)**.
 
 ### Test GPU Pipeline
 

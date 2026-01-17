@@ -13,7 +13,7 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 
 ## Features
 
-- **Flexible Deployment Modes**: Deploy as all-in-one, auto-scaled web/workers, or explicit roles
+- **Flexible Deployment Modes**: Deploy as auto-scaled web/workers or explicit roles
 - **Automatic Role Detection**: Leader unit becomes web server, followers become workers
 - **Fully Automated Key Distribution**: TSA keys automatically shared via peer relations - zero manual setup!
 - **Secure Random Passwords**: Auto-generated admin password stored in Juju peer data
@@ -27,9 +27,9 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
 - **Prometheus Metrics**: Optional metrics endpoint for monitoring
 - **Download Progress**: Real-time installation progress in Juju status
-- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/GPU_SUPPORT.md))
-- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/DATASET_MOUNTING.md))
-- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/GENERAL_MOUNTING.md))
+- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/gpu-support.md))
+- **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/dataset-mounting.md))
+- **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/general-mounting.md))
   - ✅ Zero configuration - just mount folders to `/srv` and go
   - ✅ Read-only by default for data safety
   - ✅ Writable folders with `_writable` or `_rw` suffix
@@ -46,7 +46,7 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - Ubuntu 24.04 LTS (on Juju-managed machines)
 - PostgreSQL charm 16/stable (for web server)
 
-### Basic Deployment (All-in-One)
+### Basic Deployment (Auto Mode)
 
 ```bash
 # Create a Juju model
@@ -56,7 +56,7 @@ juju add-model concourse
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI charm as application "concourse-ci"
-juju deploy concourse-ci-machine concourse-ci --config mode=all
+juju deploy concourse-ci-machine concourse-ci --config mode=auto
 
 # Relate to database (uses PostgreSQL 16 client interface with Juju secrets)
 juju integrate concourse-ci:postgresql postgresql:database
@@ -138,21 +138,12 @@ juju status
 
 ## Deployment Modes
 
-The charm supports four deployment modes via the `mode` configuration:
+The charm supports three deployment modes via the `mode` configuration:
 
-### 1. `all` (Single Unit - Fully Automated)
-Both web and worker run on the same unit. **Fully automated, no manual setup required.**
-
-```bash
-juju deploy concourse-ci-machine concourse-ci --config mode=all
-juju relate concourse-ci:postgresql postgresql:database
-```
-
-**Best for:** Development, testing, small deployments
-**Key Distribution:** ✅ Automatic (single unit)
-
-### 2. `auto` (Multi-Unit - Fully Automated ✨)
+### 1. `auto` (Multi-Unit - Fully Automated ✨)
 Leader unit runs web server, non-leader units run workers. **Keys automatically distributed via peer relations!**
+
+**Note**: You need at least **2 units** for this mode to have functional workers (Unit 0 = Web, Unit 1+ = Workers).
 
 ```bash
 juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
@@ -162,7 +153,7 @@ juju relate concourse-ci:postgresql postgresql:database
 **Best for:** Production, scalable deployments
 **Key Distribution:** ✅ **Fully Automatic** - zero manual intervention required!
 
-### 3. `web` + `worker` (Separate Apps - Automatic TSA Setup)
+### 2. `web` + `worker` (Separate Apps - Automatic TSA Setup)
 Deploy web and workers as separate applications for independent scaling.
 
 ```bash
@@ -186,7 +177,7 @@ juju relate web:web-tsa worker:worker-tsa
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `mode` | string | `auto` | Deployment mode: auto, all, web, or worker |
+| `mode` | string | `auto` | Deployment mode: auto, web, or worker |
 | `version` | string | `latest` | Concourse version to install (auto-detects latest from GitHub) |
 | `web-port` | int | `8080` | Web UI and API port |
 | `worker-procs` | int | `1` | Number of worker processes per unit |
@@ -226,11 +217,11 @@ Use the `upgrade` action to change Concourse CI version (update the `version` co
 juju config concourse-ci version=7.14.3
 
 # Trigger the upgrade action (automatically upgrades all workers)
-juju run concourse-ci/leader upgrade version=7.14.3
+juju config concourse-ci version=7.14.3
 
 # Downgrade is also supported (update config then run action)
 juju config concourse-ci version=7.12.1
-juju run concourse-ci/leader upgrade version=7.12.1
+juju config concourse-ci version=7.12.1
 ```
 
 **Auto-upgrade behavior:**

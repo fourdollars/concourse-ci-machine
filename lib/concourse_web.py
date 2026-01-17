@@ -7,7 +7,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from ops.model import MaintenanceStatus
+from typing import Optional
 
 from concourse_common import (
     CONCOURSE_BIN,
@@ -15,9 +15,22 @@ from concourse_common import (
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
     KEYS_DIR,
+    get_filesystem_id,
 )
 
 logger = logging.getLogger(__name__)
+
+# Import storage coordinator (may not be available)
+try:
+    from storage_coordinator import (
+        SharedStorage,
+        LockCoordinator,
+        StorageCoordinator,
+    )
+    HAS_STORAGE_COORDINATOR = True
+except ImportError:
+    HAS_STORAGE_COORDINATOR = False
+    logger.warning("storage_coordinator not available")
 
 
 class ConcourseWebHelper:
@@ -27,6 +40,77 @@ class ConcourseWebHelper:
         self.charm = charm
         self.model = charm.model
         self.config = charm.model.config
+        self.storage_coordinator = None  # Will be initialized if shared storage available
+    
+    def initialize_shared_storage(self) -> Optional[object]:
+        """Initialize shared storage for web/leader unit (T022).
+        
+        Returns:
+            StorageCoordinator instance if shared storage is available, None otherwise
+        """
+        if not HAS_STORAGE_COORDINATOR:
+            logger.info("Storage coordinator not available, skipping shared storage")
+            return None
+        
+        # Check shared-storage config
+        shared_storage_mode = self.charm.config.get("shared-storage", "none")
+
+        try:
+            if shared_storage_mode == "none":
+                logger.info("Shared storage disabled (shared-storage=none)")
+                return None
+            
+            # For LXC mode, always use /var/lib/concourse
+            if shared_storage_mode == "lxc":
+                storage_path = Path("/var/lib/concourse")
+                # Create the directory if it doesn't exist - the marker file will indicate
+                # when the actual mount is ready. This allows the charm to initialize
+                # storage coordinator even before the LXC mount is added.
+                if not storage_path.exists():
+                    logger.info(f"Creating {storage_path} directory for LXC shared storage")
+                    storage_path.mkdir(parents=True, exist_ok=True)
+            else:
+                logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
+                return None
+            
+            # Get filesystem ID for validation
+            filesystem_id = get_filesystem_id(storage_path)
+            
+            # Initialize SharedStorage
+            shared_storage = SharedStorage(
+                volume_path=storage_path,
+                filesystem_id=filesystem_id
+            )
+            logger.info(f"Initialized shared storage at: {storage_path}")
+            logger.info(f"  - Filesystem ID: {shared_storage.filesystem_id}")
+            logger.info(f"  - Bin directory: {shared_storage.bin_directory}")
+            logger.info(f"  - Keys directory: {shared_storage.keys_directory}")
+            
+            # Initialize LockCoordinator
+            lock_coordinator = LockCoordinator(
+                lock_path=shared_storage.lock_file_path,
+                holder_unit=self.charm.unit.name,
+                timeout_seconds=600  # 10 minutes
+            )
+            
+            # Initialize StorageCoordinator (web/leader downloads)
+            self.storage_coordinator = StorageCoordinator(
+                storage=shared_storage,
+                lock=lock_coordinator,
+                is_leader=True  # Web units act as downloaders
+            )
+            
+            logger.info("Storage coordinator initialized for web/leader unit")
+            return self.storage_coordinator
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize shared storage: {e}")
+            # If shared storage is configured but failed to init, we should probably know why
+            if shared_storage_mode != "none":
+                logger.error("Raising exception because shared-storage is enabled")
+                raise
+            # Non-fatal: fall back to local installation
+            return None
 
     def setup_systemd_service(self):
         """Create systemd service file for Concourse web server"""
@@ -54,6 +138,13 @@ WantedBy=multi-user.target
 """
 
         try:
+            # Ensure /etc/default/concourse exists (required by systemd service)
+            default_config = Path("/etc/default/concourse")
+            if not default_config.exists():
+                default_config.touch()
+                os.chmod("/etc/default/concourse", 0o644)
+                logger.info("Created /etc/default/concourse")
+            
             server_path = Path(SYSTEMD_SERVICE_DIR) / "concourse-server.service"
             server_path.write_text(server_service)
             os.chmod(server_path, 0o644)
@@ -61,7 +152,7 @@ WantedBy=multi-user.target
             # Reload systemd to recognize new service files
             subprocess.run(["systemctl", "daemon-reload"], check=True)
 
-            logger.info(f"Web server systemd service created")
+            logger.info("Web server systemd service created")
         except Exception as e:
             logger.error(f"Failed to create systemd service: {e}")
             raise
@@ -196,5 +287,48 @@ WantedBy=multi-user.target
                 text=True,
             )
             return result.returncode == 0 and result.stdout.strip() == "active"
-        except:
+        except Exception:
             return False
+    
+    def upgrade_with_shared_storage(self, target_version: str) -> None:
+        """Perform coordinated upgrade with shared storage (T050).
+        
+        Steps:
+        1. Acquire exclusive lock
+        2. Download new binaries to shared storage
+        3. Update version marker
+        4. Restart web server service
+        
+        Args:
+            target_version: Target Concourse version (e.g., "7.14.3")
+            
+        Raises:
+            LockAcquireError: If another unit holds the download lock
+            Exception: If download or installation fails
+        """
+        if not self.storage_coordinator:
+            raise Exception("Storage coordinator not initialized for upgrade")
+        
+        logger.info(f"Starting coordinated upgrade to v{target_version}")
+        
+        # Step 1: Acquire exclusive lock (T050)
+        logger.info("Acquiring exclusive lock for binary download")
+        with self.storage_coordinator.lock.acquire_exclusive():
+            logger.info("Lock acquired, downloading binaries")
+            
+            # Step 2: Download new version to shared storage (T050)
+            from concourse_installer import download_and_install_concourse_with_storage
+            download_and_install_concourse_with_storage(
+                self.charm, target_version, self.storage_coordinator
+            )
+            
+            # Step 3: Update version marker (T050)
+            logger.info(f"Writing version marker: {target_version}")
+            self.storage_coordinator.storage.write_installed_version(target_version)
+            
+        logger.info("Lock released, binaries installed")
+        
+        # Step 4: Restart web server (T050)
+        logger.info("Restarting web server with new binaries")
+        self.restart_service()
+        logger.info(f"Web server upgraded to v{target_version} successfully")

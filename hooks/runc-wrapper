@@ -44,7 +44,7 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
 fi
 
 # Use bundled runc if available, fallback to system runc
-RUNC_BIN="/opt/concourse/bin/runc.real"
+RUNC_BIN="/opt/bin/runc.real"
 if [[ ! -x "$RUNC_BIN" ]]; then
     RUNC_BIN="/usr/bin/runc.real"
 fi

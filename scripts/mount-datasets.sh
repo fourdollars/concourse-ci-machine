@@ -132,19 +132,7 @@ done
 
 print_info "Dataset mounting complete!"
 echo ""
-print_info "IMPORTANT: Restart the worker service to ensure changes are recognized:"
-echo ""
-for UNIT in $UNITS; do
-    MACHINE=$(juju status $UNIT --format=json 2>/dev/null | jq -r '.applications."'$APP_NAME'".units."'$UNIT'".machine' 2>/dev/null)
-    if [ -n "$MACHINE" ] && [ "$MACHINE" != "null" ]; then
-        CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
-        if [ -n "$CONTAINER" ]; then
-            echo "  lxc exec $CONTAINER -- systemctl restart concourse-worker"
-        fi
-    fi
-done
-echo ""
-print_info "After restart, datasets will be automatically available in GPU tasks at: $MOUNT_POINT"
+print_info "Datasets will be automatically available in GPU tasks at: $MOUNT_POINT"
 print_info "No pipeline modifications required!"
 echo ""
 print_info "To verify, run a test task:"
