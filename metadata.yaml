@@ -47,7 +47,7 @@ links:
 
 provides:
   monitoring:
-    interface: monitoring
+    interface: prometheus_scrape
     description: Prometheus metrics endpoint for monitoring integration
   
   web-tsa:

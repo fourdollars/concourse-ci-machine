@@ -27,6 +27,7 @@ try:
         LockCoordinator,
         StorageCoordinator,
     )
+
     HAS_STORAGE_COORDINATOR = True
 except ImportError:
     HAS_STORAGE_COORDINATOR = False
@@ -40,18 +41,20 @@ class ConcourseWebHelper:
         self.charm = charm
         self.model = charm.model
         self.config = charm.model.config
-        self.storage_coordinator = None  # Will be initialized if shared storage available
-    
+        self.storage_coordinator = (
+            None  # Will be initialized if shared storage available
+        )
+
     def initialize_shared_storage(self) -> Optional[object]:
         """Initialize shared storage for web/leader unit (T022).
-        
+
         Returns:
             StorageCoordinator instance if shared storage is available, None otherwise
         """
         if not HAS_STORAGE_COORDINATOR:
             logger.info("Storage coordinator not available, skipping shared storage")
             return None
-        
+
         # Check shared-storage config
         shared_storage_mode = self.charm.config.get("shared-storage", "none")
 
@@ -59,7 +62,7 @@ class ConcourseWebHelper:
             if shared_storage_mode == "none":
                 logger.info("Shared storage disabled (shared-storage=none)")
                 return None
-            
+
             # For LXC mode, always use /var/lib/concourse
             if shared_storage_mode == "lxc":
                 storage_path = Path("/var/lib/concourse")
@@ -67,42 +70,43 @@ class ConcourseWebHelper:
                 # when the actual mount is ready. This allows the charm to initialize
                 # storage coordinator even before the LXC mount is added.
                 if not storage_path.exists():
-                    logger.info(f"Creating {storage_path} directory for LXC shared storage")
+                    logger.info(
+                        f"Creating {storage_path} directory for LXC shared storage"
+                    )
                     storage_path.mkdir(parents=True, exist_ok=True)
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None
-            
+
             # Get filesystem ID for validation
             filesystem_id = get_filesystem_id(storage_path)
-            
+
             # Initialize SharedStorage
             shared_storage = SharedStorage(
-                volume_path=storage_path,
-                filesystem_id=filesystem_id
+                volume_path=storage_path, filesystem_id=filesystem_id
             )
             logger.info(f"Initialized shared storage at: {storage_path}")
             logger.info(f"  - Filesystem ID: {shared_storage.filesystem_id}")
             logger.info(f"  - Bin directory: {shared_storage.bin_directory}")
             logger.info(f"  - Keys directory: {shared_storage.keys_directory}")
-            
+
             # Initialize LockCoordinator
             lock_coordinator = LockCoordinator(
                 lock_path=shared_storage.lock_file_path,
                 holder_unit=self.charm.unit.name,
-                timeout_seconds=600  # 10 minutes
+                timeout_seconds=600,  # 10 minutes
             )
-            
+
             # Initialize StorageCoordinator (web/leader downloads)
             self.storage_coordinator = StorageCoordinator(
                 storage=shared_storage,
                 lock=lock_coordinator,
-                is_leader=True  # Web units act as downloaders
+                is_leader=True,  # Web units act as downloaders
             )
-            
+
             logger.info("Storage coordinator initialized for web/leader unit")
             return self.storage_coordinator
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize shared storage: {e}")
             # If shared storage is configured but failed to init, we should probably know why
@@ -144,7 +148,7 @@ WantedBy=multi-user.target
                 default_config.touch()
                 os.chmod("/etc/default/concourse", 0o644)
                 logger.info("Created /etc/default/concourse")
-            
+
             server_path = Path(SYSTEMD_SERVICE_DIR) / "concourse-server.service"
             server_path.write_text(server_service)
             os.chmod(server_path, 0o644)
@@ -166,9 +170,6 @@ WantedBy=multi-user.target
         config = {
             "CONCOURSE_BIND_PORT": str(self.config.get("web-port", 8080)),
             "CONCOURSE_LOG_LEVEL": self.config.get("log-level", "info"),
-            "CONCOURSE_ENABLE_METRICS": str(
-                self.config.get("enable-metrics", True)
-            ).lower(),
             "CONCOURSE_TSA_HOST_KEY": str(keys_dir / "tsa_host_key"),
             "CONCOURSE_TSA_AUTHORIZED_KEYS": str(keys_dir / "authorized_worker_keys"),
             "CONCOURSE_SESSION_SIGNING_KEY": str(keys_dir / "session_signing_key"),
@@ -176,6 +177,11 @@ WantedBy=multi-user.target
             "CONCOURSE_ADD_LOCAL_USER": f"{username}:{admin_password}",
             "CONCOURSE_MAIN_TEAM_LOCAL_USER": username,
         }
+
+        # Configure Prometheus metrics endpoint (binds to 0.0.0.0:9391 when enabled)
+        if self.config.get("enable-metrics", True):
+            config["CONCOURSE_PROMETHEUS_BIND_IP"] = "0.0.0.0"
+            config["CONCOURSE_PROMETHEUS_BIND_PORT"] = "9391"
 
         # Add database configuration
         if db_url:
@@ -204,9 +210,13 @@ WantedBy=multi-user.target
             logger.info("Vault URL is set, enabling Vault credential manager")
             config["CONCOURSE_VAULT_URL"] = self.config["vault-url"]
             if self.config.get("vault-auth-backend"):
-                config["CONCOURSE_VAULT_AUTH_BACKEND"] = self.config["vault-auth-backend"]
+                config["CONCOURSE_VAULT_AUTH_BACKEND"] = self.config[
+                    "vault-auth-backend"
+                ]
             if self.config.get("vault-auth-backend-max-ttl"):
-                config["CONCOURSE_VAULT_AUTH_BACKEND_MAX_TTL"] = self.config["vault-auth-backend-max-ttl"]
+                config["CONCOURSE_VAULT_AUTH_BACKEND_MAX_TTL"] = self.config[
+                    "vault-auth-backend-max-ttl"
+                ]
             if self.config.get("vault-auth-param"):
                 config["CONCOURSE_VAULT_AUTH_PARAM"] = self.config["vault-auth-param"]
             if self.config.get("vault-ca-cert"):
@@ -216,9 +226,13 @@ WantedBy=multi-user.target
             if self.config.get("vault-client-key"):
                 config["CONCOURSE_VAULT_CLIENT_KEY"] = self.config["vault-client-key"]
             if self.config.get("vault-client-token"):
-                config["CONCOURSE_VAULT_CLIENT_TOKEN"] = self.config["vault-client-token"]
+                config["CONCOURSE_VAULT_CLIENT_TOKEN"] = self.config[
+                    "vault-client-token"
+                ]
             if self.config.get("vault-lookup-templates"):
-                config["CONCOURSE_VAULT_LOOKUP_TEMPLATES"] = self.config["vault-lookup-templates"]
+                config["CONCOURSE_VAULT_LOOKUP_TEMPLATES"] = self.config[
+                    "vault-lookup-templates"
+                ]
             if self.config.get("vault-namespace"):
                 config["CONCOURSE_VAULT_NAMESPACE"] = self.config["vault-namespace"]
             if self.config.get("vault-path-prefix"):
@@ -289,45 +303,46 @@ WantedBy=multi-user.target
             return result.returncode == 0 and result.stdout.strip() == "active"
         except Exception:
             return False
-    
+
     def upgrade_with_shared_storage(self, target_version: str) -> None:
         """Perform coordinated upgrade with shared storage (T050).
-        
+
         Steps:
         1. Acquire exclusive lock
         2. Download new binaries to shared storage
         3. Update version marker
         4. Restart web server service
-        
+
         Args:
             target_version: Target Concourse version (e.g., "7.14.3")
-            
+
         Raises:
             LockAcquireError: If another unit holds the download lock
             Exception: If download or installation fails
         """
         if not self.storage_coordinator:
             raise Exception("Storage coordinator not initialized for upgrade")
-        
+
         logger.info(f"Starting coordinated upgrade to v{target_version}")
-        
+
         # Step 1: Acquire exclusive lock (T050)
         logger.info("Acquiring exclusive lock for binary download")
         with self.storage_coordinator.lock.acquire_exclusive():
             logger.info("Lock acquired, downloading binaries")
-            
+
             # Step 2: Download new version to shared storage (T050)
             from concourse_installer import download_and_install_concourse_with_storage
+
             download_and_install_concourse_with_storage(
                 self.charm, target_version, self.storage_coordinator
             )
-            
+
             # Step 3: Update version marker (T050)
             logger.info(f"Writing version marker: {target_version}")
             self.storage_coordinator.storage.write_installed_version(target_version)
-            
+
         logger.info("Lock released, binaries installed")
-        
+
         # Step 4: Restart web server (T050)
         logger.info("Restarting web server with new binaries")
         self.restart_service()

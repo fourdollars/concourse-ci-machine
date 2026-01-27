@@ -62,6 +62,18 @@ except ImportError:
     logger = logging.getLogger("concourse-ci")
     logger.warning("data_platform_libs not available, PostgreSQL 16+ support disabled")
 
+# Import prometheus monitoring library
+try:
+    from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+
+    HAS_PROMETHEUS_SCRAPE = True
+except ImportError:
+    HAS_PROMETHEUS_SCRAPE = False
+    logger = logging.getLogger("concourse-ci")
+    logger.warning(
+        "prometheus_scrape library not available, monitoring relation disabled"
+    )
+
 # Configure logging
 log_handlers = [logging.StreamHandler()]
 log_file_path = Path("/var/log/concourse-ci.log")
@@ -100,6 +112,23 @@ class ConcourseCharm(CharmBase):
             )
         else:
             self.database = None
+
+        # Initialize Prometheus monitoring endpoint provider
+        # Concourse exposes metrics on port 9391 at /metrics when enable-metrics=true
+        if HAS_PROMETHEUS_SCRAPE:
+            self.metrics_endpoint = MetricsEndpointProvider(
+                self,
+                relation_name="monitoring",
+                jobs=[
+                    {
+                        "metrics_path": "/metrics",
+                        "static_configs": [{"targets": ["*:9391"]}],
+                    }
+                ],
+                refresh_event=self.on.config_changed,
+            )
+        else:
+            self.metrics_endpoint = None
 
         # Register event handlers
         self.framework.observe(self.on.install, self._on_install)
@@ -468,9 +497,9 @@ class ConcourseCharm(CharmBase):
                     worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
                     if worker_pub_key_path.exists():
                         worker_pub_key = worker_pub_key_path.read_text().strip()
-                        tsa_relation.data[self.unit][
-                            "worker-public-key"
-                        ] = worker_pub_key
+                        tsa_relation.data[self.unit]["worker-public-key"] = (
+                            worker_pub_key
+                        )
                         logger.info("Republished worker public key to TSA relation")
 
             # Trigger config update
@@ -564,19 +593,25 @@ class ConcourseCharm(CharmBase):
                                     sc = self.worker_helper.storage_coordinator
                                     if not sc:
                                         sc = self.worker_helper.initialize_shared_storage()
-                                    
+
                                     if sc and sc.verify_binaries(desired_version):
-                                        logger.info(f"Binaries v{desired_version} found in shared storage while state is idle, proceeding with upgrade")
+                                        logger.info(
+                                            f"Binaries v{desired_version} found in shared storage while state is idle, proceeding with upgrade"
+                                        )
                                         is_complete = True
                                 except Exception as e:
-                                    logger.warning(f"Failed to verify binaries in idle state: {e}")
+                                    logger.warning(
+                                        f"Failed to verify binaries in idle state: {e}"
+                                    )
 
                             if is_complete:
                                 logger.info(
                                     f"Leader reports upgrade to {desired_version} is complete, proceeding"
                                 )
                                 # Perform upgrade immediately instead of just setting a flag
-                                self.unit.status = MaintenanceStatus(f"Upgrading to v{desired_version}...")
+                                self.unit.status = MaintenanceStatus(
+                                    f"Upgrading to v{desired_version}..."
+                                )
                                 if self._should_run_worker():
                                     self.worker_helper.stop_service()
                                     # Re-install wrappers
@@ -584,7 +619,7 @@ class ConcourseCharm(CharmBase):
                                         self.worker_helper.configure_containerd_for_gpu()
                                     else:
                                         self.worker_helper.install_folder_mount_wrapper()
-                                
+
                                 # Update version published to peers
                                 self._publish_version_to_peer_relation()
                             else:
@@ -1235,15 +1270,17 @@ class ConcourseCharm(CharmBase):
         )
 
         keys_dir = Path(KEYS_DIR)
-        
+
         # Use worker-specific directory if shared storage is enabled (T067)
         if self.config.get("shared-storage", "none") != "none":
             if not self.worker_helper.worker_directory:
                 self.worker_helper.initialize_shared_storage()
-            
+
             if self.worker_helper.worker_directory:
                 worker_dir = self.worker_helper.worker_directory.work_dir
-                logger.info(f"Using shared storage work_dir for merged config: {worker_dir}")
+                logger.info(
+                    f"Using shared storage work_dir for merged config: {worker_dir}"
+                )
             else:
                 worker_dir = Path("/var/lib/concourse/worker")
                 worker_dir.mkdir(exist_ok=True)
@@ -1897,9 +1934,9 @@ class ConcourseCharm(CharmBase):
                 # Publish version for upgrade coordination
                 installed_version = self._get_installed_concourse_version()
                 if installed_version:
-                    event.relation.data[self.unit][
-                        "concourse-version"
-                    ] = installed_version
+                    event.relation.data[self.unit]["concourse-version"] = (
+                        installed_version
+                    )
 
                 logger.info(f"Published TSA info: {web_ip}:2222")
 
