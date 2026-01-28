@@ -5,7 +5,6 @@
 [![GitHub](https://img.shields.io/badge/GitHub-fourdollars/concourse--ci--machine-blue.svg)](https://github.com/fourdollars/concourse-ci-machine)
 [![CI](https://github.com/fourdollars/concourse-ci-machine/actions/workflows/ci.yml/badge.svg)](https://github.com/fourdollars/concourse-ci-machine/actions/workflows/ci.yml)
 [![Charmhub](https://charmhub.io/concourse-ci-machine/badge.svg)](https://charmhub.io/concourse-ci-machine)
-[![Release](https://img.shields.io/github/v/release/fourdollars/concourse-ci-machine)](https://github.com/fourdollars/concourse-ci-machine/releases)
 
 A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/) - a modern, scalable continuous integration and delivery system. This charm supports flexible deployment patterns including single-unit, multi-unit with automatic role assignment, and separate web/worker configurations.
 

@@ -39,6 +39,7 @@ from concourse_installer import (
 )
 from concourse_web import ConcourseWebHelper
 from concourse_worker import ConcourseWorkerHelper
+from concourse_exporter import ConcourseExporterHelper
 
 # Import folder mount manager for discovery status reporting
 try:
@@ -98,6 +99,7 @@ class ConcourseCharm(CharmBase):
         super().__init__(*args)
         self.web_helper = ConcourseWebHelper(self)
         self.worker_helper = ConcourseWorkerHelper(self)
+        self.exporter_helper = ConcourseExporterHelper(self)
 
         # Initialize DatabaseRequires for PostgreSQL 16+ support
         if HAS_DATA_PLATFORM:
@@ -661,6 +663,9 @@ class ConcourseCharm(CharmBase):
                     )
                     # Restart web service to apply new config
                     self._restart_concourse_service()
+
+                    # Handle exporter service based on enable-metrics config
+                    self._handle_exporter_service()
 
                 if self._should_run_worker():
                     from pathlib import Path
@@ -1414,6 +1419,50 @@ class ConcourseCharm(CharmBase):
             capture_output=True,
         )
         logger.info(f"Worker configuration written to {CONCOURSE_WORKER_CONFIG_FILE}")
+
+    def _handle_exporter_service(self):
+        """Handle Concourse Prometheus exporter service based on enable-metrics config"""
+        enable_metrics = self.config.get("enable-metrics", False)
+
+        try:
+            if enable_metrics:
+                logger.info("Metrics enabled, setting up exporter service...")
+
+                # Install exporter if not already installed
+                if not self.exporter_helper.is_exporter_installed():
+                    if not self.exporter_helper.install_exporter():
+                        logger.error("Failed to install exporter")
+                        return
+
+                    if not self.exporter_helper.create_systemd_service():
+                        logger.error("Failed to create exporter systemd service")
+                        return
+
+                # Update configuration
+                if not self.exporter_helper.update_env_config():
+                    logger.error("Failed to update exporter configuration")
+                    return
+
+                # Start or restart the service
+                if self.exporter_helper.is_exporter_running():
+                    if not self.exporter_helper.restart_exporter():
+                        logger.warning("Failed to restart exporter service")
+                else:
+                    if not self.exporter_helper.start_exporter():
+                        logger.warning("Failed to start exporter service")
+
+                logger.info("Exporter service configured successfully")
+            else:
+                logger.info("Metrics disabled, stopping exporter service if running...")
+
+                if self.exporter_helper.is_exporter_running():
+                    if not self.exporter_helper.stop_exporter():
+                        logger.warning("Failed to stop exporter service")
+                    else:
+                        logger.info("Exporter service stopped successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to handle exporter service: {e}", exc_info=True)
 
     def _restart_concourse_service(self):
         """Restart Concourse service to apply configuration changes"""

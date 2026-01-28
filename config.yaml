@@ -81,9 +81,10 @@ options:
   
   enable-metrics:
     description: |
-      Enable Prometheus metrics endpoint on port 9391.
-      Default: true
-    default: true
+      Enable Prometheus metrics endpoint on port 9391 and per-job status exporter on port 9358.
+      When enabled, installs and runs concourse-exporter service that exposes job-level metrics.
+      Default: false
+    default: false
     type: boolean
   
   max-concurrent-downloads:
