@@ -1461,8 +1461,43 @@ class ConcourseCharm(CharmBase):
                     else:
                         logger.info("Exporter service stopped successfully")
 
+            # Update Prometheus scrape targets based on enable-metrics config
+            self._update_prometheus_jobs()
+
         except Exception as e:
             logger.error(f"Failed to handle exporter service: {e}", exc_info=True)
+
+    def _update_prometheus_jobs(self):
+        """Update Prometheus scrape jobs based on enable-metrics config"""
+        if not HAS_PROMETHEUS_SCRAPE or not self.metrics_endpoint:
+            return
+
+        enable_metrics = self.config.get("enable-metrics", False)
+
+        # Base job: Concourse built-in metrics on port 9391
+        jobs = [
+            {
+                "metrics_path": "/metrics",
+                "static_configs": [{"targets": ["*:9391"]}],
+            }
+        ]
+
+        # Add exporter job on port 9358 when metrics enabled
+        if enable_metrics:
+            jobs.append(
+                {
+                    "metrics_path": "/metrics",
+                    "static_configs": [{"targets": ["*:9358"]}],
+                }
+            )
+            logger.info(
+                "Updated Prometheus scrape jobs to include exporter on port 9358"
+            )
+        else:
+            logger.info("Updated Prometheus scrape jobs to exclude exporter")
+
+        # Update the jobs
+        self.metrics_endpoint.update_scrape_job_spec(jobs)
 
     def _restart_concourse_service(self):
         """Restart Concourse service to apply configuration changes"""
