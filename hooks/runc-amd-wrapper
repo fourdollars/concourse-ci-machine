@@ -16,15 +16,22 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
     chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
     chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
     
-    if [[ -d "/dev/dri" ]]; then
-        DRI_DEVICES=""
+    if [[ -d "/dev/dri" ]] || [[ -e "/dev/kfd" ]]; then
+        AMD_DEVICES=""
+        
+        # Collect DRI devices
         for dev in /dev/dri/renderD* /dev/dri/card*; do
             if [[ -e "$dev" && "$dev" != *"controlD"* ]]; then
-                DRI_DEVICES+="$dev"$'\n'
+                AMD_DEVICES+="$dev"$'\n'
             fi
         done
         
-        if [[ -n "$DRI_DEVICES" ]]; then
+        # Add KFD device (critical for ROCm compute)
+        if [[ -e "/dev/kfd" ]]; then
+            AMD_DEVICES+="/dev/kfd"$'\n'
+        fi
+        
+        if [[ -n "$AMD_DEVICES" ]]; then
             DEVICE_MOUNTS="[]"
             
             while IFS= read -r device; do
@@ -37,7 +44,7 @@ if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
                             "options": ["rbind", "rw"]
                         }]')
                 fi
-            done <<< "$DRI_DEVICES"
+            done <<< "$AMD_DEVICES"
             
             if jq --argjson devices "$DEVICE_MOUNTS" \
                 '.mounts += $devices' \
