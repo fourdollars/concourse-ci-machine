@@ -23,10 +23,11 @@ help() {
     echo ""
     echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
-    echo "                                Additional steps: scale-out"
+    echo "                                Available steps: deploy, verify, mounts, tagged, cuda, rocm,"
+    echo "                                                pytorch, upgrade, scale-out, destroy"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
-    echo "                                Steps: deploy, verify, mounts, tagged, gpu, upgrade"
+    echo "                                Steps: deploy, verify, mounts, tagged, cuda, rocm, pytorch, upgrade"
     echo ""
     echo "  --help, -h                    Show this help message"
     echo ""
@@ -34,11 +35,14 @@ help() {
     echo "  # Run full regression test (deploy -> verify -> mounts -> tagged -> gpu -> upgrade -> destroy)"
     echo "  $0"
     echo ""
+    echo "  # Test PyTorch with separate CUDA and ROCm workers"
+    echo "  $0 --steps=deploy,pytorch --skip-cleanup"
+    echo ""
     echo "  # Test upgrade logic only"
     echo "  $0 --steps=deploy,upgrade,destroy"
     echo ""
     echo "  # Debug a specific step without destroying the model"
-    echo "  $0 --steps=gpu --skip-cleanup"
+    echo "  $0 --steps=cuda --skip-cleanup"
     echo ""
     echo "  # Distributed mode with shared storage"
     echo "  $0 --mode=web+worker --shared-storage=lxc"
@@ -78,7 +82,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "mounts" "tagged" "gpu" "upgrade" "scale-out" "destroy")
+ALL_STEPS=("deploy" "verify" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -261,6 +265,35 @@ ensure_cli() {
 
     # Sync to avoid version mismatch warnings
     ./fly -t test sync 2>/dev/null || true
+}
+
+# Helper to get container name for a unit, filtering by model UUID
+get_container_for_unit() {
+    local unit=$1
+    local machine
+    local model_uuid
+    local container
+    local inst_id
+    
+    machine=$(juju status "$unit" --format=json | jq -r ".applications.\"${unit%%/*}\".units.\"$unit\".machine")
+    
+    inst_id=$(juju status --format=json | jq -r ".machines.\"$machine\".\"instance-id\"")
+    
+    if [[ -z "$inst_id" || "$inst_id" == "null" ]]; then
+        echo "Error: Could not find instance-id for machine $machine" >&2
+        return 1
+    fi
+    
+    container=$(lxc list --format=csv -c n | grep "^${inst_id}$" | head -1)
+    
+    if [[ -z "$container" ]]; then
+        echo "Error: Could not find container for unit $unit (machine $machine, instance-id $inst_id)" >&2
+        echo "Available containers:" >&2
+        lxc list --format=csv -c n | grep "^juju-" >&2
+        return 1
+    fi
+    
+    echo "$container"
 }
 
 # Step functions
@@ -464,7 +497,7 @@ step_mounts() {
     fi
 
     MACHINE=$(juju status "$UNIT_TO_TEST" --format=json | jq -r ".applications.\"${UNIT_TO_TEST%%/*}\".units.\"$UNIT_TO_TEST\".machine")
-    CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+    CONTAINER=$(get_container_for_unit "$UNIT_TO_TEST")
 
     echo "Configuring mounts for $UNIT_TO_TEST (Container: $CONTAINER)"
     lxc config device add "$CONTAINER" config_test_ro disk source="/tmp/config-test-mount" path="/srv/config_test" readonly=true || true
@@ -538,7 +571,32 @@ EOF
     fi
 }
 
-step_gpu() {
+# Helper function to detect GPU ID by vendor
+detect_gpu_id() {
+    local vendor="$1"  # "nvidia" or "amd"
+    
+    if ! command -v lxc >/dev/null 2>&1; then
+        echo ""
+        return 1
+    fi
+    
+    local gpu_drm_id
+    if [[ "$vendor" == "nvidia" ]]; then
+        gpu_drm_id=$(lxc query /1.0/resources 2>/dev/null | jq -r '.gpu.cards[] | select(.vendor | contains("NVIDIA")) | .drm.id' | head -1)
+    elif [[ "$vendor" == "amd" ]]; then
+        gpu_drm_id=$(lxc query /1.0/resources 2>/dev/null | jq -r '.gpu.cards[] | select(.vendor | contains("AMD")) | .drm.id' | head -1)
+    fi
+    
+    if [[ -n "$gpu_drm_id" && "$gpu_drm_id" != "null" ]]; then
+        echo "$gpu_drm_id"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
+}
+
+step_cuda() {
     ensure_cli
     echo "=== Checking for GPU Capability ==="
     HAS_GPU=false
@@ -555,12 +613,12 @@ step_gpu() {
         
         # 1. Enable GPU config
         if [[ "$MODE" == "auto" ]]; then
-            echo "Enabling gpu on $APP_NAME..."
-            juju config "$APP_NAME" enable-gpu=true
+            echo "Enabling NVIDIA GPU on $APP_NAME..."
+            juju config "$APP_NAME" compute-runtime=cuda
             APP_OR_WORKER="$APP_NAME"
         else
-            echo "Enabling gpu on $WORKER_APP..."
-            juju config "$WORKER_APP" enable-gpu=true
+            echo "Enabling NVIDIA GPU on $WORKER_APP..."
+            juju config "$WORKER_APP" compute-runtime=cuda
             APP_OR_WORKER="$WORKER_APP"
         fi
 
@@ -574,13 +632,24 @@ step_gpu() {
         fi
 
         MACHINE=$(juju status "$UNIT_TO_TEST" --format=json | jq -r ".applications.\"${UNIT_TO_TEST%%/*}\".units.\"$UNIT_TO_TEST\".machine")
-        CONTAINER=$(lxc list --format=csv -c n | grep "^juju-.*-${MACHINE}$" | head -1)
+        CONTAINER=$(get_container_for_unit "$UNIT_TO_TEST")
         
         if [[ -n "$CONTAINER" ]]; then
             echo "Found container $CONTAINER for unit $UNIT_TO_TEST"
-            echo "Adding GPU device..."
-            lxc config device remove "$CONTAINER" gpu0 >/dev/null 2>&1 || true
-            lxc config device add "$CONTAINER" gpu0 gpu
+            
+            # Detect NVIDIA GPU ID
+            NVIDIA_GPU_ID=$(detect_gpu_id "nvidia")
+            
+            if [[ -n "$NVIDIA_GPU_ID" ]]; then
+                echo "Detected NVIDIA GPU at ID $NVIDIA_GPU_ID"
+                echo "Adding NVIDIA GPU device with id=$NVIDIA_GPU_ID..."
+                lxc config device remove "$CONTAINER" "gpu$NVIDIA_GPU_ID" >/dev/null 2>&1 || true
+                lxc config device add "$CONTAINER" "gpu$NVIDIA_GPU_ID" gpu id="$NVIDIA_GPU_ID"
+            else
+                echo "Could not detect NVIDIA GPU ID, using generic GPU passthrough..."
+                lxc config device remove "$CONTAINER" gpu0 >/dev/null 2>&1 || true
+                lxc config device add "$CONTAINER" gpu0 gpu
+            fi
         else
             echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through."
         fi
@@ -630,7 +699,7 @@ EOF
         echo "Checking if worker is tagged..."
         ./fly -t test workers
         
-        if ./fly -t test execute -c verify-gpu.yml --tag=gpu; then
+        if ./fly -t test execute -c verify-gpu.yml --tag=cuda; then
             echo "✓ GPU task execution passed"
         else
             echo "✗ GPU task execution failed"
@@ -639,6 +708,164 @@ EOF
 
     else
         echo "No GPU detected on host. Skipping GPU tests."
+    fi
+}
+
+step_rocm() {
+    ensure_cli
+    echo "=== Checking for AMD GPU Capability ==="
+    HAS_AMD_GPU=false
+    if command -v rocm-smi >/dev/null 2>&1; then
+        HAS_AMD_GPU=true
+        echo "Found rocm-smi on host."
+    elif ls /dev/dri/renderD* >/dev/null 2>&1; then
+        HAS_AMD_GPU=true
+        echo "Found /dev/dri/renderD* devices on host."
+    fi
+
+    if [[ "$HAS_AMD_GPU" == "true" ]]; then
+        echo "AMD GPU detected. Enabling AMD GPU support..."
+        
+        # 1. First, pass GPU to LXD container (before enabling GPU config!)
+        echo "Configuring LXD AMD GPU pass-through..."
+        
+        if [[ "$MODE" == "auto" ]]; then
+            UNIT_TO_TEST=$(juju status "$APP_NAME" --format=json | jq -r ".applications.\"$APP_NAME\".units | to_entries[] | select(.value.leader != true) | .key" | head -1)
+            APP_OR_WORKER="$APP_NAME"
+        else
+            UNIT_TO_TEST=$(juju status "$WORKER_APP" --format=json | jq -r ".applications.\"$WORKER_APP\".units | keys[]" | head -1)
+            APP_OR_WORKER="$WORKER_APP"
+        fi
+
+        MACHINE=$(juju status "$UNIT_TO_TEST" --format=json | jq -r ".applications.\"${UNIT_TO_TEST%%/*}\".units.\"$UNIT_TO_TEST\".machine")
+        CONTAINER=$(get_container_for_unit "$UNIT_TO_TEST")
+        
+        if [[ -n "$CONTAINER" ]]; then
+            echo "Found container $CONTAINER for unit $UNIT_TO_TEST"
+            
+            AMD_GPU_ID=$(detect_gpu_id "amd")
+            
+            if [[ -n "$AMD_GPU_ID" ]]; then
+                echo "Detected AMD GPU at ID $AMD_GPU_ID"
+                echo "Adding AMD GPU device with id=$AMD_GPU_ID..."
+                lxc config device remove "$CONTAINER" "gpu$AMD_GPU_ID" >/dev/null 2>&1 || true
+                lxc config device add "$CONTAINER" "gpu$AMD_GPU_ID" gpu id="$AMD_GPU_ID"
+            else
+                echo "Could not detect AMD GPU ID, using generic GPU passthrough..."
+                lxc config device remove "$CONTAINER" gpu1 >/dev/null 2>&1 || true
+                lxc config device add "$CONTAINER" gpu1 gpu
+            fi
+            echo "AMD GPU device added. Waiting for device to be available in container..."
+            sleep 5
+        else
+            echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through."
+        fi
+
+        # 2. Now enable GPU config with ROCm runtime (devices are already available)
+        echo "Enabling AMD GPU on $APP_OR_WORKER..."
+        juju config "$APP_OR_WORKER" compute-runtime=rocm
+
+        # 3. Wait for configuration
+        echo "Waiting for AMD GPU configuration to apply..."
+        sleep 15
+        if command -v juju-wait >/dev/null 2>&1; then
+            juju-wait -m "$MODEL_NAME" -t 600
+        else
+            sleep 60
+        fi
+        
+        # 4. Verify GPU status
+        echo "Verifying AMD GPU status..."
+        STATUS_OUTPUT=$(juju status "$APP_OR_WORKER")
+        if echo "$STATUS_OUTPUT" | grep -q "GPU.*AMD"; then
+            echo "✓ Unit status reports AMD GPU"
+        else
+            echo "WARNING: Unit status does not report AMD GPU."
+            echo "$STATUS_OUTPUT"
+        fi
+
+        # 5. Check worker tags
+        echo "Checking worker tags..."
+        ./fly -t test workers
+        if ./fly -t test workers | grep -q "rocm"; then
+            echo "✓ Worker has rocm tag"
+        else
+            echo "WARNING: Worker does not have rocm tag"
+        fi
+
+        # 6. Run AMD GPU Task
+        echo "Executing AMD GPU test task..."
+        cat <<EOF > verify-gpu-amd.yml
+platform: linux
+image_resource:
+  type: registry-image
+  source: {repository: busybox}
+run:
+  path: sh
+  args:
+  - -c
+  - |
+    echo "Checking for AMD GPU devices in container..."
+    if ls /dev/dri/renderD* >/dev/null 2>&1; then
+        echo "✓ Found AMD GPU render devices:"
+        ls -la /dev/dri/renderD*
+    else
+        echo "✗ No AMD GPU render devices found!"
+        ls -la /dev/dri/ || echo "No /dev/dri directory"
+        exit 1
+    fi
+    
+    if ls /dev/dri/card* >/dev/null 2>&1; then
+        echo "✓ Found AMD GPU card devices:"
+        ls -la /dev/dri/card* | grep -v control || true
+    fi
+    
+    echo "✓ AMD GPU devices are accessible in container"
+EOF
+        
+        if ./fly -t test execute -c verify-gpu-amd.yml --tag=rocm; then
+            echo "✓ AMD GPU task execution passed"
+        else
+            echo "✗ AMD GPU task execution failed"
+            exit 1
+        fi
+
+        # 7. Test with ROCm image (if rocm-smi is available)
+        if command -v rocm-smi >/dev/null 2>&1; then
+            echo "Testing with ROCm-enabled image..."
+            cat <<EOF > verify-gpu-amd-rocm.yml
+platform: linux
+image_resource:
+  type: registry-image
+  source: 
+    repository: rocm/dev-ubuntu-24.04
+    tag: latest
+run:
+  path: sh
+  args:
+  - -c
+  - |
+    echo "Testing ROCm utilities in container..."
+    if command -v rocm-smi >/dev/null 2>&1; then
+        echo "✓ rocm-smi is available"
+        echo "Running rocm-smi..."
+        rocm-smi || echo "Could not query GPU (might need host ROCm version match)"
+    else
+        echo "⚠ rocm-smi not in this image, but devices are present"
+    fi
+    echo "Checking /dev/dri devices..."
+    ls -la /dev/dri/
+EOF
+            
+            if ./fly -t test execute -c verify-gpu-amd-rocm.yml --tag=rocm; then
+                echo "✓ ROCm image task execution passed"
+            else
+                echo "⚠ ROCm image task failed (might be version mismatch or image issue)"
+            fi
+        fi
+
+    else
+        echo "No AMD GPU detected on host. Skipping AMD GPU tests."
     fi
 }
 
@@ -791,6 +1018,319 @@ step_scale_out() {
     exit 1
 }
 
+step_pytorch() {
+    echo "=== Testing PyTorch with CUDA and ROCm Workers ==="
+    
+    rm -f admin-password.txt concourse-ip.txt fly 2>/dev/null || true
+    
+    local SAVED_LEADER=$LEADER
+    LEADER="web/leader"
+    
+    # Create model if it doesn't exist
+    if ! juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; then
+        echo "Creating model $MODEL_NAME..."
+        juju add-model "$MODEL_NAME"
+        juju model-config test-mode=true
+    else
+        echo "Using existing model $MODEL_NAME..."
+    fi
+    
+    # Check if we have both GPU types
+    HAS_NVIDIA=false
+    HAS_AMD=false
+    
+    if command -v nvidia-smi >/dev/null 2>&1 || ls /dev/nvidia* >/dev/null 2>&1; then
+        HAS_NVIDIA=true
+        echo "✓ NVIDIA GPU detected"
+    fi
+    
+    if command -v rocm-smi >/dev/null 2>&1 || ls /dev/dri/renderD* >/dev/null 2>&1; then
+        HAS_AMD=true
+        echo "✓ AMD GPU detected"
+    fi
+    
+    if [[ "$HAS_NVIDIA" == "false" && "$HAS_AMD" == "false" ]]; then
+        echo "⚠ No GPUs detected. Skipping PyTorch tests."
+        return
+    fi
+    
+    echo "=== Deploying Separate Web + CUDA + ROCm Workers ==="
+    
+    # Deploy PostgreSQL if not already deployed
+    if ! juju status postgresql --format=json 2>/dev/null | jq -e '.applications.postgresql' >/dev/null; then
+        echo "Deploying PostgreSQL..."
+        juju deploy postgresql --channel 16/stable
+    else
+        echo "PostgreSQL already deployed, reusing..."
+    fi
+    
+    # Deploy web server if not already deployed
+    if ! juju status web --format=json 2>/dev/null | jq -e '.applications.web' >/dev/null; then
+        echo "Deploying web server..."
+        if [[ -n "$DEPLOY_CHANNEL" ]]; then
+            juju deploy concourse-ci-machine web --channel "$DEPLOY_CHANNEL" --config mode=web
+        else
+            juju deploy ./concourse-ci-machine_*.charm web --config mode=web
+        fi
+        
+        # Relate to PostgreSQL
+        juju integrate web:postgresql postgresql:database
+    else
+        echo "Web server already deployed, reusing..."
+    fi
+    
+    # Deploy CUDA worker if NVIDIA GPU available
+    if [[ "$HAS_NVIDIA" == "true" ]]; then
+        if ! juju status worker-cuda --format=json 2>/dev/null | jq -e '.applications."worker-cuda"' >/dev/null; then
+            echo "Deploying CUDA worker (without GPU config first)..."
+            if [[ -n "$DEPLOY_CHANNEL" ]]; then
+                juju deploy concourse-ci-machine worker-cuda --channel "$DEPLOY_CHANNEL" \
+                    --config mode=worker
+            else
+                juju deploy ./concourse-ci-machine_*.charm worker-cuda \
+                    --config mode=worker
+            fi
+            
+            juju integrate web:web-tsa worker-cuda:worker-tsa
+            
+            # Wait for unit to be allocated and reach active status
+            echo "Waiting for worker unit to be active..."
+            timeout 600 bash -c 'until juju status worker-cuda --format=json 2>/dev/null | jq -e ".applications.\"worker-cuda\".units | to_entries[] | select(.value.\"workload-status\".current == \"active\") | .key" > /dev/null; do sleep 2; done'
+        else
+            echo "CUDA worker already deployed, reusing..."
+        fi
+        
+        # Pass NVIDIA GPU to container (if not already added) and enable GPU config
+        CUDA_UNIT=$(juju status worker-cuda --format=json | jq -r '.applications."worker-cuda".units | keys[]' | head -1)
+        CUDA_MACHINE=$(juju status "$CUDA_UNIT" --format=json | jq -r ".applications.\"worker-cuda\".units.\"$CUDA_UNIT\".machine")
+        CUDA_CONTAINER=$(get_container_for_unit "$CUDA_UNIT")
+        
+        if [[ -n "$CUDA_CONTAINER" ]]; then
+            NVIDIA_GPU_ID=$(detect_gpu_id "nvidia")
+            if [[ -n "$NVIDIA_GPU_ID" ]]; then
+                # Check if GPU device is already added
+                if ! lxc config device show "$CUDA_CONTAINER" 2>/dev/null | grep -q "gpu$NVIDIA_GPU_ID"; then
+                    echo "Adding NVIDIA GPU (id=$NVIDIA_GPU_ID) to $CUDA_CONTAINER..."
+                    lxc config device remove "$CUDA_CONTAINER" "gpu$NVIDIA_GPU_ID" >/dev/null 2>&1 || true
+                    lxc config device add "$CUDA_CONTAINER" "gpu$NVIDIA_GPU_ID" gpu id="$NVIDIA_GPU_ID"
+                    echo "GPU device added, waiting for device to be available..."
+                    sleep 5
+                else
+                    echo "GPU device already added to container"
+                fi
+            fi
+        fi
+        
+        # Enable GPU config (triggers config-changed hook with GPU devices available)
+        CURRENT_RUNTIME=$(juju config worker-cuda compute-runtime)
+        if [[ "$CURRENT_RUNTIME" != "cuda" ]]; then
+            echo "Enabling CUDA GPU configuration..."
+            juju config worker-cuda compute-runtime=cuda
+        else
+            echo "CUDA GPU configuration already enabled"
+        fi
+    fi
+    
+    # Deploy ROCm worker if AMD GPU available
+    if [[ "$HAS_AMD" == "true" ]]; then
+        if ! juju status worker-rocm --format=json 2>/dev/null | jq -e '.applications."worker-rocm"' >/dev/null; then
+            echo "Deploying ROCm worker (without GPU config first)..."
+            if [[ -n "$DEPLOY_CHANNEL" ]]; then
+                juju deploy concourse-ci-machine worker-rocm --channel "$DEPLOY_CHANNEL" \
+                    --config mode=worker
+            else
+                juju deploy ./concourse-ci-machine_*.charm worker-rocm \
+                    --config mode=worker
+            fi
+            
+            juju integrate web:web-tsa worker-rocm:worker-tsa
+            
+            # Wait for unit to be allocated and reach active status
+            echo "Waiting for worker unit to be active..."
+            timeout 600 bash -c 'until juju status worker-rocm --format=json 2>/dev/null | jq -e ".applications.\"worker-rocm\".units | to_entries[] | select(.value.\"workload-status\".current == \"active\") | .key" > /dev/null; do sleep 2; done'
+        else
+            echo "ROCm worker already deployed, reusing..."
+        fi
+        
+        # Pass AMD GPU to container BEFORE enabling GPU config
+        ROCM_UNIT=$(juju status worker-rocm --format=json | jq -r '.applications."worker-rocm".units | keys[]' | head -1)
+        ROCM_MACHINE=$(juju status "$ROCM_UNIT" --format=json | jq -r ".applications.\"worker-rocm\".units.\"$ROCM_UNIT\".machine")
+        ROCM_CONTAINER=$(get_container_for_unit "$ROCM_UNIT")
+        
+        if [[ -n "$ROCM_CONTAINER" ]]; then
+            AMD_GPU_ID=$(detect_gpu_id "amd")
+            if [[ -n "$AMD_GPU_ID" ]]; then
+                if ! lxc config device show "$ROCM_CONTAINER" 2>/dev/null | grep -q "gpu$AMD_GPU_ID"; then
+                    echo "Adding AMD GPU (id=$AMD_GPU_ID) to $ROCM_CONTAINER..."
+                    lxc config device remove "$ROCM_CONTAINER" "gpu$AMD_GPU_ID" >/dev/null 2>&1 || true
+                    lxc config device add "$ROCM_CONTAINER" "gpu$AMD_GPU_ID" gpu id="$AMD_GPU_ID"
+                    echo "GPU device added, waiting for device to be available..."
+                    sleep 5
+                else
+                    echo "GPU device already added to container"
+                fi
+            fi
+        fi
+        
+        # Enable GPU config (triggers config-changed hook with GPU devices available)
+        CURRENT_ROCM_RUNTIME=$(juju config worker-rocm compute-runtime)
+        if [[ "$CURRENT_ROCM_RUNTIME" != "rocm" ]]; then
+            echo "Enabling ROCm GPU configuration..."
+            juju config worker-rocm compute-runtime=rocm
+        else
+            echo "ROCm GPU configuration already enabled"
+        fi
+    fi
+    
+    # Wait for all units to be ready
+    echo "Waiting for deployment to settle..."
+    sleep 30
+    if command -v juju-wait >/dev/null 2>&1; then
+        juju-wait -m "$MODEL_NAME" -t 900
+    else
+        sleep 120
+    fi
+    
+    juju status
+    
+    # Get admin password for new web server
+    WEB_LEADER=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[] | select(.value.leader == true) | .key')
+    ADMIN_PASSWORD=$(juju run "$WEB_LEADER" get-admin-password --format=json | jq -r ".\"$WEB_LEADER\".results.password")
+    
+    # Get web IP
+    WEB_IP=$(juju status web/0 --format=json | jq -r '.applications.web.units."web/0"."public-address"')
+    
+    if [[ ! -f "fly" ]]; then
+        echo "Downloading fly CLI from http://$WEB_IP:8080..."
+        for i in {1..10}; do
+            if curl -Lo fly "http://${WEB_IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent; then
+                echo "Fly CLI downloaded."
+                chmod +x ./fly
+                break
+            fi
+            echo "Waiting for API to be ready (attempt $i/10)..."
+            sleep 10
+        done
+        if [[ ! -f "fly" ]]; then
+            echo "Error: Failed to download fly CLI."
+            exit 1
+        fi
+    fi
+    
+    # Login to new Concourse instance
+    ./fly -t pytorch login -c "http://$WEB_IP:8080" -u admin -p "$ADMIN_PASSWORD" --insecure
+    ./fly -t pytorch sync
+    
+    echo "=== Checking Workers ==="
+    ./fly -t pytorch workers
+    
+    # Create PyTorch CUDA pipeline
+    if [[ "$HAS_NVIDIA" == "true" ]]; then
+        echo "=== Creating PyTorch CUDA Pipeline ==="
+        cat <<'EOF' > pytorch-cuda-pipeline.yml
+jobs:
+- name: pytorch-cuda-test
+  plan:
+  - task: test-pytorch-cuda
+    tags: [cuda]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: pytorch/pytorch
+          tag: 2.1.0-cuda11.8-cudnn8-runtime
+      run:
+        path: python3
+        args:
+        - -c
+        - |
+          import torch
+          print("=" * 60)
+          print("PyTorch CUDA Test")
+          print("=" * 60)
+          print(f"PyTorch version: {torch.__version__}")
+          print(f"CUDA available: {torch.cuda.is_available()}")
+          if torch.cuda.is_available():
+              print(f"CUDA version: {torch.version.cuda}")
+              print(f"cuDNN version: {torch.backends.cudnn.version()}")
+              print(f"GPU count: {torch.cuda.device_count()}")
+              print(f"GPU name: {torch.cuda.get_device_name(0)}")
+              
+              # Simple tensor operation on GPU
+              x = torch.rand(5, 3).cuda()
+              print(f"\nTensor on GPU: {x.device}")
+              y = x * 2
+              print(f"Computation result shape: {y.shape}")
+              print("✓ PyTorch CUDA test PASSED")
+          else:
+              print("✗ CUDA not available!")
+              exit(1)
+EOF
+        
+        ./fly -t pytorch set-pipeline -p pytorch-cuda -c pytorch-cuda-pipeline.yml -n
+        ./fly -t pytorch unpause-pipeline -p pytorch-cuda
+        echo "Triggering PyTorch CUDA job..."
+        ./fly -t pytorch trigger-job -j pytorch-cuda/pytorch-cuda-test -w || echo "⚠ PyTorch CUDA job failed"
+    fi
+    
+    # Create PyTorch ROCm pipeline
+    if [[ "$HAS_AMD" == "true" ]]; then
+        echo "=== Creating PyTorch ROCm Pipeline ==="
+        cat <<'EOF' > pytorch-rocm-pipeline.yml
+jobs:
+- name: pytorch-rocm-test
+  plan:
+  - task: test-pytorch-rocm
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/pytorch
+          tag: latest
+      run:
+        path: python3
+        args:
+        - -c
+        - |
+          import torch
+          print("=" * 60)
+          print("PyTorch ROCm Test")
+          print("=" * 60)
+          print(f"PyTorch version: {torch.__version__}")
+          print(f"CUDA available (ROCm): {torch.cuda.is_available()}")
+          if torch.cuda.is_available():
+              print(f"ROCm version: {torch.version.hip}")
+              print(f"GPU count: {torch.cuda.device_count()}")
+              print(f"GPU name: {torch.cuda.get_device_name(0)}")
+              
+              # Simple tensor operation on GPU
+              x = torch.rand(5, 3).cuda()
+              print(f"\nTensor on GPU: {x.device}")
+              y = x * 2
+              print(f"Computation result shape: {y.shape}")
+              print("✓ PyTorch ROCm test PASSED")
+          else:
+              print("⚠ ROCm not available (check GPU passthrough)")
+              exit(1)
+EOF
+        
+        ./fly -t pytorch set-pipeline -p pytorch-rocm -c pytorch-rocm-pipeline.yml -n
+        ./fly -t pytorch unpause-pipeline -p pytorch-rocm
+        echo "Triggering PyTorch ROCm job..."
+        ./fly -t pytorch trigger-job -j pytorch-rocm/pytorch-rocm-test -w || echo "⚠ PyTorch ROCm job failed"
+    fi
+    
+    echo "✅ PyTorch tests completed"
+    
+    LEADER=$SAVED_LEADER
+    
+    # Cleanup
+    rm -f pytorch-cuda-pipeline.yml pytorch-rocm-pipeline.yml
+}
+
 step_destroy() {
     cleanup_model
     DESTROYED=true
@@ -803,7 +1343,9 @@ for step in "${STEPS_TO_RUN[@]}"; do
         verify) step_verify ;;
         mounts) step_mounts ;;
         tagged) step_tagged ;;
-        gpu) step_gpu ;;
+        cuda) step_cuda ;;
+        rocm) step_rocm ;;
+        pytorch) step_pytorch ;;
         upgrade) step_upgrade ;;
         scale-out) step_scale_out ;;
         destroy) step_destroy ;;

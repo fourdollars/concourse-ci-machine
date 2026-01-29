@@ -1,0 +1,88 @@
+#!/bin/bash
+# AMD GPU wrapper for Concourse CI - injects AMD GPU devices and dynamic /srv folder mounts
+
+BUNDLE=""
+PREV=""
+for arg in "$@"; do
+    if [[ "$PREV" == "--bundle" ]]; then
+        BUNDLE="$arg"
+        break
+    fi
+    PREV="$arg"
+done
+
+if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
+    TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+    chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+    chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+    
+    if [[ -d "/dev/dri" ]]; then
+        DRI_DEVICES=""
+        for dev in /dev/dri/renderD* /dev/dri/card*; do
+            if [[ -e "$dev" && "$dev" != *"controlD"* ]]; then
+                DRI_DEVICES+="$dev"$'\n'
+            fi
+        done
+        
+        if [[ -n "$DRI_DEVICES" ]]; then
+            DEVICE_MOUNTS="[]"
+            
+            while IFS= read -r device; do
+                if [[ -e "$device" ]]; then
+                    DEVICE_MOUNTS=$(echo "$DEVICE_MOUNTS" | jq --arg dev "$device" \
+                        '. += [{
+                            "type": "bind",
+                            "source": $dev,
+                            "destination": $dev,
+                            "options": ["rbind", "rw"]
+                        }]')
+                fi
+            done <<< "$DRI_DEVICES"
+            
+            if jq --argjson devices "$DEVICE_MOUNTS" \
+                '.mounts += $devices' \
+                "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
+                mv "$TMP_CONFIG" "$BUNDLE/config.json"
+            else
+                rm -f "$TMP_CONFIG"
+            fi
+        fi
+    fi
+    
+    if [[ -d "/srv" ]]; then
+        for folder in /srv/*; do
+            if [[ -d "$folder" ]]; then
+                FOLDER_NAME=$(basename "$folder")
+                
+                MOUNT_OPTIONS="rbind,ro"
+                if [[ "$FOLDER_NAME" == *"_writable" ]] || [[ "$FOLDER_NAME" == *"_rw" ]]; then
+                    MOUNT_OPTIONS="rbind,rw"
+                fi
+                
+                TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
+                chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+                chmod --reference="$BUNDLE/config.json" "$TMP_CONFIG"
+                if jq --arg dest "/srv/$FOLDER_NAME" \
+                   --arg src "$folder" \
+                   --arg opts "$MOUNT_OPTIONS" \
+                   '.mounts += [{
+                       "destination": $dest,
+                       "type": "bind",
+                       "source": $src,
+                       "options": ($opts | split(","))
+                   }]' "$BUNDLE/config.json" > "$TMP_CONFIG" 2>/dev/null; then
+                    mv "$TMP_CONFIG" "$BUNDLE/config.json"
+                else
+                    rm -f "$TMP_CONFIG"
+                fi
+            fi
+        done
+    fi
+fi
+
+REAL_RUNC="/opt/bin/runc.real"
+if [[ ! -x "$REAL_RUNC" ]]; then
+    REAL_RUNC="/usr/bin/runc"
+fi
+
+exec "$REAL_RUNC" "$@"

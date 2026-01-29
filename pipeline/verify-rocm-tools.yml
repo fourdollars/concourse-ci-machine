@@ -1,0 +1,32 @@
+platform: linux
+image_resource:
+  type: registry-image
+  source:
+    repository: rocm/dev-ubuntu-24.04
+    tag: latest
+run:
+  path: sh
+  args:
+  - -c
+  - |
+    echo "=== Checking ROCm Tools ==="
+    
+    # Check if rocm-smi is available
+    if command -v rocm-smi >/dev/null 2>&1; then
+        echo "✓ rocm-smi is available in the image"
+        echo ""
+        echo "=== Running rocm-smi ==="
+        rocm-smi || echo "✗ rocm-smi failed to detect GPU"
+    else
+        echo "✗ rocm-smi not found in image"
+        echo "Available commands in /opt/rocm*:"
+        ls -la /opt/rocm*/bin/ 2>/dev/null || echo "No /opt/rocm directory"
+    fi
+    
+    echo ""
+    echo "=== Checking GPU Devices ==="
+    ls -la /dev/dri/ || echo "No /dev/dri directory"
+    
+    echo ""
+    echo "=== Checking AMD Environment ==="
+    env | grep -i amd || echo "No AMD environment variables"
