@@ -425,7 +425,7 @@ class ConcourseCharm(CharmBase):
                 self.web_helper.setup_systemd_service()
 
                 # Configure GPU support if enabled
-                if self.config.get("enable-gpu", False):
+                if self.config.get("compute-runtime", "none") != "none":
                     logger.info("Configuring GPU support for worker")
                     self.worker_helper.configure_containerd_for_gpu()
                 else:
@@ -617,7 +617,7 @@ class ConcourseCharm(CharmBase):
                                 if self._should_run_worker():
                                     self.worker_helper.stop_service()
                                     # Re-install wrappers
-                                    if self.config.get("enable-gpu", False):
+                                    if self.config.get("compute-runtime", "none") != "none":
                                         self.worker_helper.configure_containerd_for_gpu()
                                     else:
                                         self.worker_helper.install_folder_mount_wrapper()
@@ -687,7 +687,7 @@ class ConcourseCharm(CharmBase):
                     tsa_host = self._get_tsa_host()
 
                     # Check if GPU config changed and reconfigure if needed
-                    if self.config.get("enable-gpu", False):
+                    if self.config.get("compute-runtime", "none") != "none":
                         self.worker_helper.configure_containerd_for_gpu()
                     else:
                         # Install/update folder mounting wrapper for non-GPU workers
@@ -1226,7 +1226,7 @@ class ConcourseCharm(CharmBase):
                     download_and_install_concourse(self, web_version)
 
                     # Re-install wrappers after upgrade
-                    if self.config.get("enable-gpu", False):
+                    if self.config.get("compute-runtime", "none") != "none":
                         self.worker_helper.configure_containerd_for_gpu()
                     else:
                         self.worker_helper.install_folder_mount_wrapper()
@@ -1851,7 +1851,7 @@ class ConcourseCharm(CharmBase):
 
         # Re-install wrappers after upgrade if we are a worker
         if self._should_run_worker():
-            if self.config.get("enable-gpu", False):
+            if self.config.get("compute-runtime", "none") != "none":
                 self.worker_helper.configure_containerd_for_gpu()
             else:
                 self.worker_helper.install_folder_mount_wrapper()
@@ -2120,7 +2120,7 @@ class ConcourseCharm(CharmBase):
                         download_and_install_concourse(self, web_version)
 
                         # Re-install wrappers after upgrade
-                        if self.config.get("enable-gpu", False):
+                        if self.config.get("compute-runtime", "none") != "none":
                             self.worker_helper.configure_containerd_for_gpu()
                         else:
                             self.worker_helper.install_folder_mount_wrapper()

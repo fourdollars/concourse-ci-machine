@@ -26,7 +26,7 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Automatic Key Management**: TSA keys, session signing keys, and worker keys auto-generated
 - **Prometheus Metrics**: Optional metrics endpoint for monitoring
 - **Download Progress**: Real-time installation progress in Juju status
-- **GPU Support**: NVIDIA GPU workers for ML/AI workloads ([GPU Guide](docs/gpu-support.md))
+- **GPU Support**: NVIDIA (CUDA) and AMD (ROCm) GPU workers for ML/AI workloads ([GPU Guide](docs/gpu-support.md))
 - **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/dataset-mounting.md))
 - **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/general-mounting.md))
   - ✅ Zero configuration - just mount folders to `/srv` and go
@@ -408,7 +408,7 @@ juju deploy concourse-ci-machine web --config mode=web
 # 3. Deploy GPU-enabled worker
 juju deploy concourse-ci-machine worker \
   --config mode=worker \
-  --config enable-gpu=true
+  --config compute-runtime=cuda
 
 # 4. Add GPU to LXD container (only manual step for localhost cloud)
 lxc config device add <container-name> gpu0 gpu
@@ -426,8 +426,14 @@ juju status worker
 ### Enable GPU on Existing Worker
 
 ```bash
-# Enable GPU on already deployed worker
-juju config worker enable-gpu=true
+# Enable NVIDIA GPU on already deployed worker
+juju config worker compute-runtime=cuda
+
+# Enable AMD GPU on already deployed worker
+juju config worker compute-runtime=rocm
+
+# Disable GPU
+juju config worker compute-runtime=none
 ```
 
 ### LXD GPU Passthrough (One-time setup)
@@ -455,14 +461,14 @@ lxc config device add juju-abc123-0 gpu0 gpu
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `enable-gpu` | `false` | Enable GPU support for this worker |
+| `compute-runtime` | `none` | GPU compute runtime: `none`, `cuda` (NVIDIA), or `rocm` (AMD) |
 | `gpu-device-ids` | `all` | GPU devices to expose: "all" or "0,1,2" |
 
 ### GPU Worker Tags
 
 When GPU is enabled, workers are automatically tagged:
-- `gpu` - Worker has GPU
-- `gpu-type=nvidia` - GPU vendor type
+- `cuda` - NVIDIA GPU worker (when `compute-runtime=cuda`)
+- `rocm` - AMD GPU worker (when `compute-runtime=rocm`)
 - `gpu-count=N` - Number of GPUs available
 - `gpu-devices=0,1` - Specific device IDs (if configured)
 
@@ -472,10 +478,10 @@ Create a pipeline that targets GPU-enabled workers:
 
 ```yaml
 jobs:
-- name: train-model
+- name: train-model-nvidia
   plan:
   - task: gpu-training
-    tags: [gpu]  # Target GPU-enabled workers
+    tags: [cuda]  # Target NVIDIA GPU workers
     config:
       platform: linux
       image_resource:
@@ -497,7 +503,7 @@ jobs:
 - name: gpu-benchmark
   plan:
   - task: benchmark
-    tags: [gpu, gpu-type=nvidia, gpu-count=1]  # More specific targeting
+    tags: [cuda, gpu-count=1]  # More specific targeting
     config:
       platform: linux
       image_resource:
@@ -518,7 +524,7 @@ juju status worker
 
 # Verify GPU tags in Concourse
 fly -t local workers
-# Worker should show tags: gpu, gpu-type=nvidia, gpu-count=1
+# Worker should show tags: cuda, gpu-count=1
 ```
 
 ### Common GPU Images
@@ -544,6 +550,211 @@ fly -t local workers
 - Ensure using NVIDIA CUDA base image
 - Run `nvidia-smi` in task to debug
 - Check worker tags: `fly -t local workers`
+
+## AMD GPU Support (ROCm)
+
+Concourse workers can utilize AMD GPUs with ROCm for ML/AI workloads, GPU-accelerated computations, and HPC tasks.
+
+### Prerequisites
+
+- AMD GPU hardware on the host machine (e.g., Radeon RX 6000/7000 series, MI series)
+- AMD GPU drivers installed on the host
+- ROCm tools (optional, for host-side management)
+- **For LXD/containers:** GPU passthrough configured (see below)
+
+**Note:** The charm automatically installs `amd-container-toolkit`, generates CDI specifications, and configures the ROCm runtime. No manual setup required!
+
+### Quick Start: Deploy with AMD GPU
+
+Complete deployment from scratch:
+
+```bash
+# 1. Deploy PostgreSQL
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
+
+# 2. Deploy web server
+juju deploy concourse-ci-machine web --config mode=web
+
+# 3. Deploy ROCm-enabled worker
+juju deploy concourse-ci-machine worker \
+  --config mode=worker \
+  --config compute-runtime=rocm
+
+# 4. Add AMD GPU to LXD container (use specific GPU ID for multi-GPU systems)
+# Note: On systems with multiple GPU vendors, use 'id=N' to target specific GPU
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, product_id, vendor_id, pci_address}'
+lxc config device add <container-name> gpu1 gpu id=1
+# Example: lxc config device add juju-abc123-0 gpu1 gpu id=1
+
+# 5. Create relations
+juju relate web:postgresql postgresql:database
+juju relate web:web-tsa worker:worker-tsa
+
+# 6. Check status
+juju status worker
+# Expected: "Worker ready (v7.14.2) (GPU: 1x AMD)"
+```
+
+### Enable ROCm on Existing Worker
+
+```bash
+# Enable AMD GPU on already deployed worker
+juju config worker compute-runtime=rocm
+```
+
+### LXD GPU Passthrough for AMD (Critical for Multi-GPU Systems)
+
+If deploying on LXD (localhost cloud), add AMD GPU to the container:
+
+```bash
+# Find available GPUs and their IDs
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, product_id, vendor_id, pci_address}'
+
+# Output example:
+# {
+#   "id": 0,
+#   "vendor": "NVIDIA Corporation",
+#   "driver": "nvidia",
+#   "product": "GA104 [GeForce RTX 3070]"
+# }
+# {
+#   "id": 1,
+#   "vendor": "Advanced Micro Devices, Inc. [AMD/ATI]",
+#   "driver": "amdgpu",
+#   "product": "Navi 31 [Radeon RX 7900 XT]"
+# }
+
+# Add AMD GPU device using specific ID (GPU 1 in this example)
+lxc config device add <container-name> gpu1 gpu id=1
+
+# Example:
+lxc config device add juju-abc123-0 gpu1 gpu id=1
+```
+
+**⚠️ IMPORTANT for Multi-GPU Systems:**
+- Generic `lxc config device add ... gpu` passes **ALL GPUs** to the container
+- This causes ambiguity when both NVIDIA and AMD GPUs are present
+- **Always use `id=N`** to target the specific AMD GPU
+- GPU ID corresponds to `/dev/dri/cardN` (e.g., `id=1` → `/dev/dri/card1`)
+
+**Everything else is automated!** The charm will:
+- ✅ Install amd-container-toolkit
+- ✅ Generate CDI specification
+- ✅ Install rocm-smi for GPU monitoring
+- ✅ Create AMD GPU wrapper script
+- ✅ Configure runtime for ROCm GPU passthrough
+- ✅ Set up automatic GPU device injection into task containers
+
+### ROCm Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `compute-runtime` | `none` | GPU compute runtime: `none`, `cuda` (NVIDIA), or `rocm` (AMD) |
+| `gpu-device-ids` | `all` | GPU devices to expose: "all" or "0,1,2" |
+
+### ROCm Worker Tags
+
+When ROCm GPU is enabled, workers are automatically tagged:
+- `rocm` - AMD GPU worker (when `compute-runtime=rocm`)
+- `gpu-count=N` - Number of AMD GPUs available
+- `gpu-devices=0,1` - Specific device IDs (if configured)
+
+### Example: ROCm GPU Pipeline
+
+Create a pipeline that targets ROCm-enabled workers:
+
+```yaml
+jobs:
+- name: rocm-benchmark
+  plan:
+  - task: gpu-test
+    tags: [rocm]  # Target ROCm workers
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/dev-ubuntu-24.04
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          # Verify GPU access
+          rocm-smi
+          
+          # Check available devices
+          ls -la /dev/dri/
+          
+          # Run your ROCm workload
+          python train.py --rocm
+
+- name: amd-gpu-compute
+  plan:
+  - task: compute
+    tags: [rocm, gpu-count=1]  # More specific targeting
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/tensorflow
+          tag: latest
+      run:
+        path: python
+        args: ["-c", "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"]
+```
+
+### Verifying ROCm GPU Access
+
+```bash
+# Check worker status
+juju status worker
+# Should show: "Worker ready (v7.14.2) (GPU: 1x AMD)"
+
+# Verify GPU tags in Concourse
+fly -t local workers
+# Worker should show tags: rocm, gpu-count=1
+
+# Test GPU access in a task
+fly -t local execute -c test-gpu.yml --tag=rocm
+```
+
+### Common ROCm Images
+
+- `rocm/dev-ubuntu-24.04:latest` - ROCm development base (~1.1GB)
+- `rocm/tensorflow:latest` - TensorFlow with ROCm
+- `rocm/pytorch:latest` - PyTorch with ROCm
+- `rocm/rocm-terminal:latest` - ROCm with utilities
+
+### ROCm Troubleshooting
+
+**Worker shows "GPU enabled but no GPU detected"**
+- Verify AMD GPU present: `lspci | grep -i amd`
+- Check driver: `lsmod | grep amdgpu`
+- Check devices: `ls -la /dev/dri/`
+
+**Container cannot access AMD GPU**
+- Verify LXD device passthrough: `lxc config device show <container-name>`
+- Check devices in container: `juju ssh worker/0 -- ls -la /dev/dri/`
+- Ensure using correct GPU ID on multi-GPU systems
+
+**rocm-smi not working in container**
+- Ensure using ROCm-enabled image (`rocm/dev-ubuntu-24.04` or similar)
+- Check device permissions: `ls -la /dev/dri/` in task
+- ROCm version mismatch: Host and container ROCm versions should be compatible
+
+**GPU not showing in task**
+- Ensure using ROCm-enabled image
+- Run `ls -la /dev/dri/` in task to debug device availability
+- Check worker tags: `fly -t local workers`
+- Verify task uses correct tags: `--tag=compute-runtime=rocm`
+
+**Multi-GPU system issues**
+- If worker detects wrong GPU type, check LXD device configuration
+- Use specific GPU ID: `lxc config device add ... gpu id=1` (not generic `gpu`)
+- Query GPU IDs: `lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, product_id, vendor_id, pci_address}'`
 
 ## Troubleshooting
 

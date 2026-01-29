@@ -25,7 +25,7 @@ WORKER_KEYS_DIR = f"{CONCOURSE_WORKER_DATA_DIR}/keys"
 
 def ensure_directories(skip_shared_storage: bool = False):
     """Ensure required directories exist.
-    
+
     Args:
         skip_shared_storage: If True, create worker directories instead of web directories
     """
@@ -35,7 +35,7 @@ def ensure_directories(skip_shared_storage: bool = False):
     else:
         # Web: create shared storage directories
         dirs = [CONCOURSE_DATA_DIR, KEYS_DIR]
-    
+
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
         # Skip chmod on shared storage if it's readonly (workers accessing shared mount)
@@ -52,25 +52,25 @@ def ensure_directories(skip_shared_storage: bool = False):
 
 def generate_keys(keys_dir_path: Optional[str] = None):
     """Generate Concourse TSA and session signing keys with correct ownership
-    
+
     Args:
         keys_dir_path: Path to generate keys in (default: KEYS_DIR)
     """
     import pwd
-    
+
     if keys_dir_path:
         keys_dir = Path(keys_dir_path)
     else:
         keys_dir = Path(KEYS_DIR)
-    
+
     # Ensure keys directory exists
     keys_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Ensured keys directory exists: {keys_dir}")
-    
+
     tsa_host_key = keys_dir / "tsa_host_key"
     session_signing_key = keys_dir / "session_signing_key"
     worker_key = keys_dir / "worker_key"
-    
+
     # Get concourse user UID/GID
     try:
         concourse_user = pwd.getpwnam("concourse")
@@ -194,37 +194,43 @@ def get_concourse_version(config) -> str:
 def detect_nvidia_gpus():
     """
     Detect NVIDIA GPUs on the system
-    
+
     Returns:
         dict with keys: count, devices (list of dicts with index, name, driver)
         or None if no GPUs found or nvidia-smi unavailable
     """
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name,driver_version", "--format=csv,noheader"],
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,driver_version",
+                "--format=csv,noheader",
+            ],
             capture_output=True,
             text=True,
             check=True,
         )
-        
+
         devices = []
         for line in result.stdout.strip().split("\n"):
             if line.strip():
                 parts = [p.strip() for p in line.split(",")]
                 if len(parts) >= 2:
-                    devices.append({
-                        "index": int(parts[0]),
-                        "name": parts[1],
-                        "driver": parts[2] if len(parts) > 2 else "unknown"
-                    })
-        
+                    devices.append(
+                        {
+                            "index": int(parts[0]),
+                            "name": parts[1],
+                            "driver": parts[2] if len(parts) > 2 else "unknown",
+                        }
+                    )
+
         if devices:
             logger.info(f"Detected {len(devices)} NVIDIA GPU(s)")
             return {"count": len(devices), "devices": devices}
         else:
             logger.info("No NVIDIA GPUs detected")
             return None
-            
+
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         logger.warning(f"Failed to detect NVIDIA GPUs: {e}")
         return None
@@ -233,7 +239,7 @@ def detect_nvidia_gpus():
 def verify_nvidia_container_runtime():
     """
     Verify NVIDIA container runtime is available
-    
+
     Returns:
         bool: True if nvidia-container-runtime is available
     """
@@ -250,15 +256,126 @@ def verify_nvidia_container_runtime():
         return False
 
 
+def detect_amd_gpus():
+    """
+    Detect AMD GPUs on the system using rocm-smi
+
+    Returns:
+        dict with keys: count, devices (list of dicts with index, name, driver)
+        or None if no GPUs found or rocm-smi unavailable
+    """
+    try:
+        result = subprocess.run(
+            ["which", "rocm-smi"],
+            capture_output=True,
+        )
+
+        if result.returncode != 0:
+            logger.info("rocm-smi not found, cannot detect AMD GPUs")
+            return None
+
+        result = subprocess.run(
+            ["rocm-smi", "--showproductname"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        gpu_map = {}
+        for line in result.stdout.strip().split("\n"):
+            if "GPU[" in line and "Card Series:" in line:
+                import re
+
+                match = re.match(r"GPU\[(\d+)\]\s*:\s*Card Series:\s*(.+)", line)
+                if match:
+                    gpu_idx = int(match.group(1))
+                    gpu_name = match.group(2).strip()
+                    if gpu_idx not in gpu_map:
+                        gpu_map[gpu_idx] = {
+                            "index": gpu_idx,
+                            "name": gpu_name,
+                            "driver": "amdgpu",
+                        }
+
+        if not gpu_map:
+            dri_path = Path("/dev/dri")
+            if dri_path.exists():
+                render_nodes = list(dri_path.glob("renderD*"))
+                card_nodes = list(dri_path.glob("card*"))
+                card_nodes = [c for c in card_nodes if "control" not in c.name]
+
+                if render_nodes or card_nodes:
+                    gpu_count = max(len(render_nodes), len(card_nodes))
+                    for i in range(gpu_count):
+                        gpu_map[i] = {"index": i, "name": "AMD GPU", "driver": "amdgpu"}
+
+        if gpu_map:
+            devices = [gpu_map[i] for i in sorted(gpu_map.keys())]
+            logger.info(f"Detected {len(devices)} AMD GPU(s)")
+            return {"count": len(devices), "devices": devices}
+        else:
+            logger.info("No AMD GPUs detected")
+            return None
+
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to detect AMD GPUs: {e}")
+        return None
+
+
+def verify_amd_container_runtime():
+    """
+    Verify AMD/ROCm container runtime is available
+
+    For AMD GPUs, we need:
+    - rocm-smi available
+    - /dev/dri devices accessible
+    - runc can be used with device passthrough
+
+    Returns:
+        bool: True if AMD GPU container support is available
+    """
+    try:
+        # Check if rocm-smi is available
+        result = subprocess.run(
+            ["which", "rocm-smi"],
+            capture_output=True,
+        )
+
+        if result.returncode != 0:
+            logger.warning("rocm-smi not found")
+            return False
+
+        # Check if /dev/dri exists
+        dri_path = Path("/dev/dri")
+        if not dri_path.exists():
+            logger.warning("/dev/dri not found")
+            return False
+
+        # Check for render nodes or card nodes
+        render_nodes = list(dri_path.glob("renderD*"))
+        card_nodes = list(dri_path.glob("card*"))
+        card_nodes = [c for c in card_nodes if "control" not in c.name]
+
+        if not render_nodes and not card_nodes:
+            logger.warning("No AMD GPU devices found in /dev/dri")
+            return False
+
+        logger.info("AMD GPU container runtime support is available")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to verify AMD container runtime: {e}")
+        return False
+
+
 def get_storage_path(storage_name: str = "concourse-data") -> Optional[Path]:
     """Get storage mount path from saved state.
-    
+
     The storage location is saved during the storage-attached hook
     and retrieved here for use in other hooks.
-    
+
     Args:
         storage_name: Name of storage (for logging only)
-    
+
     Returns:
         Path to storage mount point, or None if storage not attached
     """
@@ -266,16 +383,19 @@ def get_storage_path(storage_name: str = "concourse-data") -> Optional[Path]:
         # Read storage location from state file saved by storage-attached hook
         # Pattern: /var/lib/juju/agents/unit-{app-name}-{unit-num}/.storage-location
         import os
+
         unit_name = os.environ.get("JUJU_UNIT_NAME", "")
         if not unit_name:
             logger.warning("JUJU_UNIT_NAME not set, cannot get storage path")
             return None
-            
-        state_file = Path("/var/lib/juju/agents") / f"unit-{unit_name}" / ".storage-location"
+
+        state_file = (
+            Path("/var/lib/juju/agents") / f"unit-{unit_name}" / ".storage-location"
+        )
         if not state_file.exists():
             logger.info(f"Storage '{storage_name}' not attached (no state file)")
             return None
-            
+
         location = state_file.read_text().strip()
         if location:
             path = Path(location)
@@ -291,16 +411,16 @@ def get_storage_path(storage_name: str = "concourse-data") -> Optional[Path]:
 
 def get_filesystem_id(path: Path) -> str:
     """Get unique filesystem identifier for a given path.
-    
+
     Uses stat to get the filesystem ID, which ensures all units
     are accessing the same filesystem when using shared storage.
-    
+
     Args:
         path: Path to check filesystem ID for
-    
+
     Returns:
         Filesystem ID as string
-    
+
     Raises:
         RuntimeError: If unable to get filesystem ID
     """
@@ -321,45 +441,42 @@ def get_filesystem_id(path: Path) -> str:
 
 def get_storage_logger(unit_name: str) -> logging.Logger:
     """Get logger with unit name prefix for storage coordination.
-    
+
     Creates a logger that prefixes all messages with the unit name
     for easier debugging in multi-unit deployments.
-    
+
     Args:
         unit_name: Juju unit name (e.g., "concourse-ci/1")
-    
+
     Returns:
         Logger instance with custom formatter
-    
+
     Example:
         logger = get_storage_logger("concourse-ci/1")
         logger.info("Waiting for binaries...")
         # Output: [concourse-ci/1] Waiting for binaries...
     """
     storage_logger = logging.getLogger(f"concourse-ci.storage.{unit_name}")
-    
+
     # Add custom handler with unit prefix if not already present
     if not storage_logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
             f"[{unit_name}] %(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
         storage_logger.addHandler(handler)
         storage_logger.setLevel(logging.INFO)
-    
+
     return storage_logger
 
 
 def log_concurrent_operation(
-    unit_name: str, 
-    operation: str, 
-    lock_held: bool = False, 
-    details: str = ""
+    unit_name: str, operation: str, lock_held: bool = False, details: str = ""
 ) -> None:
     """Log concurrent storage operation details (T061).
-    
+
     Args:
         unit_name: Current unit name
         operation: Operation name
@@ -373,7 +490,7 @@ def log_concurrent_operation(
 
 def get_storage_stats() -> dict:
     """Get storage statistics for monitoring (T076).
-    
+
     Returns:
         dict with disk_usage_bytes, binary_count, unit_count
     """
@@ -381,38 +498,38 @@ def get_storage_stats() -> dict:
         "disk_usage_bytes": 0,
         "binary_count": 0,
         "worker_count": 0,
-        "shared_storage": False
+        "shared_storage": False,
     }
-    
+
     try:
         data_dir = Path(CONCOURSE_DATA_DIR)
         if not data_dir.exists():
             return stats
-            
+
         # Disk usage
         total_size = 0
-        for p in data_dir.rglob('*'):
+        for p in data_dir.rglob("*"):
             if p.is_file() and not p.is_symlink():
                 try:
                     total_size += p.stat().st_size
                 except OSError:
                     pass
         stats["disk_usage_bytes"] = total_size
-        
+
         # Binary count
         bin_dir = data_dir / "bin"
         if bin_dir.exists():
             stats["binary_count"] = sum(1 for _ in bin_dir.iterdir())
-            
+
         # Worker count (based on directories)
         worker_dir = data_dir / "worker"
         if worker_dir.exists():
             stats["worker_count"] = sum(1 for p in worker_dir.iterdir() if p.is_dir())
-            
+
         # Shared storage check
         if (data_dir / ".lxc_shared_storage").exists():
             stats["shared_storage"] = True
-            
+
         return stats
     except Exception as e:
         logger.warning(f"Failed to collect storage stats: {e}")
