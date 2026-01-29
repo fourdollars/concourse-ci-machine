@@ -1247,6 +1247,39 @@ step_pytorch() {
 jobs:
 - name: pytorch-cuda-test
   plan:
+  - task: show-cuda-hardware-info
+    tags: [cuda]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: nvidia/cuda
+          tag: 12.6.3-base-ubuntu24.04
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "============================================================"
+          echo "CUDA Hardware Information"
+          echo "============================================================"
+          
+          echo ""
+          echo "--- NVIDIA SMI ---"
+          nvidia-smi || echo "nvidia-smi failed"
+          
+          echo ""
+          echo "--- CUDA Device Files ---"
+          ls -la /dev/nvidia* /dev/nvidiactl /dev/nvidia-uvm 2>/dev/null || echo "Some device files missing"
+          
+          echo ""
+          echo "--- Environment ---"
+          env | grep -E '(CUDA|NVIDIA|LD_LIBRARY|PATH)' | sort
+          
+          echo ""
+          echo "============================================================"
+  
   - task: test-pytorch-cuda
     tags: [cuda]
     config:
@@ -1257,22 +1290,16 @@ jobs:
           repository: pytorch/pytorch
           tag: 2.1.0-cuda11.8-cudnn8-runtime
       run:
-        path: sh
+        path: python3
         args:
         - -c
         - |
-          set -e
-          python3 << 'PYTHON_EOF'
           import torch
-          import subprocess
-          import os
-          
           print("=" * 60)
           print("PyTorch CUDA Test")
           print("=" * 60)
           print(f"PyTorch version: {torch.__version__}")
           print(f"CUDA available: {torch.cuda.is_available()}")
-          
           if torch.cuda.is_available():
               print(f"CUDA version: {torch.version.cuda}")
               print(f"cuDNN version: {torch.backends.cudnn.version()}")
@@ -1285,29 +1312,9 @@ jobs:
               print(f"Computation result shape: {y.shape}")
               print("✓ PyTorch CUDA test PASSED")
           else:
-              print("\n" + "=" * 60)
-              print("CUDA NOT AVAILABLE - Hardware Debug Info")
-              print("=" * 60)
-              
-              print("\n--- NVIDIA SMI ---")
-              try:
-                  result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
-                  print(result.stdout if result.returncode == 0 else f"nvidia-smi failed: {result.stderr}")
-              except FileNotFoundError:
-                  print("nvidia-smi not found")
-              
-              print("\n--- Device Files ---")
-              for dev_path in ['/dev/nvidia0', '/dev/nvidiactl', '/dev/nvidia-uvm']:
-                  exists = "✓" if os.path.exists(dev_path) else "✗"
-                  print(f"{exists} {dev_path}")
-              
-              print("\n--- Environment ---")
-              for var in ['CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'LD_LIBRARY_PATH']:
-                  val = os.environ.get(var, '(not set)')
-                  print(f"{var}={val}")
-              
+              print("✗ CUDA not available!")
+              print("See hardware info above for diagnostics")
               exit(1)
-          PYTHON_EOF
 EOF
         
         ./fly -t pytorch set-pipeline -p pytorch-cuda -c pytorch-cuda-pipeline.yml -n
@@ -1323,6 +1330,51 @@ EOF
 jobs:
 - name: pytorch-rocm-test
   plan:
+  - task: show-rocm-hardware-info
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/dev-ubuntu-24.04
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          echo "============================================================"
+          echo "ROCm Hardware Information"
+          echo "============================================================"
+          
+          echo ""
+          echo "--- GPU Detection (lspci) ---"
+          lspci | grep -E '(VGA|Display|3D)' || echo "lspci not available"
+          
+          echo ""
+          echo "--- ROCm SMI ---"
+          rocm-smi || echo "rocm-smi failed"
+          
+          echo ""
+          echo "--- Device Files ---"
+          for dev in /dev/kfd /dev/dri/card* /dev/dri/renderD*; do
+            if [ -e "$dev" ]; then
+              ls -la "$dev"
+            fi
+          done
+          
+          echo ""
+          echo "--- ROCm Info ---"
+          rocminfo 2>&1 | head -50 || echo "rocminfo failed"
+          
+          echo ""
+          echo "--- Environment ---"
+          env | grep -E '(ROC|HIP|HSA|LD_LIBRARY|PATH)' | sort
+          
+          echo ""
+          echo "============================================================"
+  
   - task: test-pytorch-rocm
     tags: [rocm]
     config:
@@ -1333,22 +1385,16 @@ jobs:
           repository: rocm/pytorch
           tag: latest
       run:
-        path: sh
+        path: python3
         args:
         - -c
         - |
-          set -e
-          python3 << 'PYTHON_EOF'
           import torch
-          import subprocess
-          import os
-          
           print("=" * 60)
           print("PyTorch ROCm Test")
           print("=" * 60)
           print(f"PyTorch version: {torch.__version__}")
           print(f"CUDA available (ROCm): {torch.cuda.is_available()}")
-          
           if torch.cuda.is_available():
               print(f"ROCm version: {torch.version.hip}")
               print(f"GPU count: {torch.cuda.device_count()}")
@@ -1360,52 +1406,9 @@ jobs:
               print(f"Computation result shape: {y.shape}")
               print("✓ PyTorch ROCm test PASSED")
           else:
-              print("\n" + "=" * 60)
-              print("ROCm NOT AVAILABLE - Hardware Debug Info")
-              print("=" * 60)
-              
-              print("\n--- GPU Detection (lspci) ---")
-              try:
-                  result = subprocess.run(['lspci'], capture_output=True, text=True)
-                  for line in result.stdout.split('\n'):
-                      if 'VGA' in line or 'Display' in line or '3D' in line:
-                          print(line)
-              except FileNotFoundError:
-                  print("lspci not available")
-              
-              print("\n--- ROCm SMI ---")
-              try:
-                  result = subprocess.run(['rocm-smi'], capture_output=True, text=True)
-                  print(result.stdout if result.returncode == 0 else f"rocm-smi failed: {result.stderr}")
-              except FileNotFoundError:
-                  print("rocm-smi not found")
-              
-              print("\n--- Device Files ---")
-              for dev_path in ['/dev/kfd', '/dev/dri/card0', '/dev/dri/card1', '/dev/dri/renderD128']:
-                  if os.path.exists(dev_path):
-                      stat_info = os.stat(dev_path)
-                      mode = oct(stat_info.st_mode)[-3:]
-                      print(f"✓ {dev_path} (mode: {mode})")
-                  else:
-                      print(f"✗ {dev_path}")
-              
-              print("\n--- Environment ---")
-              for var in ['HSA_OVERRIDE_GFX_VERSION', 'ROCR_VISIBLE_DEVICES', 'HIP_VISIBLE_DEVICES', 'LD_LIBRARY_PATH', 'PATH']:
-                  val = os.environ.get(var, '(not set)')
-                  print(f"{var}={val}")
-              
-              print("\n--- HSA Runtime Check ---")
-              try:
-                  result = subprocess.run(['rocminfo'], capture_output=True, text=True)
-                  if result.returncode != 0:
-                      print(f"rocminfo failed: {result.stderr[:500]}")
-                  else:
-                      print("rocminfo succeeded (HSA runtime OK)")
-              except FileNotFoundError:
-                  print("rocminfo not found")
-              
+              print("⚠ ROCm not available")
+              print("See hardware info above for diagnostics")
               exit(1)
-          PYTHON_EOF
 EOF
         
         ./fly -t pytorch set-pipeline -p pytorch-rocm -c pytorch-rocm-pipeline.yml -n
