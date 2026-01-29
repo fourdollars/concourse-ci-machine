@@ -627,8 +627,12 @@ lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, prod
 # Add AMD GPU device using specific ID (GPU 1 in this example)
 lxc config device add <container-name> gpu1 gpu id=1
 
+# Add /dev/kfd device (required for ROCm compute)
+lxc config device add <container-name> kfd unix-char source=/dev/kfd path=/dev/kfd
+
 # Example:
 lxc config device add juju-abc123-0 gpu1 gpu id=1
+lxc config device add juju-abc123-0 kfd unix-char source=/dev/kfd path=/dev/kfd
 ```
 
 **⚠️ IMPORTANT for Multi-GPU Systems:**
@@ -637,13 +641,23 @@ lxc config device add juju-abc123-0 gpu1 gpu id=1
 - **Always use `id=N`** to target the specific AMD GPU
 - GPU ID corresponds to `/dev/dri/cardN` (e.g., `id=1` → `/dev/dri/card1`)
 
+**⚠️ CRITICAL for ROCm Compute:**
+- `/dev/kfd` (Kernel Fusion Driver) is **required** for ROCm compute workloads
+- Without `/dev/kfd`, GPU monitoring works but PyTorch/TensorFlow cannot use the GPU
+- Must be added as separate device after GPU passthrough
+
+**⚠️ Supported AMD GPUs:**
+- **Discrete GPUs only**: RX 6000/7000 series, Radeon Pro, Instinct MI series
+- **NOT supported**: Integrated AMD GPUs (APUs like Phoenix1, Renoir, Cezanne)
+- Check ROCm compatibility: https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html
+
 **Everything else is automated!** The charm will:
 - ✅ Install amd-container-toolkit
 - ✅ Generate CDI specification
 - ✅ Install rocm-smi for GPU monitoring
 - ✅ Create AMD GPU wrapper script
 - ✅ Configure runtime for ROCm GPU passthrough
-- ✅ Set up automatic GPU device injection into task containers
+- ✅ Set up automatic GPU device injection into task containers (including /dev/kfd)
 
 ### ROCm Configuration Options
 
@@ -739,6 +753,23 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 - Verify LXD device passthrough: `lxc config device show <container-name>`
 - Check devices in container: `juju ssh worker/0 -- ls -la /dev/dri/`
 - Ensure using correct GPU ID on multi-GPU systems
+- **Check /dev/kfd**: Must be present for compute workloads
+
+**PyTorch/TensorFlow shows "CUDA (ROCm) available: False"**
+- **Most common**: Missing `/dev/kfd` device
+  - Check in container: `ls -la /dev/kfd`
+  - Add if missing: `lxc config device add <container-name> kfd unix-char source=/dev/kfd path=/dev/kfd`
+- **Integrated GPU**: AMD APUs (Phoenix1, Renoir, Cezanne) are NOT supported by ROCm compute
+  - Verify GPU model: `lspci | grep -i vga`
+  - Check PCI ID: `cat /sys/class/drm/card*/device/uevent | grep PCI_ID`
+  - Only discrete AMD GPUs work (RX 6000/7000, Radeon Pro, MI series)
+- **HSA_STATUS_ERROR_OUT_OF_RESOURCES**: Usually indicates unsupported GPU or missing drivers
+
+**rocm-smi works but PyTorch doesn't detect GPU**
+- This indicates `/dev/kfd` is missing or inaccessible
+- `rocm-smi` only needs `/dev/dri/*` for monitoring
+- PyTorch needs `/dev/kfd` for compute operations
+- Solution: Add `/dev/kfd` device to container (see above)
 
 **rocm-smi not working in container**
 - Ensure using ROCm-enabled image (`rocm/dev-ubuntu-24.04` or similar)
@@ -749,7 +780,7 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 - Ensure using ROCm-enabled image
 - Run `ls -la /dev/dri/` in task to debug device availability
 - Check worker tags: `fly -t local workers`
-- Verify task uses correct tags: `--tag=compute-runtime=rocm`
+- Verify task uses correct tags: `--tag=rocm`
 
 **Multi-GPU system issues**
 - If worker detects wrong GPU type, check LXD device configuration

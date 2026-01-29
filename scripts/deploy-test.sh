@@ -755,7 +755,13 @@ step_rocm() {
                 lxc config device remove "$CONTAINER" gpu1 >/dev/null 2>&1 || true
                 lxc config device add "$CONTAINER" gpu1 gpu
             fi
-            echo "AMD GPU device added. Waiting for device to be available in container..."
+            
+            # Add /dev/kfd device (required for ROCm compute)
+            echo "Adding /dev/kfd device for ROCm compute..."
+            lxc config device remove "$CONTAINER" kfd >/dev/null 2>&1 || true
+            lxc config device add "$CONTAINER" kfd unix-char source=/dev/kfd path=/dev/kfd
+            
+            echo "AMD GPU and KFD devices added. Waiting for devices to be available in container..."
             sleep 5
         else
             echo "Warning: Could not find LXC container for $UNIT_TO_TEST. Skipping pass-through."
@@ -1164,10 +1170,20 @@ step_pytorch() {
                     echo "Adding AMD GPU (id=$AMD_GPU_ID) to $ROCM_CONTAINER..."
                     lxc config device remove "$ROCM_CONTAINER" "gpu$AMD_GPU_ID" >/dev/null 2>&1 || true
                     lxc config device add "$ROCM_CONTAINER" "gpu$AMD_GPU_ID" gpu id="$AMD_GPU_ID"
-                    echo "GPU device added, waiting for device to be available..."
+                    
+                    echo "Adding /dev/kfd device for ROCm compute..."
+                    lxc config device remove "$ROCM_CONTAINER" kfd >/dev/null 2>&1 || true
+                    lxc config device add "$ROCM_CONTAINER" kfd unix-char source=/dev/kfd path=/dev/kfd
+                    
+                    echo "GPU and KFD devices added, waiting for devices to be available..."
                     sleep 5
                 else
                     echo "GPU device already added to container"
+                    if ! lxc config device show "$ROCM_CONTAINER" 2>/dev/null | grep -q "kfd"; then
+                        echo "Adding missing /dev/kfd device..."
+                        lxc config device add "$ROCM_CONTAINER" kfd unix-char source=/dev/kfd path=/dev/kfd
+                        sleep 2
+                    fi
                 fi
             fi
         fi
