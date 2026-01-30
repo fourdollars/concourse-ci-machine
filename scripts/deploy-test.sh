@@ -1337,7 +1337,7 @@ jobs:
       image_resource:
         type: registry-image
         source:
-          repository: rocm/dev-ubuntu-24.04
+          repository: rocm/pytorch
           tag: latest
       run:
         path: sh
@@ -1345,32 +1345,36 @@ jobs:
         - -c
         - |
           echo "============================================================"
-          echo "ROCm Hardware Information"
+          echo "ROCm Hardware Information (from PyTorch Container)"
           echo "============================================================"
           
           echo ""
           echo "--- GPU Detection (lspci) ---"
-          lspci | grep -E '(VGA|Display|3D)' || echo "lspci not available"
+          lspci 2>/dev/null | grep -E '(VGA|Display|3D)' || echo "lspci not available"
           
           echo ""
           echo "--- ROCm SMI ---"
-          rocm-smi || echo "rocm-smi failed"
+          /opt/rocm/bin/rocm-smi 2>&1 || echo "rocm-smi failed"
           
           echo ""
           echo "--- Device Files ---"
-          for dev in /dev/kfd /dev/dri/card* /dev/dri/renderD*; do
-            if [ -e "$dev" ]; then
-              ls -la "$dev"
-            fi
-          done
+          echo "Checking /dev/kfd:"
+          ls -la /dev/kfd 2>&1 || echo "  /dev/kfd not found (required for compute)"
+          echo ""
+          echo "Checking /dev/dri/*:"
+          ls -la /dev/dri/ 2>&1 || echo "  /dev/dri not found"
           
           echo ""
-          echo "--- ROCm Info ---"
-          rocminfo 2>&1 | head -50 || echo "rocminfo failed"
+          echo "--- ROCm Info (rocminfo) ---"
+          /opt/rocm/bin/rocminfo 2>&1 | head -80 || echo "rocminfo failed"
           
           echo ""
           echo "--- Environment ---"
           env | grep -E '(ROC|HIP|HSA|LD_LIBRARY|PATH)' | sort
+          
+          echo ""
+          echo "--- PyTorch ROCm Version ---"
+          python3 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'ROCm: {torch.version.hip}')"
           
           echo ""
           echo "============================================================"
