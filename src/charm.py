@@ -1722,14 +1722,16 @@ class ConcourseCharm(CharmBase):
             version_info = f" (v{installed_version})" if installed_version else ""
 
             if mode == "web":
-                # Open the web port for external access
+                # Manage web port (close old, open new)
                 web_port = self.config.get("web-port", 8080)
-                try:
-                    self.unit.open_port("tcp", web_port)
-                    logger.info(f"Opened port {web_port}/tcp")
-                except Exception as e:
-                    logger.warning(f"Failed to open port {web_port}: {e}")
-                self.unit.status = ActiveStatus(f"Web server ready{version_info}")
+                self._manage_web_port(web_port)
+
+                # Get web URL for status message
+                web_url = self._get_web_url()
+                url_info = f" {web_url}" if web_url else ""
+                self.unit.status = ActiveStatus(
+                    f"Web server ready{version_info}{url_info}"
+                )
             elif mode == "worker":
                 gpu_status = self.worker_helper.get_gpu_status_message()
                 _, discovery_status = self._check_folder_discovery_status()
@@ -1739,15 +1741,15 @@ class ConcourseCharm(CharmBase):
             else:
                 gpu_status = self.worker_helper.get_gpu_status_message()
                 _, discovery_status = self._check_folder_discovery_status()
-                # Open web port when running both
+                # Manage web port when running both (close old, open new)
                 web_port = self.config.get("web-port", 8080)
-                try:
-                    self.unit.open_port("tcp", web_port)
-                    logger.info(f"Opened port {web_port}/tcp")
-                except Exception as e:
-                    logger.warning(f"Failed to open port {web_port}: {e}")
+                self._manage_web_port(web_port)
+
+                # Get web URL for status message
+                web_url = self._get_web_url()
+                url_info = f" {web_url}" if web_url else ""
                 self.unit.status = ActiveStatus(
-                    f"Ready{version_info}{gpu_status}{discovery_status}"
+                    f"Ready{version_info}{url_info}{gpu_status}{discovery_status}"
                 )
 
         except Exception as e:
@@ -1788,6 +1790,65 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             logger.debug(f"Could not detect installed version: {e}")
         return None
+
+    def _get_web_url(self) -> Optional[str]:
+        """Get the web server URL (http://IP:PORT) for status display"""
+        try:
+            # Get the unit's IP address from network binding
+            # Try multiple bindings in order of preference
+            binding = None
+            for binding_name in ["tsa", "peers", ""]:
+                try:
+                    binding = self.model.get_binding(binding_name)
+                    if binding and binding.network and binding.network.bind_address:
+                        break
+                except Exception:
+                    continue
+
+            if not binding or not binding.network or not binding.network.bind_address:
+                logger.debug("Could not determine unit IP address for web URL")
+                return None
+
+            unit_ip = str(binding.network.bind_address)
+            web_port = self.config.get("web-port", 8080)
+
+            return f"http://{unit_ip}:{web_port}"
+        except Exception as e:
+            logger.debug(f"Could not construct web URL: {e}")
+            return None
+
+    def _manage_web_port(self, desired_port: int):
+        """
+        Manage web server port - close old ports and open the desired port.
+
+        This ensures only the configured web port is open, closing any
+        previously opened ports to handle configuration changes cleanly.
+
+        Args:
+            desired_port: The port number to open for the web server
+        """
+        try:
+            # Get currently opened TCP ports
+            opened_ports = self.unit.opened_ports()
+
+            # Find TCP ports that should be closed (all TCP ports except the desired one)
+            for port_obj in opened_ports:
+                if port_obj.protocol == "tcp" and port_obj.port != desired_port:
+                    try:
+                        self.unit.close_port("tcp", port_obj.port)
+                        logger.info(f"Closed old port {port_obj.port}/tcp")
+                    except Exception as e:
+                        logger.warning(f"Failed to close port {port_obj.port}/tcp: {e}")
+
+            # Open the desired port
+            try:
+                self.unit.open_port("tcp", desired_port)
+                logger.info(f"Opened port {desired_port}/tcp")
+            except Exception as e:
+                logger.warning(f"Failed to open port {desired_port}/tcp: {e}")
+
+        except Exception as e:
+            logger.error(f"Port management failed: {e}", exc_info=True)
 
     def _orchestrate_coordinated_upgrade(self, event, version: str):
         """Orchestrate coordinated upgrade across multiple units (T045)"""
