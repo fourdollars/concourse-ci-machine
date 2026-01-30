@@ -1389,15 +1389,19 @@ jobs:
           repository: rocm/pytorch
           tag: latest
       run:
-        path: python3
+        path: sh
         args:
         - -c
         - |
+          export HSA_OVERRIDE_GFX_VERSION=11.0.0
+          python3 <<'PYTHON_EOF'
           import torch
           import traceback
+          import os
           print("=" * 60)
           print("PyTorch ROCm Test")
           print("=" * 60)
+          print(f"HSA_OVERRIDE_GFX_VERSION: {os.environ.get('HSA_OVERRIDE_GFX_VERSION', 'not set')}")
           print(f"PyTorch version: {torch.__version__}")
           print(f"CUDA available (ROCm): {torch.cuda.is_available()}")
           if torch.cuda.is_available():
@@ -1413,19 +1417,21 @@ jobs:
                   print("Attempting GPU computation (multiply by 2)...")
                   y = x * 2
                   print(f"✓ Computation succeeded, result shape: {y.shape}")
-                  print("\n✓ PyTorch ROCm test PASSED")
+                  print(f"✓ Result sample: {y[0]}")
+                  print("\n✓ PyTorch ROCm test PASSED!")
               except Exception as e:
                   print(f"\n✗ PyTorch ROCm test FAILED")
                   print(f"Error type: {type(e).__name__}")
                   print(f"Error message: {str(e)}")
                   print("\nFull traceback:")
                   traceback.print_exc()
-                  print("\nNote: Integrated AMD GPUs (APUs) are not officially supported by ROCm for compute workloads")
+                  print("\nNote: Try setting HSA_OVERRIDE_GFX_VERSION=11.0.0 for gfx1103 (Phoenix1) GPUs")
                   exit(1)
           else:
               print("⚠ ROCm not available")
               print("See hardware info above for diagnostics")
               exit(1)
+          PYTHON_EOF
 EOF
         
         ./fly -t pytorch set-pipeline -p pytorch-rocm -c pytorch-rocm-pipeline.yml -n
