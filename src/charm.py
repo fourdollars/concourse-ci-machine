@@ -617,7 +617,10 @@ class ConcourseCharm(CharmBase):
                                 if self._should_run_worker():
                                     self.worker_helper.stop_service()
                                     # Re-install wrappers
-                                    if self.config.get("compute-runtime", "none") != "none":
+                                    if (
+                                        self.config.get("compute-runtime", "none")
+                                        != "none"
+                                    ):
                                         self.worker_helper.configure_containerd_for_gpu()
                                     else:
                                         self.worker_helper.install_folder_mount_wrapper()
@@ -935,6 +938,57 @@ class ConcourseCharm(CharmBase):
                         f"Shared storage not writable: {e}. Check mount permissions."
                     )
                     return
+
+        # Check for automatic upgrades when version config is empty (web/atc units)
+        # This ensures web units auto-upgrade to latest version like workers do
+        if self._should_run_web() and not self.config.get("version"):
+            try:
+                desired_version = get_concourse_version(self.config)
+                installed_version = self._get_installed_concourse_version()
+
+                # Fallback: check version marker file if binary detection failed
+                if not installed_version:
+                    from pathlib import Path
+
+                    version_marker = Path("/var/lib/concourse/.installed_version")
+                    if version_marker.exists():
+                        installed_version = version_marker.read_text().strip()
+                        logger.info(
+                            f"Found version {installed_version} from marker file"
+                        )
+
+                if (
+                    installed_version
+                    and desired_version
+                    and installed_version != desired_version
+                ):
+                    logger.info(
+                        f"Web unit: New version available ({desired_version}), current: {installed_version}"
+                    )
+
+                    # Check if we should use coordinated upgrade (shared storage mode)
+                    shared_storage_mode = self.config.get("shared-storage", "none")
+                    use_coordinated_upgrade = (
+                        shared_storage_mode != "none"
+                        and self.model.get_relation("concourse-peer") is not None
+                    )
+
+                    if use_coordinated_upgrade:
+                        # Only leader should orchestrate upgrades
+                        if self.unit.is_leader():
+                            logger.info(
+                                "Leader initiating automatic coordinated upgrade"
+                            )
+                            self._orchestrate_coordinated_upgrade(None, desired_version)
+                    else:
+                        # Simple upgrade (single unit or no shared storage)
+                        logger.info("Initiating automatic upgrade")
+                        self._perform_simple_upgrade(None, desired_version)
+
+                    # Publish updated version to peer relation
+                    self._publish_version_to_peer_relation()
+            except Exception as e:
+                logger.warning(f"Failed to check for automatic upgrade: {e}")
 
         self._update_status()
 
