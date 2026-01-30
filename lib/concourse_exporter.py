@@ -96,9 +96,7 @@ class ConcourseExporterHelper:
 
         try:
             # Get web URL from unit address
-            unit_address = self.charm.model.get_binding(
-                "concourse-peer"
-            ).network.bind_address
+            unit_address = self.charm.model.get_binding("peers").network.bind_address
             concourse_url = f"http://{unit_address}:8080"
 
             logger.info(f"Downloading fly CLI from {concourse_url}")
@@ -177,7 +175,7 @@ WantedBy=multi-user.target
         """
         try:
             # Get admin password from peer data
-            peer_relation = self.charm.model.get_relation("concourse-peer")
+            peer_relation = self.charm.model.get_relation("peers")
             if not peer_relation:
                 logger.error("Peer relation not found")
                 return False
@@ -191,9 +189,7 @@ WantedBy=multi-user.target
                 return False
 
             # Get unit address
-            unit_address = self.charm.model.get_binding(
-                "concourse-peer"
-            ).network.bind_address
+            unit_address = self.charm.model.get_binding("peers").network.bind_address
             concourse_url = f"http://{unit_address}:8080"
 
             # Create environment file

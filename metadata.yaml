@@ -28,6 +28,7 @@ maintainers:
 
 tags:
   - ai
+  - amd
   - automation
   - ci-cd
   - continuous-delivery
@@ -38,6 +39,7 @@ tags:
   - machine-learning
   - ml
   - nvidia
+  - rocm
 
 links:
   documentation: https://fourdollars.github.io/concourse-ci-machine
@@ -50,8 +52,8 @@ provides:
     interface: prometheus_scrape
     description: Prometheus metrics endpoint for monitoring integration
   
-  web-tsa:
-    interface: concourse-tsa
+  tsa:
+    interface: concourse-ci_tsa
     description: TSA endpoint for worker connections (web server provides this)
 
 requires:
@@ -60,13 +62,13 @@ requires:
     limit: 1
     description: PostgreSQL 16+ database backend for web server (uses Juju secrets)
   
-  worker-tsa:
-    interface: concourse-tsa
+  flight:
+    interface: concourse-ci_tsa
     description: TSA endpoint for worker to connect to web server
 
 peers:
-  concourse-peer:
-    interface: concourse-peer
+  peers:
+    interface: concourse-ci_peers
     description: Peer relation for sharing keys and configuration between units
 
 assumes:

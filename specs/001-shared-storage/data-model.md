@@ -174,7 +174,7 @@ class UpgradeState:
 ```
 
 **Relationships**:
-- Stored in `concourse-peer` relation data
+- Stored in `peers` relation data
 - Updated by web/leader during upgrade initiation
 - Read by workers to coordinate service stops/starts
 

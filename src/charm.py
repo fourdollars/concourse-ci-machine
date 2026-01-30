@@ -153,21 +153,21 @@ class ConcourseCharm(CharmBase):
 
         # Peer relation
         self.framework.observe(
-            self.on.concourse_peer_relation_changed, self._on_peer_relation_changed
+            self.on.peers_relation_changed, self._on_peer_relation_changed
         )
 
         # Cross-application TSA relation (web provides, worker requires)
         self.framework.observe(
-            self.on.web_tsa_relation_joined, self._on_tsa_relation_joined
+            self.on.tsa_relation_joined, self._on_tsa_relation_joined
         )
         self.framework.observe(
-            self.on.web_tsa_relation_changed, self._on_tsa_relation_changed
+            self.on.tsa_relation_changed, self._on_tsa_relation_changed
         )
         self.framework.observe(
-            self.on.worker_tsa_relation_joined, self._on_tsa_relation_joined
+            self.on.flight_relation_joined, self._on_tsa_relation_joined
         )
         self.framework.observe(
-            self.on.worker_tsa_relation_changed, self._on_tsa_relation_changed
+            self.on.flight_relation_changed, self._on_tsa_relation_changed
         )
 
         # Actions
@@ -230,7 +230,7 @@ class ConcourseCharm(CharmBase):
         # Only leader manages the password
         if not self.unit.is_leader():
             # Non-leaders read from peer data
-            peer_relation = self.model.get_relation("concourse-peer")
+            peer_relation = self.model.get_relation("peers")
             if peer_relation:
                 password = peer_relation.data[self.app].get("admin-password")
                 if password:
@@ -238,7 +238,7 @@ class ConcourseCharm(CharmBase):
             return "admin"  # Fallback for non-leaders without peer data
 
         # Leader: check if password already exists in peer data
-        peer_relation = self.model.get_relation("concourse-peer")
+        peer_relation = self.model.get_relation("peers")
         if peer_relation:
             password = peer_relation.data[self.app].get("admin-password")
             if password:
@@ -488,7 +488,7 @@ class ConcourseCharm(CharmBase):
                 self.worker_helper.setup_systemd_service()
 
                 # Republish worker key to TSA relation
-                tsa_relation = self.model.get_relation("worker-tsa")
+                tsa_relation = self.model.get_relation("flight")
                 if tsa_relation:
                     keys_dir_path = KEYS_DIR
                     if not self._should_run_web():
@@ -547,7 +547,7 @@ class ConcourseCharm(CharmBase):
                     shared_storage_mode = self.config.get("shared-storage", "none")
                     use_coordinated_upgrade = (
                         shared_storage_mode != "none"
-                        and self.model.get_relation("concourse-peer") is not None
+                        and self.model.get_relation("peers") is not None
                     )
 
                     if use_coordinated_upgrade:
@@ -567,9 +567,7 @@ class ConcourseCharm(CharmBase):
                                     UpgradeState,
                                 )
 
-                                peer_relation = self.model.get_relation(
-                                    "concourse-peer"
-                                )
+                                peer_relation = self.model.get_relation("peers")
                                 if peer_relation:
                                     accessor = RelationDataAccessor(peer_relation)
                                     app_data = accessor.get_app_data()
@@ -743,7 +741,7 @@ class ConcourseCharm(CharmBase):
             not self.unit.is_leader()
             and self.config.get("shared-storage", "none") != "none"
         ):
-            peer_relation = self.model.get_relation("concourse-peer")
+            peer_relation = self.model.get_relation("peers")
             if peer_relation:
 
                 class SignalEvent:
@@ -970,7 +968,7 @@ class ConcourseCharm(CharmBase):
                     shared_storage_mode = self.config.get("shared-storage", "none")
                     use_coordinated_upgrade = (
                         shared_storage_mode != "none"
-                        and self.model.get_relation("concourse-peer") is not None
+                        and self.model.get_relation("peers") is not None
                     )
 
                     if use_coordinated_upgrade:
@@ -1122,7 +1120,7 @@ class ConcourseCharm(CharmBase):
         from pathlib import Path
         import socket
 
-        peer_relation = self.model.get_relation("concourse-peer")
+        peer_relation = self.model.get_relation("peers")
         if not peer_relation:
             logger.info("No peer relation found, skipping key publishing")
             return
@@ -1634,8 +1632,8 @@ class ConcourseCharm(CharmBase):
         if mode == "both":
             return "127.0.0.1:2222"
 
-        # Priority 1: Check worker-tsa relation (for separate web/worker apps)
-        tsa_relation = self.model.get_relation("worker-tsa")
+        # Priority 1: Check flight relation (for separate web/worker apps)
+        tsa_relation = self.model.get_relation("flight")
         if tsa_relation:
             for unit in tsa_relation.units:
                 try:
@@ -1648,7 +1646,7 @@ class ConcourseCharm(CharmBase):
                     logger.warning(f"Failed to get TSA host from relation: {e}")
 
         # Priority 2: Try to get leader IP from peer relation (for auto mode)
-        peer_relation = self.model.get_relation("concourse-peer")
+        peer_relation = self.model.get_relation("peers")
         if peer_relation:
             for unit in peer_relation.units:
                 # Check if this unit is the leader by checking relation data
@@ -1813,7 +1811,7 @@ class ConcourseCharm(CharmBase):
                     "Storage coordinator not initialized for coordinated upgrade"
                 )
 
-            peer_relation = self.model.get_relation("concourse-peer")
+            peer_relation = self.model.get_relation("peers")
             relation_accessor = RelationDataAccessor(peer_relation)
             service_manager = ServiceManager("concourse-server.service")
 
@@ -2013,7 +2011,7 @@ class ConcourseCharm(CharmBase):
                 logger.warning("Could not detect installed version to publish to peers")
                 return
 
-            peer_relation = self.model.get_relation("concourse-peer")
+            peer_relation = self.model.get_relation("peers")
             if peer_relation:
                 peer_relation.data[self.unit]["concourse-version"] = installed_version
                 logger.info(f"Published version {installed_version} to peer relation")
@@ -2030,9 +2028,9 @@ class ConcourseCharm(CharmBase):
                 logger.warning("Could not detect installed version to publish")
                 return
 
-            # Handle multiple relations on web-tsa endpoint
-            if "web-tsa" in self.model.relations:
-                for relation in self.model.relations["web-tsa"]:
+            # Handle multiple relations on tsa endpoint
+            if "tsa" in self.model.relations:
+                for relation in self.model.relations["tsa"]:
                     relation.data[self.unit]["concourse-version"] = installed_version
                 logger.info(
                     f"Published version {installed_version} to all TSA relations"
@@ -2050,7 +2048,7 @@ class ConcourseCharm(CharmBase):
             # Web side: publish TSA info
             try:
                 # Get web IP from Juju network binding
-                binding = self.model.get_binding("web-tsa")
+                binding = self.model.get_binding("tsa")
                 if binding and binding.network and binding.network.bind_address:
                     web_ip = str(binding.network.bind_address)
                 else:

@@ -71,7 +71,7 @@ juju deploy ./concourse-ci-machine_ubuntu-22.04-amd64.charm worker \
 
 # Create relations
 juju relate web:postgresql postgresql:db
-juju relate web:web-tsa worker:worker-tsa
+juju relate web:tsa worker:flight
 
 # Wait for deployment
 juju status --watch 1s

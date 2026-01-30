@@ -184,7 +184,7 @@ juju add-unit workers \
   --num-units 2
 
 # Connect workers to web via TSA relation
-juju integrate web:web-tsa workers:worker-tsa
+juju integrate web:tsa workers:flight
 ```
 
 **What happens**:
@@ -194,7 +194,7 @@ juju integrate web:web-tsa workers:worker-tsa
 
 **Important**: In this mode, you MUST use relations for TSA connectivity:
 ```bash
-juju integrate web:web-tsa workers:worker-tsa
+juju integrate web:tsa workers:flight
 ```
 
 ## Step 4: Verify Shared Storage
@@ -368,7 +368,7 @@ juju run concourse-ci-machine/leader check-status verbose=true
 
 # Manually check peer relation data
 juju ssh concourse-ci-machine/0
-sudo relation-get -r concourse-peer:0 - concourse-ci-machine/0
+sudo relation-get -r peers:0 - concourse-ci-machine/0
 ```
 
 ## Available Actions
@@ -450,7 +450,7 @@ Storage configuration from metadata.yaml:
 
 ## Peer Relation Schema
 
-The `concourse-peer` relation is used for upgrade coordination:
+The `peers` relation is used for upgrade coordination:
 
 **Web/Leader sets**:
 - `upgrade-state`: `idle` \| `prepare` \| `downloading` \| `complete`

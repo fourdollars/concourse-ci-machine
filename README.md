@@ -123,7 +123,7 @@ juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 juju relate web:postgresql postgresql:database
 
 # Relate web and worker for automatic TSA key exchange
-juju relate web:web-tsa worker:worker-tsa
+juju relate web:tsa worker:flight
 
 # Check deployment
 juju status
@@ -133,7 +133,7 @@ juju status
 - `web/0`: Web server only
 - `worker/0`, `worker/1`: Workers only connected via TSA
 
-**Note**: The `web-tsa` / `worker-tsa` relation automatically handles SSH key exchange between web and worker applications, eliminating the need for manual key management.
+**Note**: The `tsa` / `flight` relation automatically handles SSH key exchange between web and worker applications, eliminating the need for manual key management.
 
 ## Deployment Modes
 
@@ -166,11 +166,11 @@ juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 juju relate web:postgresql postgresql:database
 
 # Relate web and worker for automatic TSA key exchange
-juju relate web:web-tsa worker:worker-tsa
+juju relate web:tsa worker:flight
 ```
 
 **Best for:** Independent scaling of web and workers
-**Key Distribution:** ✅ Automatic via `web-tsa` / `worker-tsa` relation
+**Key Distribution:** ✅ Automatic via `tsa` / `flight` relation
 
 ## Configuration Options
 
@@ -366,7 +366,7 @@ juju relate concourse-ci:monitoring prometheus:target
 ```
 
 #### Peer Relation
-Units automatically coordinate via the `concourse-peer` relation (automatic, no action needed).
+Units automatically coordinate via the `peers` relation (automatic, no action needed).
 
 ## Storage
 
@@ -416,7 +416,7 @@ lxc config device add <container-name> gpu0 gpu
 
 # 5. Create relations
 juju relate web:postgresql postgresql:database
-juju relate web:web-tsa worker:worker-tsa
+juju relate web:tsa worker:flight
 
 # 6. Check status
 juju status worker
@@ -588,7 +588,7 @@ lxc config device add <container-name> gpu1 gpu id=1
 
 # 5. Create relations
 juju relate web:postgresql postgresql:database
-juju relate web:web-tsa worker:worker-tsa
+juju relate web:tsa worker:flight
 
 # 6. Check status
 juju status worker

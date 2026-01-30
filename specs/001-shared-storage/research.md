@@ -90,7 +90,7 @@ def wait_for_binaries(version: str, timeout: int = 300):
 ### 4. Upgrade Coordination via Peer Relations
 **Finding**: Juju peer relations provide built-in coordination for upgrade notifications.
 
-**Peer Relation Data Schema** (`concourse-peer` relation):
+**Peer Relation Data Schema** (`peers` relation):
 ```python
 # Web/leader sets during upgrade
 {

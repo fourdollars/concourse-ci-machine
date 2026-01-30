@@ -252,7 +252,7 @@ juju deploy ./concourse-ci-machine_amd64.charm \
   worker
 
 # Add TSA relation
-juju integrate web:web-tsa worker:worker-tsa
+juju integrate web:tsa worker:flight
 
 # Expected: Web downloads, workers reuse
 ```

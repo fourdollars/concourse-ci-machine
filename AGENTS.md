@@ -18,8 +18,6 @@ The charm supports flexible deployment architectures:
 - **PostgreSQL**: External database required by the Web node (connected via `postgresql` relation). **Note: Only PostgreSQL 16/stable is currently supported.**
 
 ### Future Plans (Planned Refactoring)
-- Rename `web:web-tsa` relation to `web:tsa`.
-- Rename `worker:worker-tsa` relation to `worker:aircraft`.
 - Remove `mode=web` and replace it with `mode=auto` on the leader unit.
 
 ## File Organization & Responsibilities
@@ -96,7 +94,7 @@ juju deploy ./concourse-ci-machine_amd64.charm concourse --config mode=auto -n 3
 # 3. Alternative: Deploy Concourse (Distributed Mode)
 juju deploy ./concourse-ci-machine_amd64.charm concourse --config mode=web
 juju deploy ./concourse-ci-machine_amd64.charm concourse-worker --config mode=worker -n 2
-juju integrate concourse:web-tsa concourse-worker:worker-tsa
+juju integrate concourse:tsa concourse-worker:flight
 
 # 4. Integrate Database
 juju integrate concourse postgresql
@@ -113,7 +111,7 @@ juju status --relations --storage --watch 5s
 # 1. Deploy with shared-storage=lxc config
 juju deploy ./concourse-ci-machine_amd64.charm concourse-web --config mode=web --config shared-storage=lxc
 juju deploy ./concourse-ci-machine_amd64.charm concourse-worker --config mode=worker --config shared-storage=lxc -n 2
-juju integrate concourse-web:web-tsa concourse-worker:worker-tsa
+juju integrate concourse-web:tsa concourse-worker:flight
 juju integrate concourse-web postgresql
 
 # 2. Wait for units to start (they will show "Waiting for shared storage mount")

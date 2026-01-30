@@ -222,7 +222,7 @@ juju deploy ./charm.charm worker \
 juju add-unit worker --attach-storage $WEB_STORAGE_ID
 
 # Relate for TSA communication
-juju relate worker:worker-tsa web:web-tsa
+juju relate worker:flight web:tsa
 ```
 
 **Juju Testing Commands**:
@@ -546,7 +546,7 @@ test-shared-storage-web-worker:
         juju add-unit worker --attach-storage ${{ env.WEB_STORAGE_ID }}
     
     - name: Relate workers to web via TSA
-      run: juju relate worker:worker-tsa web:web-tsa
+      run: juju relate worker:flight web:tsa
     
     - name: Wait for workers to settle
       run: juju-wait -m shared-web-worker -t 900

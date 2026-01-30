@@ -369,7 +369,7 @@ step_deploy() {
         
         echo "Relating..."
         juju integrate "$WEB_APP" postgresql
-        juju integrate "$WEB_APP:web-tsa" "$WORKER_APP:worker-tsa"
+        juju integrate "$WEB_APP:tsa" "$WORKER_APP:flight"
     fi
 
     # Shared Storage Setup
@@ -1097,7 +1097,7 @@ step_pytorch() {
                     --config mode=worker
             fi
             
-            juju integrate web:web-tsa worker-cuda:worker-tsa
+            juju integrate web:tsa worker-cuda:flight
             
             # Wait for unit to be allocated and reach active status
             echo "Waiting for worker unit to be active..."
@@ -1149,7 +1149,7 @@ step_pytorch() {
                     --config mode=worker
             fi
             
-            juju integrate web:web-tsa worker-rocm:worker-tsa
+            juju integrate web:tsa worker-rocm:flight
             
             # Wait for unit to be allocated and reach active status
             echo "Waiting for worker unit to be active..."

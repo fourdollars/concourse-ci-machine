@@ -89,7 +89,7 @@ juju integrate web:postgresql postgresql:database
 juju deploy concourse-ci-machine worker -n 2 --config mode=worker --base ubuntu@24.04
 
 # Connect workers to web
-juju integrate web:web-tsa worker:worker-tsa
+juju integrate web:tsa worker:flight
 
 # Expose web
 juju expose web
