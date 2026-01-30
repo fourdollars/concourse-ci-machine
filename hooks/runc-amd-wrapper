@@ -11,6 +11,17 @@ for arg in "$@"; do
     PREV="$arg"
 done
 
+# Fix AMD GPU device permissions before container starts
+# Without nvidia-container-runtime equivalent, we must handle this ourselves
+if [[ -e "/dev/kfd" ]]; then
+    chmod 666 /dev/kfd 2>/dev/null || true
+fi
+for dev in /dev/dri/renderD* /dev/dri/card*; do
+    if [[ -e "$dev" && "$dev" != *"controlD"* ]]; then
+        chmod 666 "$dev" 2>/dev/null || true
+    fi
+done
+
 if [[ -n "$BUNDLE" ]] && [[ -f "$BUNDLE/config.json" ]]; then
     TMP_CONFIG=$(mktemp "$BUNDLE/config.json.XXXXXX")
     chown --reference="$BUNDLE/config.json" "$TMP_CONFIG"
