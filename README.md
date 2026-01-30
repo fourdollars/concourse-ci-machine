@@ -647,8 +647,11 @@ lxc config device add juju-abc123-0 kfd unix-char source=/dev/kfd path=/dev/kfd
 - Must be added as separate device after GPU passthrough
 
 **⚠️ Supported AMD GPUs:**
-- **Discrete GPUs only**: RX 6000/7000 series, Radeon Pro, Instinct MI series
-- **NOT supported**: Integrated AMD GPUs (APUs like Phoenix1, Renoir, Cezanne)
+- **Discrete GPUs (fully supported)**: RX 6000/7000 series, Radeon Pro, Instinct MI series - work natively
+- **Integrated GPUs (requires workaround)**: APUs like Phoenix1 (gfx1103), Renoir, Cezanne
+  - ✅ **CAN work** with `HSA_OVERRIDE_GFX_VERSION` environment variable (see below)
+  - ⚠️ Lower performance due to shared system memory
+  - Recommended for development/testing, not production ML workloads
 - Check ROCm compatibility: https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html
 
 **Everything else is automated!** The charm will:
@@ -713,11 +716,17 @@ jobs:
       image_resource:
         type: registry-image
         source:
-          repository: rocm/tensorflow
+          repository: rocm/pytorch
           tag: latest
       run:
-        path: python
-        args: ["-c", "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"]
+        path: sh
+        args:
+        - -c
+        - |
+          # For integrated AMD GPUs (Phoenix1/gfx1103, etc.)
+          export HSA_OVERRIDE_GFX_VERSION=11.0.0
+          
+          python3 -c "import torch; print('CUDA available:', torch.cuda.is_available()); x = torch.rand(5,3).cuda(); print('Result:', x * 2)"
 ```
 
 ### Verifying ROCm GPU Access
@@ -739,8 +748,77 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 
 - `rocm/dev-ubuntu-24.04:latest` - ROCm development base (~1.1GB)
 - `rocm/tensorflow:latest` - TensorFlow with ROCm
-- `rocm/pytorch:latest` - PyTorch with ROCm
+- `rocm/pytorch:latest` - PyTorch with ROCm (~6GB, includes PyTorch 2.9.1+rocm7.2.0)
 - `rocm/rocm-terminal:latest` - ROCm with utilities
+
+### HSA_OVERRIDE_GFX_VERSION Workaround for Integrated GPUs
+
+Integrated AMD GPUs (APUs) like Phoenix1 (gfx1103), Renoir, and Cezanne are not officially supported by ROCm, but can work with the `HSA_OVERRIDE_GFX_VERSION` environment variable.
+
+**Why it's needed:**
+- ROCm checks GPU architecture (GFX version) and rejects unsupported GPUs
+- Integrated GPUs often use newer GFX versions without full ROCm kernel support
+- Override tells ROCm to use kernels from a supported architecture
+
+**How to use:**
+
+```yaml
+jobs:
+- name: pytorch-rocm-integrated-gpu
+  plan:
+  - task: test-gpu
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/pytorch
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          # Set override for gfx1103 (Phoenix1) - use gfx11.0.0 kernels
+          export HSA_OVERRIDE_GFX_VERSION=11.0.0
+          
+          # Your PyTorch code
+          python3 -c "
+          import torch
+          print('CUDA (ROCm) available:', torch.cuda.is_available())
+          x = torch.rand(5, 3).cuda()
+          y = x * 2
+          print('GPU computation succeeded!')
+          print('Result:', y)
+          "
+```
+
+**Override values for common integrated GPUs:**
+
+| GPU Architecture | GFX Version | Override Value |
+|------------------|-------------|----------------|
+| Phoenix1 (780M) | gfx1103 | `11.0.0` |
+| Renoir (4000 series) | gfx90c | `9.0.0` |
+| Cezanne (5000 series) | gfx90c | `9.0.0` |
+
+**Limitations:**
+- ⚠️ Uses suboptimal kernels → lower performance than discrete GPUs
+- ⚠️ Shared system memory → memory bandwidth limitations
+- ⚠️ May not support all ROCm features
+- ✅ Good for development, testing, and light compute workloads
+- ❌ Not recommended for production ML training
+
+**Testing on host (before deploying pipeline):**
+
+```bash
+# Test if your integrated GPU works with override
+docker run --rm -it --device=/dev/kfd --device=/dev/dri \
+  rocm/pytorch:latest sh -c "
+    export HSA_OVERRIDE_GFX_VERSION=11.0.0
+    python3 -c 'import torch; x = torch.rand(5,3).cuda(); print(x * 2)'
+  "
+```
 
 ### ROCm Troubleshooting
 
@@ -759,10 +837,10 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 - **Most common**: Missing `/dev/kfd` device
   - Check in container: `ls -la /dev/kfd`
   - Add if missing: `lxc config device add <container-name> kfd unix-char source=/dev/kfd path=/dev/kfd`
-- **Integrated GPU**: AMD APUs (Phoenix1, Renoir, Cezanne) are NOT supported by ROCm compute
+- **Integrated GPU without override**: Try `HSA_OVERRIDE_GFX_VERSION` workaround (see above)
   - Verify GPU model: `lspci | grep -i vga`
   - Check PCI ID: `cat /sys/class/drm/card*/device/uevent | grep PCI_ID`
-  - Only discrete AMD GPUs work (RX 6000/7000, Radeon Pro, MI series)
+  - For gfx1103 (Phoenix1): `export HSA_OVERRIDE_GFX_VERSION=11.0.0`
 - **HSA_STATUS_ERROR_OUT_OF_RESOURCES**: Usually indicates unsupported GPU or missing drivers
 
 **rocm-smi works but PyTorch doesn't detect GPU**
@@ -786,6 +864,12 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 - If worker detects wrong GPU type, check LXD device configuration
 - Use specific GPU ID: `lxc config device add ... gpu id=1` (not generic `gpu`)
 - Query GPU IDs: `lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, product_id, vendor_id, pci_address}'`
+
+**Integrated GPU performance issues**
+- If compute works but is slow, this is expected (shared memory bandwidth)
+- Consider discrete GPU for production workloads
+- Use integrated GPU for testing/development only
+- Monitor memory usage: integrated GPUs share system RAM
 
 ## Troubleshooting
 
