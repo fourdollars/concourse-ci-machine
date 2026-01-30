@@ -1792,9 +1792,17 @@ class ConcourseCharm(CharmBase):
         return None
 
     def _get_web_url(self) -> Optional[str]:
-        """Get the web server URL (http://IP:PORT) for status display"""
+        """Get the web server URL for status display
+
+        Prioritizes external-url config, falls back to auto-detected IP:PORT
+        """
         try:
-            # Get the unit's IP address from network binding
+            # Check if external-url is configured
+            external_url = self.config.get("external-url", "").strip()
+            if external_url:
+                return external_url
+
+            # Auto-detect: Get the unit's IP address from network binding
             # Try multiple bindings in order of preference
             binding = None
             for binding_name in ["tsa", "peers", ""]:
