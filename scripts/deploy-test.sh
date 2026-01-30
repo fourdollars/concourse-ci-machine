@@ -1394,6 +1394,7 @@ jobs:
         - -c
         - |
           import torch
+          import traceback
           print("=" * 60)
           print("PyTorch ROCm Test")
           print("=" * 60)
@@ -1404,11 +1405,23 @@ jobs:
               print(f"GPU count: {torch.cuda.device_count()}")
               print(f"GPU name: {torch.cuda.get_device_name(0)}")
               
-              x = torch.rand(5, 3).cuda()
-              print(f"\nTensor on GPU: {x.device}")
-              y = x * 2
-              print(f"Computation result shape: {y.shape}")
-              print("✓ PyTorch ROCm test PASSED")
+              try:
+                  print("\nAttempting to create tensor on GPU...")
+                  x = torch.rand(5, 3).cuda()
+                  print(f"✓ Tensor created successfully: {x.device}")
+                  
+                  print("Attempting GPU computation (multiply by 2)...")
+                  y = x * 2
+                  print(f"✓ Computation succeeded, result shape: {y.shape}")
+                  print("\n✓ PyTorch ROCm test PASSED")
+              except Exception as e:
+                  print(f"\n✗ PyTorch ROCm test FAILED")
+                  print(f"Error type: {type(e).__name__}")
+                  print(f"Error message: {str(e)}")
+                  print("\nFull traceback:")
+                  traceback.print_exc()
+                  print("\nNote: Integrated AMD GPUs (APUs) are not officially supported by ROCm for compute workloads")
+                  exit(1)
           else:
               print("⚠ ROCm not available")
               print("See hardware info above for diagnostics")
