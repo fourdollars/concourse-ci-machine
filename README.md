@@ -787,14 +787,6 @@ fly -t local execute -c test-gpu.yml --tag=rocm
 - Use specific GPU ID: `lxc config device add ... gpu id=1` (not generic `gpu`)
 - Query GPU IDs: `lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, vendor, driver, product_id, vendor_id, pci_address}'`
 
-**Can I use `HSA_OVERRIDE_GFX_VERSION` for integrated GPUs?**
-- **TL;DR: No, it doesn't help with PyTorch/TensorFlow on integrated AMD GPUs.**
-- The `HSA_OVERRIDE_GFX_VERSION=11.0.0` workaround (commonly suggested online) tricks `rocminfo` into recognizing unsupported gfx architectures
-- **However**, this only affects HSA runtime detection, not actual compute support
-- **Tested on AMD Phoenix1 (gfx1103)**: Even with `HSA_OVERRIDE_GFX_VERSION=11.0.0`, PyTorch still reports `torch.cuda.is_available() = False`
-- **Root cause**: Integrated GPUs lack the hardware features required by ROCm compute stack (VRAM, PCIe atomics, etc.)
-- **Bottom line**: Only discrete AMD GPUs (RX 6000/7000, Radeon Pro, MI series) work with ROCm compute, regardless of workarounds
-
 ## Troubleshooting
 
 ### Charm Shows "Blocked" Status
