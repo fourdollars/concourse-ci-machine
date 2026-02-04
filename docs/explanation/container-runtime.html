@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Understanding Concourse CI container runtime - why containerd not Docker, why workers run as root, container isolation model">
+    <title>Understanding Container Runtime - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --explanation-color: #852c2b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--explanation-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--explanation-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--explanation-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--explanation-color);
+        }
+        .content code {
+            background: #f5f5f5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        .content pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .note {
+            background: var(--bg-light);
+            border-left: 4px solid var(--text-light);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            background: var(--bg-light);
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            margin-top: 4rem;
+            color: var(--text-light);
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm - Documentation</h1>
+    </header>
+
+    <div class="breadcrumbs">
+        <a href="../index.html">Home</a> &raquo;
+        <a href="../index.html#explanation">Explanation</a> &raquo;
+        Understanding Container Runtime
+    </div>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/explanation/container-runtime.html">Edit this page on GitHub</a>
+        </div>
+
+        <h1>Understanding Container Runtime</h1>
+        <p class="subtitle">Why containerd (not Docker), why workers run as root, and the container isolation model</p>
+
+        <h2>Why Containerd, Not Docker?</h2>
+
+        <p>The charm uses <strong>containerd</strong> as the container runtime, not Docker. This is a deliberate choice made by Concourse CI upstream, not this charm. Understanding why requires understanding the container ecosystem evolution:</p>
+
+        <h3>The Container Stack</h3>
+
+        <pre><code>┌────────────────────────┐
+│  Concourse Worker      │ ← Our charm installs this
+├────────────────────────┤
+│  containerd            │ ← Container runtime (charm installs)
+├────────────────────────┤
+│  runc                  │ ← OCI runtime (spawns containers)
+├────────────────────────┤
+│  Linux Kernel          │ ← Namespaces, cgroups
+│  (namespaces, cgroups) │
+└────────────────────────┘</code></pre>
+
+        <p>Docker, by contrast, adds additional layers:</p>
+
+        <pre><code>┌────────────────────────┐
+│  docker CLI            │ ← User-facing tool
+├────────────────────────┤
+│  dockerd               │ ← Docker daemon (image management, networking)
+├────────────────────────┤
+│  containerd            │ ← Actually runs containers
+├────────────────────────┤
+│  runc                  │ ← OCI runtime
+└────────────────────────┘</code></pre>
+
+        <h3>Why Containerd is Better for Concourse</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Requirement</th>
+                    <th>containerd</th>
+                    <th>Docker</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Lightweight</strong></td>
+                    <td>✅ ~50MB binary, minimal daemon</td>
+                    <td>❌ ~200MB, heavyweight daemon with many features Concourse doesn't need</td>
+                </tr>
+                <tr>
+                    <td><strong>OCI-compliant</strong></td>
+                    <td>✅ Native OCI support</td>
+                    <td>✅ Via containerd backend</td>
+                </tr>
+                <tr>
+                    <td><strong>No unnecessary features</strong></td>
+                    <td>✅ Just container lifecycle management</td>
+                    <td>❌ Docker Swarm, Docker Compose, legacy image formats</td>
+                </tr>
+                <tr>
+                    <td><strong>Kubernetes-compatible</strong></td>
+                    <td>✅ Used by Kubernetes since 1.20</td>
+                    <td>❌ Deprecated as K8s runtime</td>
+                </tr>
+                <tr>
+                    <td><strong>Direct control</strong></td>
+                    <td>✅ Concourse talks directly to containerd</td>
+                    <td>❌ Extra layer of indirection</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="info">
+            <strong>💡 Industry Trend:</strong> Kubernetes deprecated Docker runtime support in v1.20 (2020) and removed it entirely in v1.24 (2022), standardizing on containerd. Concourse CI follows the same principle—use the simplest, most direct runtime possible.
+        </div>
+
+        <h3>What Concourse Doesn't Need from Docker</h3>
+
+        <ul>
+            <li><strong>docker CLI</strong>: Workers are API-driven, not user-interactive</li>
+            <li><strong>Docker Compose</strong>: Pipelines define multi-container workflows, not Compose files</li>
+            <li><strong>Docker Swarm</strong>: Concourse is its own orchestrator</li>
+            <li><strong>BuildKit</strong>: Concourse uses OCI Buildkit directly if needed</li>
+            <li><strong>Legacy image formats</strong>: Modern images are OCI-compliant</li>
+        </ul>
+
+        <h2>Why Workers Run as Root</h2>
+
+        <p>The <code>concourse-worker</code> systemd service runs as <strong>root</strong>, not an unprivileged user. This seems surprising given security best practices, but it's necessary for several reasons:</p>
+
+        <h3>Technical Requirements</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Capability Needed</th>
+                    <th>Why Root is Required</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Create user namespaces</strong></td>
+                    <td>Containers need isolated UID/GID spaces. Requires <code>CAP_SYS_ADMIN</code>.</td>
+                </tr>
+                <tr>
+                    <td><strong>Mount filesystems</strong></td>
+                    <td>Task containers need bind mounts for caches, inputs, outputs. Requires <code>CAP_SYS_ADMIN</code>.</td>
+                </tr>
+                <tr>
+                    <td><strong>Manage cgroups</strong></td>
+                    <td>Resource limits (CPU, memory) enforced via cgroups. Requires root or <code>CAP_SYS_ADMIN</code>.</td>
+                </tr>
+                <tr>
+                    <td><strong>Network namespaces</strong></td>
+                    <td>Isolated networking per container. Requires <code>CAP_NET_ADMIN</code>.</td>
+                </tr>
+                <tr>
+                    <td><strong>Device access</strong></td>
+                    <td>GPUs, block devices need <code>/dev</code> access. Requires root or device ownership.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>The Rootless Containers Myth</h3>
+
+        <p>You might have heard of "rootless Docker" or "rootless Podman." These technologies allow <em>launching</em> containers without root, but with significant trade-offs:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Rootless Mode</th>
+                    <th>Impact on Concourse</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Network modes</strong></td>
+                    <td>❌ No bridge networking</td>
+                    <td>Concourse tasks need network isolation</td>
+                </tr>
+                <tr>
+                    <td><strong>Port binding &lt;1024</strong></td>
+                    <td>❌ Privileged ports blocked</td>
+                    <td>Some tasks need to bind port 80/443</td>
+                </tr>
+                <tr>
+                    <td><strong>Cgroup limits</strong></td>
+                    <td>⚠️ Limited enforcement</td>
+                    <td>Can't reliably limit task resources</td>
+                </tr>
+                <tr>
+                    <td><strong>GPU passthrough</strong></td>
+                    <td>❌ No device access</td>
+                    <td>GPU workers would be impossible</td>
+                </tr>
+                <tr>
+                    <td><strong>Overlay filesystems</strong></td>
+                    <td>⚠️ Fuse-overlay (slow)</td>
+                    <td>Performance degradation for image layers</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>Verdict:</strong> Rootless mode sacrifices too many features Concourse relies on. The security benefits don't outweigh the functional limitations.</p>
+
+        <h3>Security Mitigations</h3>
+
+        <p>Running as root doesn't mean "no security." The charm implements several layers of protection:</p>
+
+        <ol>
+            <li><strong>Container isolation</strong>: Task containers run in namespaces with limited capabilities</li>
+            <li><strong>AppArmor/SELinux profiles</strong>: Kernel-level MAC (Mandatory Access Control)</li>
+            <li><strong>Seccomp filters</strong>: Restrict syscalls available to containers</li>
+            <li><strong>Network policies</strong>: Firewall rules limit worker attack surface</li>
+            <li><strong>Read-only root filesystem</strong>: Worker binary directories mounted read-only</li>
+        </ol>
+
+        <div class="warning">
+            <strong>⚠️ Attack Surface:</strong> If a worker host is compromised (root access gained), an attacker can access all containers on that worker. <strong>Best practice:</strong> Run workers in isolated VMs or containers, not directly on sensitive hosts.
+        </div>
+
+        <h2>Container Isolation Model</h2>
+
+        <p>Concourse uses <strong>Linux namespaces</strong> and <strong>cgroups</strong> to isolate task containers. Understanding this model explains what tasks can and cannot do:</p>
+
+        <h3>Namespace Isolation</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Namespace</th>
+                    <th>What's Isolated</th>
+                    <th>Concourse Usage</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>PID</strong></td>
+                    <td>Process IDs (containers see own PID 1)</td>
+                    <td>Tasks can't see other task processes</td>
+                </tr>
+                <tr>
+                    <td><strong>Mount</strong></td>
+                    <td>Filesystem mounts</td>
+                    <td>Each task has own rootfs from image</td>
+                </tr>
+                <tr>
+                    <td><strong>Network</strong></td>
+                    <td>Network stack (IP, routes, firewall)</td>
+                    <td>Tasks have isolated networking (bridge mode)</td>
+                </tr>
+                <tr>
+                    <td><strong>UTS</strong></td>
+                    <td>Hostname and domain name</td>
+                    <td>Each task has unique hostname</td>
+                </tr>
+                <tr>
+                    <td><strong>IPC</strong></td>
+                    <td>Inter-process communication (shared memory, semaphores)</td>
+                    <td>Tasks can't IPC with other tasks</td>
+                </tr>
+                <tr>
+                    <td><strong>User</strong></td>
+                    <td>UID/GID mappings</td>
+                    <td>Task UID 0 maps to host UID 100000+ (non-privileged)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>What Tasks CAN Do</h3>
+
+        <ul>
+            <li><strong>Bind to any port</strong>: Network namespace allows full port range (task's port 80 doesn't conflict with other tasks)</li>
+            <li><strong>Install packages</strong>: Tasks have full <code>apt</code>/<code>yum</code>/<code>apk</code> access within their rootfs</li>
+            <li><strong>Run as root</strong>: Inside the container, UID 0 is root (but mapped to unprivileged UID on host)</li>
+            <li><strong>Create files</strong>: Task has full write access to its own filesystem (ephemeral)</li>
+            <li><strong>Use full CPU</strong>: Unless limited by cgroups</li>
+        </ul>
+
+        <h3>What Tasks CANNOT Do</h3>
+
+        <ul>
+            <li><strong>See other tasks</strong>: PID namespace prevents <code>ps aux</code> from showing other tasks</li>
+            <li><strong>Access host filesystem</strong>: Mount namespace isolates <code>/</code> unless bind-mounted explicitly</li>
+            <li><strong>Modify kernel</strong>: Seccomp blocks syscalls like <code>reboot</code>, <code>load_module</code></li>
+            <li><strong>Escape to host</strong>: User namespace remaps root to unprivileged UID</li>
+            <li><strong>Persist data</strong>: Task filesystem is ephemeral (deleted after task completes)</li>
+        </ul>
+
+        <h2>Privileged Containers: The Exception</h2>
+
+        <p>Concourse supports <strong>privileged containers</strong> via the <code>privileged: true</code> flag in task configs. This <strong>disables most isolation</strong>:</p>
+
+        <pre><code class="language-yaml">task: build-docker-image
+privileged: true  # ⚠️ Dangerous!
+config:
+  platform: linux
+  image_resource:
+    type: registry-image
+    source: {repository: docker}
+  run:
+    path: docker
+    args: [build, -t, myimage, .]</code></pre>
+
+        <h3>What Privileged Mode Grants</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Access</th>
+                    <th>Security Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>All Linux capabilities</strong></td>
+                    <td>❌ Container can load kernel modules, change network config</td>
+                </tr>
+                <tr>
+                    <td><strong>Host device access</strong></td>
+                    <td>❌ Can access <code>/dev/sda</code> (host disks), <code>/dev/mem</code> (physical memory)</td>
+                </tr>
+                <tr>
+                    <td><strong>Apparmor/SELinux bypass</strong></td>
+                    <td>❌ MAC policies not enforced</td>
+                </tr>
+                <tr>
+                    <td><strong>Cgroup manipulation</strong></td>
+                    <td>❌ Can escape resource limits</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="warning">
+            <strong>⚠️ Security Warning:</strong> Privileged containers can escape to the host. <strong>Only use</strong> for tasks that absolutely require it (Docker-in-Docker builds, kernel testing). Never run untrusted code in privileged mode.
+        </div>
+
+        <h3>When Privileged Mode is Necessary</h3>
+
+        <ul>
+            <li><strong>Docker-in-Docker (DinD)</strong>: Building Docker images requires nested Docker daemon</li>
+            <li><strong>Kernel module testing</strong>: Loading/testing kernel modules</li>
+            <li><strong>Low-level device access</strong>: Flashing firmware, direct block device manipulation</li>
+        </ul>
+
+        <h2>Containerd Configuration in the Charm</h2>
+
+        <p>The charm configures containerd with Concourse-specific settings:</p>
+
+        <h3>/etc/containerd/config.toml</h3>
+
+        <pre><code class="language-toml"># Snapshotter for image layers
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  snapshotter = "overlayfs"  # Faster than fuse-overlay
+
+# DNS configuration
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "registry.k8s.io/pause:3.10"
+[plugins."io.containerd.grpc.v1.cri".cni]
+  bin_dir = "/opt/cni/bin"
+  conf_dir = "/etc/cni/net.d"
+
+# GPU support (when compute-runtime=cuda)
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  default_runtime_name = "nvidia"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+  runtime_type = "io.containerd.runc.v2"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+    BinaryName = "/usr/bin/nvidia-container-runtime"</code></pre>
+
+        <h3>Key Configuration Choices</h3>
+
+        <ul>
+            <li><strong>overlayfs snapshotter</strong>: Efficient copy-on-write for image layers</li>
+            <li><strong>Custom DNS</strong>: <code>containerd-dns-server</code> config option sets task container DNS</li>
+            <li><strong>CNI plugins</strong>: Bridge networking for task isolation</li>
+            <li><strong>Runtime switching</strong>: GPU workers use <code>nvidia-container-runtime</code> instead of stock <code>runc</code></li>
+        </ul>
+
+        <h2>Comparison with Other CI Systems</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>CI System</th>
+                    <th>Container Runtime</th>
+                    <th>Isolation Model</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Concourse CI</strong></td>
+                    <td>containerd + runc</td>
+                    <td>Full namespace isolation, user namespacing</td>
+                </tr>
+                <tr>
+                    <td><strong>GitLab Runner</strong></td>
+                    <td>Docker (default) or Kubernetes</td>
+                    <td>Docker-in-Docker or Kubernetes pods</td>
+                </tr>
+                <tr>
+                    <td><strong>Jenkins</strong></td>
+                    <td>Docker plugin (optional)</td>
+                    <td>Varies (can run without containers)</td>
+                </tr>
+                <tr>
+                    <td><strong>GitHub Actions</strong></td>
+                    <td>Docker (self-hosted) or VM (cloud)</td>
+                    <td>Full VMs for cloud runners</td>
+                </tr>
+                <tr>
+                    <td><strong>Drone CI</strong></td>
+                    <td>Docker</td>
+                    <td>Docker containers</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>Concourse's advantage:</strong> By using containerd directly, Concourse avoids Docker's overhead while maintaining strong isolation. This makes workers lighter and more efficient.</p>
+
+        <h2>LXD Compatibility: Nested Containers</h2>
+
+        <p>When workers run inside LXD containers (common for Juju localhost deployments), we have <strong>nested containerization</strong>:</p>
+
+        <pre><code>Host (bare metal)
+  ↓
+LXD Container (Juju unit)
+  ↓
+containerd (Concourse worker)
+  ↓
+Task Container (Concourse task)</code></pre>
+
+        <p>This works because:</p>
+
+        <ul>
+            <li><strong>LXD supports nesting</strong>: Set <code>security.nesting=true</code> on LXD container</li>
+            <li><strong>User namespace delegation</strong>: LXD allows inner containers to remap UIDs</li>
+            <li><strong>AppArmor profiles</strong>: LXD's <code>lxc-container-default-cgns</code> profile permits nested cgroups</li>
+        </ul>
+
+        <div class="note">
+            <strong>Automatic Configuration:</strong> When deploying to LXD (localhost cloud), Juju automatically sets <code>security.nesting=true</code>. No manual LXD configuration needed.
+        </div>
+
+        <h2>Related Topics</h2>
+
+        <ul>
+            <li><strong>Tutorial:</strong> <a href="../tutorials/deployment-guide.html">Complete Deployment Guide</a> - See container runtime in action</li>
+            <li><strong>Explanation:</strong> <a href="gpu-architecture.html">Understanding GPU Architecture</a> - How GPUs integrate with containerd</li>
+            <li><strong>Reference:</strong> <a href="../reference/configuration.html">Configuration Options</a> - See <code>containerd-dns-*</code> options</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

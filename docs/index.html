@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - A Juju machine charm for deploying Concourse CI with flexible deployment modes, GPU support, and automated key management.">
+    <meta name="keywords" content="Concourse CI, Juju, Machine Charm, CI/CD, DevOps, GPU, CUDA, ROCm, Continuous Integration">
+    <meta name="author" content="Shih-Yuan Lee (FourDollars)">
+    <title>Concourse CI Machine Charm - Documentation</title>
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header p {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .badges {
+            margin-top: 1.5rem;
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .badges img {
+            height: 20px;
+        }
+
+        /* Navigation */
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            color: var(--text-dark);
+            text-decoration: none;
+            transition: background-color 0.2s, color 0.2s;
+            font-weight: 500;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--primary-color);
+        }
+
+        /* Main container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Hero section */
+        .hero {
+            background: linear-gradient(to right, var(--bg-light), var(--bg-white));
+            padding: 3rem 2rem;
+            margin: 2rem 0;
+            border-radius: 8px;
+            border-left: 4px solid var(--secondary-color);
+        }
+
+        .hero h2 {
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+
+        .hero p {
+            font-size: 1.1rem;
+            color: var(--text-light);
+            margin-bottom: 1.5rem;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-secondary {
+            background-color: var(--bg-white);
+            color: var(--primary-color);
+            border: 2px solid var(--primary-color);
+        }
+
+        /* Diataxis Grid */
+        .diataxis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+
+        .doc-card {
+            background: var(--bg-white);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            border-top: 4px solid;
+        }
+
+        .doc-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+        }
+
+        .doc-card.tutorial {
+            border-top-color: var(--tutorial-color);
+        }
+
+        .doc-card.howto {
+            border-top-color: var(--howto-color);
+        }
+
+        .doc-card.reference {
+            border-top-color: var(--reference-color);
+        }
+
+        .doc-card.explanation {
+            border-top-color: var(--explanation-color);
+        }
+
+        .doc-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .doc-card.tutorial h3 { color: var(--tutorial-color); }
+        .doc-card.howto h3 { color: var(--howto-color); }
+        .doc-card.reference h3 { color: var(--reference-color); }
+        .doc-card.explanation h3 { color: var(--explanation-color); }
+
+        .doc-card p {
+            color: var(--text-light);
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .doc-card ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .doc-card li {
+            margin-bottom: 0.75rem;
+        }
+
+        .doc-card a {
+            color: var(--text-dark);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            transition: color 0.2s;
+            font-weight: 500;
+        }
+
+        .doc-card a:hover {
+            color: var(--primary-color);
+        }
+
+        .doc-card a::before {
+            content: "→";
+            margin-right: 0.5rem;
+            font-weight: bold;
+        }
+
+        /* Features section */
+        .features {
+            background-color: var(--bg-light);
+            padding: 3rem 2rem;
+            margin: 3rem -2rem;
+        }
+
+        .features-content {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .features h2 {
+            text-align: center;
+            color: var(--primary-color);
+            margin-bottom: 2rem;
+            font-size: 2rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-item {
+            background: var(--bg-white);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .feature-item h3 {
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+            font-size: 1.2rem;
+        }
+
+        .feature-item p {
+            color: var(--text-light);
+            font-size: 0.95rem;
+        }
+
+        /* Quick start section */
+        .quickstart {
+            margin: 3rem 0;
+            background: var(--bg-light);
+            padding: 2rem;
+            border-radius: 8px;
+        }
+
+        .quickstart h2 {
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+
+        .quickstart pre {
+            background: var(--text-dark);
+            color: #0f0;
+            padding: 1.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .quickstart code {
+            font-family: 'Ubuntu Mono', 'Courier New', monospace;
+        }
+
+        /* Footer */
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            padding: 2rem;
+            margin-top: 3rem;
+            text-align: center;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+
+            header p {
+                font-size: 1rem;
+            }
+
+            .diataxis-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            nav ul {
+                flex-direction: column;
+            }
+
+            nav a {
+                text-align: center;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                text-align: center;
+            }
+        }
+
+        /* Icon indicators */
+        .icon {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+
+        .status-wip {
+            background-color: var(--warning-color);
+            color: white;
+        }
+
+        .status-new {
+            background-color: var(--success-color);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>A Juju machine charm for deploying Concourse CI - a modern, scalable continuous integration and delivery system</p>
+        <div class="badges">
+            <a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">
+                <img src="https://img.shields.io/badge/GitHub-fourdollars%2Fconcourse--ci--machine-blue.svg" alt="GitHub">
+            </a>
+            <a href="https://github.com/fourdollars/concourse-ci-machine/actions/workflows/ci.yml" target="_blank">
+                <img src="https://github.com/fourdollars/concourse-ci-machine/actions/workflows/ci.yml/badge.svg" alt="CI Status">
+            </a>
+            <a href="https://charmhub.io/concourse-ci-machine" target="_blank">
+                <img src="https://charmhub.io/concourse-ci-machine/badge.svg" alt="Charmhub">
+            </a>
+        </div>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="#home">Home</a></li>
+            <li><a href="#tutorials">Tutorials</a></li>
+            <li><a href="#how-to">How-To Guides</a></li>
+            <li><a href="#reference">Reference</a></li>
+            <li><a href="#explanation">Explanation</a></li>
+            <li><a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">GitHub</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <section class="hero" id="home">
+            <h2>Deploy Concourse CI with Confidence <span class="status-badge status-wip">Work in Progress</span></h2>
+            <p>
+                The Concourse CI Machine Charm provides a production-ready deployment solution for Concourse CI using Juju. 
+                With flexible deployment modes, automated key management, GPU support for ML/AI workloads, and comprehensive monitoring, 
+                you can deploy and scale Concourse CI across bare metal, VMs, and LXD environments.
+            </p>
+            <div class="cta-buttons">
+                <a href="#tutorials" class="btn btn-primary">Get Started</a>
+                <a href="https://github.com/fourdollars/concourse-ci-machine" class="btn btn-secondary" target="_blank">View on GitHub</a>
+                <a href="https://charmhub.io/concourse-ci-machine" class="btn btn-secondary" target="_blank">View on Charmhub</a>
+            </div>
+        </section>
+
+        <section class="diataxis-grid">
+            <article class="doc-card tutorial" id="tutorials">
+                <h3>📚 Tutorials</h3>
+                <p>Learn by doing. Follow these step-by-step tutorials to get familiar with deploying and using Concourse CI with this charm.</p>
+                <ul>
+                    <li><a href="tutorials/deployment-guide.html">Complete Deployment Tutorial</a></li>
+                    <li><a href="tutorials/shared-storage-quickstart.html">Shared Storage Quick Start</a></li>
+                    <li><a href="tutorials/gpu-workers.html">GPU-Enabled Workers Tutorial</a></li>
+                    <li><a href="tutorials/dataset-mounting.html">Dataset Mounting for ML/AI</a></li>
+                    <li><a href="tutorials/general-mounting.html">General Folder Mounting Guide</a></li>
+                </ul>
+            </article>
+
+            <article class="doc-card howto" id="how-to">
+                <h3>🔧 How-To Guides</h3>
+                <p>Practical guides for specific tasks and common scenarios. Get things done with clear, goal-oriented instructions.</p>
+                <ul>
+                    <li><a href="howto/scale-workers.html">How to Scale Workers</a></li>
+                    <li><a href="howto/upgrade-concourse.html">How to Upgrade Concourse</a></li>
+                    <li><a href="howto/configure-gpu.html">How to Configure GPU Workers</a></li>
+                    <li><a href="howto/setup-shared-storage.html">How to Setup Shared Storage</a></li>
+                    <li><a href="howto/monitor-prometheus.html">How to Monitor with Prometheus</a></li>
+                    <li><a href="howto/troubleshoot.html">How to Troubleshoot Common Issues</a></li>
+                </ul>
+            </article>
+
+            <article class="doc-card reference" id="reference">
+                <h3>📖 Reference</h3>
+                <p>Technical reference documentation. Look up configuration options, architecture details, and API specifications.</p>
+                <ul>
+                    <li><a href="reference/configuration.html">Configuration Options</a></li>
+                    <li><a href="reference/deployment-modes.html">Deployment Modes</a></li>
+                    <li><a href="reference/relations.html">Relations & Integrations</a></li>
+                    <li><a href="reference/architecture.html">Architecture Overview</a></li>
+                    <li><a href="reference/test-matrix.html">Test Matrix & Coverage</a></li>
+                    <li><a href="reference/rocm-verification.html">ROCm Verification Report</a></li>
+                </ul>
+            </article>
+
+            <article class="doc-card explanation" id="explanation">
+                <h3>💡 Explanation</h3>
+                <p>Understand the concepts and design decisions. Deep dive into how and why things work the way they do.</p>
+                <ul>
+                    <li><a href="explanation/shared-storage.html">Shared Storage Architecture</a></li>
+                    <li><a href="explanation/key-distribution.html">Automated Key Distribution</a></li>
+                    <li><a href="explanation/gpu-architecture.html">GPU Support Implementation</a></li>
+                    <li><a href="explanation/container-runtime.html">Container Runtime Configuration</a></li>
+                    <li><a href="https://concourse-ci.org/internals.html" target="_blank">Concourse Internals (Official)</a></li>
+                </ul>
+            </article>
+        </section>
+
+        <section class="features">
+            <div class="features-content">
+                <h2>Key Features</h2>
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <h3>🚀 Flexible Deployment</h3>
+                        <p>Deploy in auto mode or web+worker mode. Scale seamlessly with automatic role assignment.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>🔐 Automated Security</h3>
+                        <p>Fully automated TSA key distribution via peer relations. Zero manual key management required.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>🎮 GPU Support</h3>
+                        <p>Native NVIDIA (CUDA) and AMD (ROCm) GPU support for ML/AI workloads with automatic device injection.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>📊 Monitoring Ready</h3>
+                        <p>Built-in Prometheus metrics endpoint. Integrate with your existing monitoring stack.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>💾 Shared Storage</h3>
+                        <p>Efficient binary sharing with LXC shared storage mode. Reduce disk usage and deployment time.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>🔄 Auto Upgrades</h3>
+                        <p>Workers automatically upgrade to match web server version. Seamless version management.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>📁 Folder Mounting</h3>
+                        <p>Automatic discovery and mounting of datasets, models, and any folder from host /srv directory.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>🐧 Ubuntu 24.04 LTS</h3>
+                        <p>Optimized for Ubuntu 24.04 LTS with containerd runtime and full systemd integration.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="quickstart">
+            <h2>Quick Start</h2>
+            <pre><code># Bootstrap Juju controller
+juju bootstrap localhost test-controller
+
+# Deploy PostgreSQL
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
+
+# Deploy Concourse CI (3 units: 1 web + 2 workers)
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto --channel edge
+
+# Integrate with database
+juju integrate concourse-ci:postgresql postgresql:database
+
+# Expose web interface
+juju expose concourse-ci
+
+# Get admin credentials
+juju run concourse-ci/leader get-admin-password
+
+# Access web UI at http://&lt;unit-ip&gt;:8080
+</code></pre>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars" target="_blank">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">GitHub</a>
+            <a href="https://github.com/fourdollars/concourse-ci-machine/issues" target="_blank">Issues</a>
+            <a href="https://charmhub.io/concourse-ci-machine" target="_blank">Charmhub</a>
+            <a href="https://concourse-ci.org/" target="_blank">Concourse CI</a>
+            <a href="https://juju.is/" target="_blank">Juju</a>
+        </div>
+    </footer>
+</body>
+</html>

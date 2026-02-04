@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Understanding shared storage architecture in Concourse CI - why it matters, how it works, and design trade-offs">
+    <title>Understanding Shared Storage - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --explanation-color: #852c2b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--explanation-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--explanation-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--explanation-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--explanation-color);
+        }
+        .content code {
+            background: #f5f5f5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        .content pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .note {
+            background: var(--bg-light);
+            border-left: 4px solid var(--text-light);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            background: var(--bg-light);
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            margin-top: 4rem;
+            color: var(--text-light);
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm - Documentation</h1>
+    </header>
+
+    <div class="breadcrumbs">
+        <a href="../index.html">Home</a> &raquo;
+        <a href="../index.html#explanation">Explanation</a> &raquo;
+        Understanding Shared Storage
+    </div>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/explanation/shared-storage.html">Edit this page on GitHub</a>
+        </div>
+
+        <h1>Understanding Shared Storage</h1>
+        <p class="subtitle">Why shared storage matters, how it works, and the design trade-offs</p>
+
+        <h2>The Problem: Binary Duplication</h2>
+
+        <p>In a typical multi-worker Concourse CI deployment, each worker unit independently downloads and stores the Concourse binaries:</p>
+
+        <ul>
+            <li><strong>concourse</strong> binary: ~100 MB</li>
+            <li><strong>gdn</strong> (Garden runc): ~15 MB</li>
+            <li><strong>Configuration files</strong>: TSA keys, environment configs</li>
+        </ul>
+
+        <p>For a deployment with 1 web server + 5 workers:</p>
+
+        <pre><code>Without shared storage: 6 units × 115 MB = 690 MB total disk usage
+With shared storage: 115 MB (62% disk savings!)</code></pre>
+
+        <p>More critically, <strong>upgrades become slow and wasteful</strong>. Each worker must independently download the new version, multiplying network bandwidth usage by the number of workers.</p>
+
+        <h2>The Solution: LXC Disk Device Passthrough</h2>
+
+        <p>Shared storage leverages LXC's disk device feature to mount a single host directory into multiple containers simultaneously. This is not NFS, not Ceph, not a distributed filesystem—it's simpler and faster.</p>
+
+        <h3>How LXC Disk Devices Work</h3>
+
+        <p>When you run:</p>
+
+        <pre><code class="language-bash">lxc config device add juju-abc123-0 concourse-shared disk \
+    source=/tmp/concourse-shared \
+    path=/var/lib/concourse \
+    shift=true</code></pre>
+
+        <p>LXC performs these operations:</p>
+
+        <ol>
+            <li><strong>Bind mount</strong>: The host directory <code>/tmp/concourse-shared</code> is bind-mounted into the container at <code>/var/lib/concourse</code></li>
+            <li><strong>UID/GID mapping (shift=true)</strong>: Container UIDs are automatically mapped to avoid permission conflicts</li>
+            <li><strong>Shared access</strong>: Multiple containers can mount the same source directory simultaneously</li>
+        </ol>
+
+        <div class="info">
+            <strong>💡 Key Insight:</strong> This is <strong>not</strong> a network filesystem. All units are on the same physical host, sharing a local directory. Performance is identical to local disk—no network latency, no distributed locking overhead.
+        </div>
+
+        <h2>Architecture: Leader-Writes, Workers-Read</h2>
+
+        <p>The charm implements a simple coordination model:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Role</th>
+                    <th>Responsibilities</th>
+                    <th>Writes To</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Web/Leader</strong></td>
+                    <td>Downloads binaries, writes keys, manages version marker</td>
+                    <td><code>/var/lib/concourse/bin/</code><br><code>/var/lib/concourse/keys/</code><br><code>/var/lib/concourse/.installed_version</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Workers</strong></td>
+                    <td>Read binaries, create isolated work directories</td>
+                    <td><code>/var/lib/concourse/worker/&lt;unit-name&gt;/</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Why This Model Works</h3>
+
+        <ul>
+            <li><strong>No distributed locking needed</strong>: Only the leader writes to <code>bin/</code> and <code>keys/</code></li>
+            <li><strong>Workers are isolated</strong>: Each worker creates its own subdirectory under <code>worker/</code></li>
+            <li><strong>Version marker acts as signal</strong>: Workers check <code>.installed_version</code> to know binaries are ready</li>
+        </ul>
+
+        <h2>Data Flow: Initial Deployment</h2>
+
+        <pre><code>┌─────────────────┐
+│ Web/Leader Unit │
+└────────┬────────┘
+         │
+         ├─ 1. Mount shared storage
+         ├─ 2. Acquire exclusive lock (.install.lock)
+         ├─ 3. Download binaries to bin/
+         ├─ 4. Write .installed_version marker
+         └─ 5. Start concourse-server.service
+         
+┌──────────────┐
+│ Worker Units │ (added later)
+└──────┬───────┘
+       │
+       ├─ 1. Mount shared storage (same volume)
+       ├─ 2. Check .installed_version (exists!)
+       ├─ 3. Verify binaries in bin/
+       ├─ 4. Create worker/{unit}/ directory
+       └─ 5. Start concourse-worker.service</code></pre>
+
+        <p><strong>Key observation</strong>: Workers don't download anything. They immediately find ready-to-use binaries and start within seconds.</p>
+
+        <h2>Upgrade Coordination</h2>
+
+        <p>Upgrades introduce a challenge: the leader must download new binaries while workers are using the old ones. The charm solves this with a <strong>coordinated upgrade protocol</strong> via Juju peer relations:</p>
+
+        <pre><code>┌─────────────────┐
+│ Web/Leader Unit │
+└────────┬────────┘
+         │
+         ├─ 1. Set upgrade-state=prepare in peer relation
+         ├─ 2. Wait for worker acknowledgments (2min timeout)
+         ├─ 3. Acquire exclusive lock
+         ├─ 4. Download new binaries
+         ├─ 5. Write new .installed_version
+         ├─ 6. Restart concourse-server.service
+         └─ 7. Set upgrade-state=complete in peer relation
+         
+┌──────────────┐
+│ Worker Units │
+└──────┬───────┘
+       │
+       ├─ 1. Detect upgrade-state=prepare
+       ├─ 2. Stop concourse-worker.service
+       ├─ 3. Set upgrade-ready=true in peer relation
+       ├─ 4. Poll for upgrade-state=complete (5min timeout)
+       └─ 5. Start concourse-worker.service</code></pre>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> Workers <strong>must</strong> stop before the leader replaces binaries. Otherwise, workers would crash mid-execution when their binary is replaced.
+        </div>
+
+        <h2>Trade-offs: When Shared Storage Makes Sense</h2>
+
+        <h3>✅ Advantages</h3>
+
+        <ul>
+            <li><strong>Massive disk savings</strong>: 62% reduction in a 6-unit deployment</li>
+            <li><strong>Fast upgrades</strong>: Download once, not N times</li>
+            <li><strong>Fast worker scaling</strong>: New workers start in seconds (no download)</li>
+            <li><strong>Simplified management</strong>: Single source of truth for binaries</li>
+        </ul>
+
+        <h3>❌ Disadvantages</h3>
+
+        <ul>
+            <li><strong>LXC-only</strong>: Requires LXC containers on the same host. Not suitable for:
+                <ul>
+                    <li>Bare metal deployments (no container isolation)</li>
+                    <li>Multi-host deployments (no shared filesystem between hosts)</li>
+                    <li>Kubernetes (different architecture)</li>
+                </ul>
+            </li>
+            <li><strong>Manual setup required</strong>: Admin must run <code>setup-shared-storage.sh</code> script to configure LXC devices</li>
+            <li><strong>Less flexibility</strong>: All workers must use the same Concourse version (can't have mixed versions)</li>
+            <li><strong>Upgrade downtime</strong>: Workers stop during upgrades (though this is typically brief)</li>
+        </ul>
+
+        <h3>When to Use Shared Storage</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Scenario</th>
+                    <th>Recommendation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Multi-worker LXD deployment (same host)</td>
+                    <td><span style="color: var(--success-color); font-weight: bold;">✅ Highly Recommended</span></td>
+                </tr>
+                <tr>
+                    <td>Frequent Concourse version upgrades</td>
+                    <td><span style="color: var(--success-color); font-weight: bold;">✅ Recommended</span></td>
+                </tr>
+                <tr>
+                    <td>Bare metal deployment</td>
+                    <td><span style="color: var(--text-light); font-weight: bold;">❌ Not Supported</span></td>
+                </tr>
+                <tr>
+                    <td>Multi-host deployment</td>
+                    <td><span style="color: var(--text-light); font-weight: bold;">❌ Not Supported</span></td>
+                </tr>
+                <tr>
+                    <td>Mixed Concourse versions needed</td>
+                    <td><span style="color: var(--text-light); font-weight: bold;">❌ Use mode=worker without shared storage</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Why Not NFS or Ceph?</h2>
+
+        <p>You might wonder: why not use a "real" distributed filesystem like NFS or Ceph? Several reasons:</p>
+
+        <ol>
+            <li><strong>Overkill for this use case</strong>: Shared storage is only beneficial when all units are on the same host. If units are on different hosts, there's no point—they can't share local disk anyway.</li>
+            <li><strong>Added complexity</strong>: NFS/Ceph require separate infrastructure, configuration, and maintenance.</li>
+            <li><strong>Performance overhead</strong>: Network filesystems introduce latency. For frequently-accessed binaries, this adds up.</li>
+            <li><strong>Single-host optimization</strong>: LXC disk devices are optimized for the single-host case (which is exactly our scenario).</li>
+        </ol>
+
+        <div class="note">
+            <strong>Design Philosophy:</strong> The charm's shared storage feature is intentionally <strong>simple and targeted</strong>. It solves a specific problem (binary duplication on single-host LXD deployments) with the simplest possible mechanism. It doesn't attempt to be a general-purpose distributed storage solution.
+        </div>
+
+        <h2>Permission Handling: The shift=true Parameter</h2>
+
+        <p>A subtle but critical detail: LXC containers use UID/GID namespacing. A process running as UID 1000 inside the container is actually UID 101000 on the host (with default LXC mapping).</p>
+
+        <!-- UID/GID Mapping Diagram -->
+        <svg viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg" style="max-width: 100%; height: auto; display: block; margin: 2rem auto;">
+            <!-- Title -->
+            <text x="450" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#5c3c92">LXC Disk Device with shift=true (UID/GID Mapping)</text>
+            
+            <!-- Host Layer -->
+            <rect x="50" y="60" width="800" height="180" fill="#f7f7f7" stroke="#666" stroke-width="2" rx="8"/>
+            <text x="70" y="85" font-size="16" font-weight="bold" fill="#333">Host Filesystem</text>
+            
+            <!-- Shared Storage on Host -->
+            <rect x="320" y="110" width="260" height="110" fill="#fff4e6" stroke="#f99b11" stroke-width="2" rx="6"/>
+            <text x="450" y="135" text-anchor="middle" font-size="14" font-weight="bold" fill="#f99b11">/tmp/concourse-shared/</text>
+            <line x1="335" y1="143" x2="565" y2="143" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="450" y="165" text-anchor="middle" font-size="12" fill="#333">📄 bin/concourse</text>
+            <text x="450" y="183" text-anchor="middle" font-size="11" fill="#666">Owner: UID 101000, GID 101000</text>
+            <text x="450" y="202" text-anchor="middle" font-size="10" fill="#999">(Mapped from container UID 1000)</text>
+            
+            <!-- LXC Mapping Layer -->
+            <rect x="150" y="260" width="600" height="80" fill="#e0f7fa" stroke="#00838f" stroke-width="3" rx="8"/>
+            <text x="450" y="285" text-anchor="middle" font-size="15" font-weight="bold" fill="#00838f">LXC UID/GID Remapping (shift=true)</text>
+            <text x="450" y="310" text-anchor="middle" font-size="13" fill="#333">Container UID 1000 ↔ Host UID 101000</text>
+            <text x="450" y="328" text-anchor="middle" font-size="11" fill="#666">Automatic transparent translation by LXC</text>
+            
+            <!-- Container Layer -->
+            <rect x="50" y="360" width="370" height="120" fill="#e8f4f8" stroke="#11a8cd" stroke-width="2" rx="8"/>
+            <text x="70" y="385" font-size="15" font-weight="bold" fill="#11a8cd">Container 1 (concourse-ci/0)</text>
+            <rect x="80" y="400" width="320" height="60" fill="#fff" stroke="#11a8cd" stroke-width="1" rx="4"/>
+            <text x="240" y="422" text-anchor="middle" font-size="12" fill="#333">/var/lib/concourse/</text>
+            <text x="240" y="440" text-anchor="middle" font-size="11" fill="#666">bin/concourse (sees UID 1000)</text>
+            <text x="240" y="455" text-anchor="middle" font-size="10" fill="#999">✅ Can read/write</text>
+            
+            <rect x="480" y="360" width="370" height="120" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="8"/>
+            <text x="500" y="385" font-size="15" font-weight="bold" fill="#0e8420">Container 2 (concourse-ci/1)</text>
+            <rect x="510" y="400" width="320" height="60" fill="#fff" stroke="#0e8420" stroke-width="1" rx="4"/>
+            <text x="670" y="422" text-anchor="middle" font-size="12" fill="#333">/var/lib/concourse/</text>
+            <text x="670" y="440" text-anchor="middle" font-size="11" fill="#666">bin/concourse (sees UID 1000)</text>
+            <text x="670" y="455" text-anchor="middle" font-size="10" fill="#999">✅ Can read/write</text>
+            
+            <!-- Arrows: Host to Containers -->
+            <defs>
+                <marker id="arrow-mapping" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <polygon points="0 0, 8 4, 0 8" fill="#00838f"/>
+                </marker>
+            </defs>
+            <path d="M 380 220 L 235 360" stroke="#00838f" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow-mapping)"/>
+            <path d="M 520 220 L 665 360" stroke="#00838f" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow-mapping)"/>
+            <text x="300" y="295" font-size="11" fill="#00838f">Disk device</text>
+            <text x="580" y="295" font-size="11" fill="#00838f">Disk device</text>
+            
+            <!-- Without shift=true Warning -->
+            <rect x="650" y="80" width="180" height="90" fill="#ffebee" stroke="#c62828" stroke-width="2" rx="6"/>
+            <text x="740" y="100" text-anchor="middle" font-size="12" font-weight="bold" fill="#c62828">❌ Without shift=true</text>
+            <line x1="665" y1="108" x2="815" y2="108" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="740" y="125" text-anchor="middle" font-size="10" fill="#333">Container UID 1000</text>
+            <text x="740" y="140" text-anchor="middle" font-size="10" fill="#333">≠ Host UID 101000</text>
+            <text x="740" y="160" text-anchor="middle" font-size="10" font-weight="bold" fill="#c62828">Permission denied!</text>
+        </svg>
+
+        <p>Without <code>shift=true</code>, you'd see permission errors:</p>
+
+        <pre><code class="language-bash"># Inside container (UID 1000):
+$ touch /var/lib/concourse/test.txt
+
+# On host:
+$ ls -l /tmp/concourse-shared/test.txt
+-rw-r--r-- 1 101000 101000 0 Feb 4 10:00 test.txt
+# UID mismatch causes permission errors when web unit tries to read</code></pre>
+
+        <p>The <code>shift=true</code> parameter tells LXC to automatically remap UIDs/GIDs:</p>
+
+        <ul>
+            <li><strong>Transparent mapping</strong>: Container sees UID 1000, host sees UID 101000</li>
+            <li><strong>No manual chown needed</strong>: LXC handles translation automatically</li>
+            <li><strong>Works across containers</strong>: Multiple containers with different UID namespaces can share files</li>
+        </ul>
+
+        <div class="success">
+            <strong>Best Practice:</strong> Always use <code>shift=true</code> when setting up shared storage with LXC disk devices. The <code>setup-shared-storage.sh</code> script does this automatically.
+        </div>
+
+        <h2>Related Topics</h2>
+
+        <ul>
+            <li><strong>Tutorial:</strong> <a href="../tutorials/shared-storage-quickstart.html">Setting Up Shared Storage</a> - Step-by-step setup guide</li>
+            <li><strong>How-To:</strong> <a href="../howto/setup-shared-storage.html">How to Setup Shared Storage</a> - Quick setup instructions</li>
+            <li><strong>Reference:</strong> <a href="../reference/configuration.html">Configuration Options</a> - See <code>shared-storage</code> option</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

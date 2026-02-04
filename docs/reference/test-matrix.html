@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - Test matrix reference: supported versions, platforms, deployment scenarios, and GPU support.">
+    <meta name="keywords" content="Concourse CI, Juju, Test Matrix, Compatibility, Versions, Ubuntu">
+    <title>Test Matrix Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-right: 0.5rem;
+        }
+
+        .badge.supported {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .badge.tested {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .badge.experimental {
+            background-color: #fff4e6;
+            color: #e65100;
+        }
+
+        .badge.unsupported {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Test Matrix Reference</h1>
+        <p class="subtitle">Supported versions, platforms, and deployment scenarios</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            Test Matrix
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>This reference documents tested and supported configurations for the Concourse CI Machine Charm. The charm undergoes continuous integration testing against various platforms, versions, and deployment scenarios.</p>
+
+        <div class="note">
+            <strong>Note:</strong> Configurations marked as <span class="badge tested">Tested</span> are verified in CI. Configurations marked as <span class="badge supported">Supported</span> are expected to work but may not be explicitly tested.
+        </div>
+
+        <h2 id="ubuntu-versions">Ubuntu Base Versions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Ubuntu Version</th>
+                    <th>Status</th>
+                    <th>Juju Base</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Ubuntu 24.04 LTS (Noble Numbat)</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td><code>ubuntu@24.04</code></td>
+                    <td>Recommended. Primary development and testing platform.</td>
+                </tr>
+                <tr>
+                    <td>Ubuntu 22.04 LTS (Jammy Jellyfish)</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td><code>ubuntu@22.04</code></td>
+                    <td>Should work but not explicitly tested. containerd and PostgreSQL 16 available.</td>
+                </tr>
+                <tr>
+                    <td>Ubuntu 20.04 LTS (Focal Fossa)</td>
+                    <td><span class="badge unsupported">Unsupported</span></td>
+                    <td><code>ubuntu@20.04</code></td>
+                    <td>End of Standard Support: April 2025. PostgreSQL 16 not available in default repositories.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="concourse-versions">Concourse CI Versions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Release Date</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>8.0.1 (latest)</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>January 2025</td>
+                    <td>Current stable release. Default when <code>version=""</code>.</td>
+                </tr>
+                <tr>
+                    <td>7.14.2</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>December 2024</td>
+                    <td>Previous stable release. Fully supported.</td>
+                </tr>
+                <tr>
+                    <td>7.x series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>2024</td>
+                    <td>All 7.x versions should work with this charm.</td>
+                </tr>
+                <tr>
+                    <td>6.x series</td>
+                    <td><span class="badge experimental">Experimental</span></td>
+                    <td>2023</td>
+                    <td>May work but not recommended. PostgreSQL 16 compatibility unknown.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="postgresql-versions">PostgreSQL Versions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Channel</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PostgreSQL 16</td>
+                    <td><code>16/stable</code></td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>Recommended. Fully supports Juju secrets API.</td>
+                </tr>
+                <tr>
+                    <td>PostgreSQL 15</td>
+                    <td><code>15/stable</code></td>
+                    <td><span class="badge experimental">Experimental</span></td>
+                    <td>May work if charm supports <code>postgresql_client</code> interface with secrets.</td>
+                </tr>
+                <tr>
+                    <td>PostgreSQL 14</td>
+                    <td><code>14/stable</code></td>
+                    <td><span class="badge unsupported">Unsupported</span></td>
+                    <td>Older interface. Not recommended.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            <strong>Note:</strong> The charm requires PostgreSQL charms that support the <code>postgresql_client</code> interface with Juju secrets API. PostgreSQL 16/stable is the only officially tested version.
+        </div>
+
+        <h2 id="juju-versions">Juju Versions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Juju Version</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Juju 3.6+</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>Recommended. Full secrets API support.</td>
+                </tr>
+                <tr>
+                    <td>Juju 3.1 - 3.5</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Should work. Secrets API available from 3.1+.</td>
+                </tr>
+                <tr>
+                    <td>Juju 2.x</td>
+                    <td><span class="badge unsupported">Unsupported</span></td>
+                    <td>No secrets API. PostgreSQL 16 charm requires Juju 3.x.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="deployment-platforms">Deployment Platforms</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Platform</th>
+                    <th>Provider</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LXD Containers</td>
+                    <td><code>localhost</code></td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>Primary testing platform. Full feature support including GPU passthrough.</td>
+                </tr>
+                <tr>
+                    <td>Bare Metal</td>
+                    <td><code>manual</code></td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Full support. GPU support works natively without passthrough configuration.</td>
+                </tr>
+                <tr>
+                    <td>Virtual Machines</td>
+                    <td><code>maas</code>, <code>openstack</code>, etc.</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Full support. GPU passthrough depends on hypervisor capabilities.</td>
+                </tr>
+                <tr>
+                    <td>AWS EC2</td>
+                    <td><code>aws</code></td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Machine charm compatible. GPU instances (P3, P4, G4) supported.</td>
+                </tr>
+                <tr>
+                    <td>Azure VMs</td>
+                    <td><code>azure</code></td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Machine charm compatible. GPU instances (NC-series) supported.</td>
+                </tr>
+                <tr>
+                    <td>Kubernetes</td>
+                    <td><code>k8s</code>, <code>microk8s</code></td>
+                    <td><span class="badge unsupported">Unsupported</span></td>
+                    <td>Machine charm not compatible. Use <code>concourse-web</code> and <code>concourse-worker</code> K8s charms instead.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="deployment-modes">Deployment Modes</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>Status</th>
+                    <th>Test Coverage</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>mode=auto</code></td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression tests</td>
+                    <td>Leader becomes web, followers become workers. Fully automated key distribution.</td>
+                </tr>
+                <tr>
+                    <td><code>mode=web</code> + <code>mode=worker</code></td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression tests</td>
+                    <td>Separate applications. TSA key exchange via relations.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="gpu-support">GPU Support Matrix</h2>
+
+        <h3>NVIDIA CUDA</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>GPU Model</th>
+                    <th>Status</th>
+                    <th>Driver Version</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>NVIDIA RTX 3070</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>580.95+</td>
+                    <td>Primary testing GPU. Full support for CUDA workloads.</td>
+                </tr>
+                <tr>
+                    <td>NVIDIA RTX 4000 series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>545.0+</td>
+                    <td>Ada Lovelace architecture. Requires recent drivers.</td>
+                </tr>
+                <tr>
+                    <td>NVIDIA RTX 3000 series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>470.0+</td>
+                    <td>Ampere architecture. Widely used for ML workloads.</td>
+                </tr>
+                <tr>
+                    <td>NVIDIA RTX 2000 series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>418.0+</td>
+                    <td>Turing architecture. Full CUDA support.</td>
+                </tr>
+                <tr>
+                    <td>NVIDIA Tesla (T4, V100, A100)</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>450.0+</td>
+                    <td>Data center GPUs. Optimized for compute workloads.</td>
+                </tr>
+                <tr>
+                    <td>NVIDIA GTX 1000 series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>390.0+</td>
+                    <td>Pascal architecture. Older but still functional.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>AMD ROCm</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>GPU Model</th>
+                    <th>Status</th>
+                    <th>ROCm Version</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>AMD Radeon RX 7900 XT/XTX</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>7.2.0+</td>
+                    <td>RDNA 3 architecture (gfx1100). Native support, no workarounds needed.</td>
+                </tr>
+                <tr>
+                    <td>AMD Radeon RX 6000 series</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>5.0.0+</td>
+                    <td>RDNA 2 architecture (gfx1030). Native support.</td>
+                </tr>
+                <tr>
+                    <td>AMD Radeon Pro (W6000, W7000)</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>5.0.0+</td>
+                    <td>Professional cards. Full ROCm support.</td>
+                </tr>
+                <tr>
+                    <td>AMD Instinct (MI200, MI100)</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>5.0.0+</td>
+                    <td>Data center GPUs. Primary ROCm target.</td>
+                </tr>
+                <tr>
+                    <td>AMD Ryzen 7000 series (iGPU)</td>
+                    <td><span class="badge experimental">Experimental</span></td>
+                    <td>7.2.0+</td>
+                    <td>Integrated GPU (gfx1103). Requires <code>HSA_OVERRIDE_GFX_VERSION=11.0.0</code> workaround. Lower performance due to shared memory.</td>
+                </tr>
+                <tr>
+                    <td>AMD Ryzen 5000 series (iGPU)</td>
+                    <td><span class="badge experimental">Experimental</span></td>
+                    <td>5.0.0+</td>
+                    <td>Integrated GPU (gfx90c). Requires <code>HSA_OVERRIDE_GFX_VERSION=9.0.0</code> workaround.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            <strong>Note:</strong> Integrated AMD GPUs (APUs) require the <code>HSA_OVERRIDE_GFX_VERSION</code> environment variable workaround. See <a href="rocm-verification.html">ROCm Verification Reference</a> for details.
+        </div>
+
+        <h2 id="features">Feature Test Matrix</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Status</th>
+                    <th>Test Coverage</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Basic Deployment</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Auto mode, web+worker mode, single unit</td>
+                </tr>
+                <tr>
+                    <td>PostgreSQL Integration</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Database connection, schema initialization, secrets</td>
+                </tr>
+                <tr>
+                    <td>Worker Scaling</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Add/remove workers, automatic registration</td>
+                </tr>
+                <tr>
+                    <td>Shared Storage (LXC)</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>LXC disk device mounting, binary sharing</td>
+                </tr>
+                <tr>
+                    <td>GPU Workers (NVIDIA)</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>nvidia-container-toolkit, GPU passthrough, PyTorch verification</td>
+                </tr>
+                <tr>
+                    <td>GPU Workers (AMD)</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>amd-container-toolkit, ROCm runtime, PyTorch verification</td>
+                </tr>
+                <tr>
+                    <td>General Folder Mounting</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Read-only and writable folder mounting from /srv</td>
+                </tr>
+                <tr>
+                    <td>Worker Tags</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Manual tags, GPU-generated tags (cuda, rocm)</td>
+                </tr>
+                <tr>
+                    <td>Version Upgrades</td>
+                    <td><span class="badge tested">Tested</span></td>
+                    <td>CI regression</td>
+                    <td>Upgrade/downgrade Concourse versions, automatic worker upgrades</td>
+                </tr>
+                <tr>
+                    <td>Prometheus Metrics</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Manual testing</td>
+                    <td>Metrics endpoint exposed, Prometheus relation works</td>
+                </tr>
+                <tr>
+                    <td>TLS/HTTPS</td>
+                    <td><span class="badge experimental">Experimental</span></td>
+                    <td>Manual testing</td>
+                    <td>Requires manual certificate configuration. No TLS relation yet.</td>
+                </tr>
+                <tr>
+                    <td>Vault Integration</td>
+                    <td><span class="badge supported">Supported</span></td>
+                    <td>Configuration tested</td>
+                    <td>Configuration options available, end-to-end integration not CI-tested</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="test-commands">CI Test Commands</h2>
+        <p>The charm includes a comprehensive test script that validates all major features. CI runs the full regression suite on every commit.</p>
+
+        <pre><code class="language-bash"># Run full regression test suite
+./scripts/deploy-test.sh
+
+# Skip cleanup to inspect deployment
+./scripts/deploy-test.sh --skip-cleanup
+
+# Start from specific test step
+./scripts/deploy-test.sh --goto=gpu --skip-cleanup</code></pre>
+
+        <h3>Test Steps (in CI)</h3>
+        <ol>
+            <li><strong>Basic Deployment:</strong> Deploy PostgreSQL + Concourse (auto mode, 3 units)</li>
+            <li><strong>Verify Active Status:</strong> Wait for all units to reach "Active" status</li>
+            <li><strong>Shared Storage:</strong> Deploy with <code>shared-storage=lxc</code>, verify binary sharing</li>
+            <li><strong>General Folder Mounting:</strong> Mount folders to /srv, verify read-only and writable mounting</li>
+            <li><strong>Worker Tags:</strong> Deploy worker with custom tags, verify in fly CLI</li>
+            <li><strong>GPU Workers (NVIDIA):</strong> Deploy with <code>compute-runtime=cuda</code>, verify GPU detection</li>
+            <li><strong>GPU Workers (AMD):</strong> Deploy with <code>compute-runtime=rocm</code>, verify GPU detection</li>
+            <li><strong>Version Upgrade:</strong> Upgrade from 7.14.2 to 8.0.1, verify workers auto-upgrade</li>
+            <li><strong>Cleanup:</strong> Remove all applications and storage</li>
+        </ol>
+
+        <h2 id="known-issues">Known Issues and Limitations</h2>
+        <ul>
+            <li><strong>Kubernetes:</strong> This is a machine charm and does not work on Kubernetes. Use <code>concourse-web</code> and <code>concourse-worker</code> K8s charms instead.</li>
+            <li><strong>Web HA:</strong> Web server does not support horizontal scaling (single leader only). Workers scale horizontally.</li>
+            <li><strong>TLS:</strong> TLS/HTTPS configuration requires manual certificate setup. No automated TLS relation yet.</li>
+            <li><strong>AMD Integrated GPUs:</strong> Require <code>HSA_OVERRIDE_GFX_VERSION</code> workaround and have lower performance. Not recommended for production ML workloads.</li>
+            <li><strong>LXC GPU Passthrough:</strong> Requires manual <code>lxc config device add</code> command. Not automated by Juju.</li>
+        </ul>
+
+        <h2 id="reporting-issues">Reporting Issues</h2>
+        <p>If you encounter issues with a specific configuration:</p>
+        <ol>
+            <li>Check if your configuration is marked as <span class="badge tested">Tested</span> or <span class="badge supported">Supported</span></li>
+            <li>Review the <a href="../howto/troubleshoot.html">Troubleshooting Guide</a></li>
+            <li>Open an issue on <a href="https://github.com/fourdollars/concourse-ci-machine/issues" target="_blank">GitHub Issues</a> with:
+                <ul>
+                    <li>Ubuntu version (<code>lsb_release -a</code>)</li>
+                    <li>Juju version (<code>juju version</code>)</li>
+                    <li>Charm version (<code>juju status --format=yaml | grep charm-rev</code>)</li>
+                    <li>Deployment platform (LXD, bare metal, cloud provider)</li>
+                    <li>Relevant logs (<code>juju debug-log --include concourse-ci</code>)</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

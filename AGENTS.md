@@ -81,11 +81,11 @@ The `deploy-test.sh` script handles the entire lifecycle: build, deploy, verify,
 ### Manual Deploy & Test (Local LXD)
 ```bash
 # 1. Bootstrap a test controller (if not exists)
-# Note: --config test-mode=true sets update-status-hook-interval to 10s (vs 5m) for faster feedback
-juju bootstrap localhost test-controller --config test-mode=true
+juju bootstrap localhost test-controller
 
 # 2. Deploy PostgreSQL (REQUIRED: 16/stable)
-juju add-model concourse-test
+# Note: --config test-mode=true sets update-status-hook-interval to 10s (vs 5m) for faster feedback
+juju add-model concourse-test --config test-mode=true
 juju deploy postgresql --channel 16/stable
 
 # 3. Deploy Concourse (Auto-Scaling Mode)

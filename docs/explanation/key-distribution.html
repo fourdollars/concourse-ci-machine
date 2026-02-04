@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Understanding TSA key distribution in Concourse CI - why SSH keys, how peer and TSA relations work, security model">
+    <title>Understanding Key Distribution - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --explanation-color: #852c2b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--explanation-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--explanation-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--explanation-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--explanation-color);
+        }
+        .content code {
+            background: #f5f5f5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        .content pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .note {
+            background: var(--bg-light);
+            border-left: 4px solid var(--text-light);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            background: var(--bg-light);
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            margin-top: 4rem;
+            color: var(--text-light);
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm - Documentation</h1>
+    </header>
+
+    <div class="breadcrumbs">
+        <a href="../index.html">Home</a> &raquo;
+        <a href="../index.html#explanation">Explanation</a> &raquo;
+        Understanding Key Distribution
+    </div>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/explanation/key-distribution.html">Edit this page on GitHub</a>
+        </div>
+
+        <h1>Understanding Key Distribution</h1>
+        <p class="subtitle">Why TSA uses SSH keys, how peer and TSA relations work, and the security model</p>
+
+        <h2>The Challenge: Workers Must Connect to Web</h2>
+
+        <p>Concourse CI's architecture is fundamentally distributed: workers execute tasks remotely while the web server (ATC) schedules and coordinates. But how do workers authenticate to the web server securely?</p>
+
+        <p>Traditional approaches have problems:</p>
+
+        <ul>
+            <li><strong>Shared passwords</strong>: Difficult to rotate, vulnerable if leaked, no per-worker identity</li>
+            <li><strong>OAuth tokens</strong>: Requires external identity provider, adds complexity</li>
+            <li><strong>Mutual TLS</strong>: Requires PKI infrastructure, certificate rotation challenges</li>
+        </ul>
+
+        <p>Concourse chose a simpler, more elegant solution: <strong>SSH public key authentication</strong>.</p>
+
+        <h2>Why SSH Keys?</h2>
+
+        <p>SSH keys provide several advantages for Concourse's worker-to-web connection:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Advantage</th>
+                    <th>Why It Matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Asymmetric cryptography</strong></td>
+                    <td>Public key can be freely distributed; private key never leaves the worker</td>
+                </tr>
+                <tr>
+                    <td><strong>Per-worker identity</strong></td>
+                    <td>Each worker has unique keypair, enabling granular access control</td>
+                </tr>
+                <tr>
+                    <td><strong>Battle-tested protocol</strong></td>
+                    <td>SSH is mature, well-understood, widely supported</td>
+                </tr>
+                <tr>
+                    <td><strong>No external dependencies</strong></td>
+                    <td>No need for external CA, LDAP, or OAuth providers</td>
+                </tr>
+                <tr>
+                    <td><strong>Secure key exchange</strong></td>
+                    <td>SSH host key verification prevents man-in-the-middle attacks</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>TSA: The "SSH Gateway" for Workers</h3>
+
+        <p>TSA (Transportation Security Administration) is Concourse's SSH server component. It runs on the web server and acts as the authentication gateway for workers:</p>
+
+        <!-- TSA Authentication Flow Diagram -->
+        <svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg" style="max-width: 100%; height: auto; display: block; margin: 2rem auto;">
+            <!-- Worker Component -->
+            <rect x="50" y="100" width="180" height="120" fill="#e8f4f8" stroke="#11a8cd" stroke-width="2" rx="8"/>
+            <text x="140" y="140" text-anchor="middle" font-size="18" font-weight="bold" fill="#11a8cd">Worker</text>
+            <text x="140" y="165" text-anchor="middle" font-size="14" fill="#666">Initiates Connection</text>
+            <text x="140" y="190" text-anchor="middle" font-size="13" fill="#333">🔑 Worker Private Key</text>
+            <text x="140" y="210" text-anchor="middle" font-size="13" fill="#333">🔐 TSA Host Key (stored)</text>
+            
+            <!-- TSA Component -->
+            <rect x="500" y="100" width="180" height="120" fill="#fff4e6" stroke="#f99b11" stroke-width="2" rx="8"/>
+            <text x="590" y="140" text-anchor="middle" font-size="18" font-weight="bold" fill="#f99b11">TSA (Web)</text>
+            <text x="590" y="165" text-anchor="middle" font-size="14" fill="#666">SSH Gateway</text>
+            <text x="590" y="190" text-anchor="middle" font-size="13" fill="#333">🔑 TSA Host Key</text>
+            <text x="590" y="210" text-anchor="middle" font-size="13" fill="#333">🔐 Authorized Worker Keys</text>
+            
+            <!-- ATC Component -->
+            <rect x="520" y="280" width="140" height="80" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="8"/>
+            <text x="590" y="315" text-anchor="middle" font-size="16" font-weight="bold" fill="#0e8420">ATC</text>
+            <text x="590" y="340" text-anchor="middle" font-size="13" fill="#666">(Scheduler)</text>
+            
+            <!-- SSH Connection Arrow (Worker to TSA) -->
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#11a8cd"/>
+                </marker>
+            </defs>
+            <path d="M 230 160 L 500 160" stroke="#11a8cd" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+            <text x="365" y="145" text-anchor="middle" font-size="14" font-weight="bold" fill="#11a8cd">SSH over TCP</text>
+            <text x="365" y="180" text-anchor="middle" font-size="12" fill="#666">Worker authenticates with public key</text>
+            
+            <!-- Reverse Tunnel Arrow (TSA to Worker, dashed) -->
+            <defs>
+                <marker id="arrowhead-reverse" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#f99b11"/>
+                </marker>
+            </defs>
+            <path d="M 500 190 L 230 190" stroke="#f99b11" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrowhead-reverse)"/>
+            <text x="365" y="210" text-anchor="middle" font-size="12" fill="#f99b11">↩ Reverse SSH Tunnel</text>
+            <text x="365" y="225" text-anchor="middle" font-size="11" fill="#999">(ATC sends commands via tunnel)</text>
+            
+            <!-- TSA to ATC Connection -->
+            <defs>
+                <marker id="arrowhead-down" markerWidth="10" markerHeight="10" refX="3" refY="9" orient="auto">
+                    <polygon points="0 0, 6 0, 3 10" fill="#0e8420"/>
+                </marker>
+            </defs>
+            <path d="M 590 220 L 590 280" stroke="#0e8420" stroke-width="2" fill="none" marker-end="url(#arrowhead-down)"/>
+            <text x="625" y="255" font-size="12" fill="#0e8420">Controls</text>
+            
+            <!-- Legend -->
+            <text x="50" y="380" font-size="12" fill="#666">💡 Workers initiate outbound connection → Firewall-friendly!</text>
+        </svg>
+
+        <p>The TSA doesn't just authenticate workers—it also establishes a <strong>reverse SSH tunnel</strong> that ATC uses to send commands back to workers.</p>
+
+        <div class="info">
+            <strong>💡 Key Insight:</strong> Workers <strong>initiate</strong> the SSH connection to TSA (outbound from worker's perspective). The web server never needs to connect <em>to</em> workers—it uses the reverse tunnel. This makes firewall configuration much simpler.
+        </div>
+
+        <h2>The Three Types of Keys</h2>
+
+        <p>The charm manages three categories of SSH keys:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Key Type</th>
+                    <th>Purpose</th>
+                    <th>Owner</th>
+                    <th>Distribution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>TSA Host Key</strong></td>
+                    <td>Identifies the TSA server (prevents MITM attacks)</td>
+                    <td>Web/Leader</td>
+                    <td>Shared with all workers</td>
+                </tr>
+                <tr>
+                    <td><strong>TSA Public Key</strong></td>
+                    <td>Used by TSA to verify worker connections</td>
+                    <td>Web/Leader</td>
+                    <td>Shared with all workers</td>
+                </tr>
+                <tr>
+                    <td><strong>Worker Private/Public Key</strong></td>
+                    <td>Worker authenticates itself to TSA</td>
+                    <td>Each worker</td>
+                    <td>Public key sent to web, private stays on worker</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Key Storage Locations</h3>
+
+        <pre><code class="language-bash"># On web/leader unit:
+/var/lib/concourse/keys/
+├── tsa_host_key          # TSA's SSH server private key
+├── tsa_host_key.pub      # TSA's SSH server public key
+├── session_signing_key   # For signing session tokens
+└── authorized_worker_keys  # Worker public keys (authorized_keys format)
+
+# On worker unit:
+/var/lib/concourse/keys/
+├── worker_key            # Worker's SSH private key
+├── worker_key.pub        # Worker's SSH public key
+└── tsa_host_key.pub      # TSA's public key (for host verification)</code></pre>
+
+        <h2>Distribution Mechanisms: Peer vs TSA Relations</h2>
+
+        <p>The charm uses two different Juju relations to distribute keys, depending on the deployment mode:</p>
+
+        <h3>Peer Relation (mode=auto)</h3>
+
+        <p>In <code>mode=auto</code> deployments, all units belong to the same Juju application. They automatically share data via the <strong>peer relation</strong>:</p>
+
+        <!-- Peer Relation Diagram (mode=auto) -->
+        <svg viewBox="0 0 700 450" xmlns="http://www.w3.org/2000/svg" style="max-width: 100%; height: auto; display: block; margin: 2rem auto;">
+            <!-- Title -->
+            <text x="350" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#5c3c92">mode=auto: Peer Relation (Automatic Key Distribution)</text>
+            
+            <!-- Leader Unit -->
+            <rect x="230" y="60" width="240" height="160" fill="#e8f4f8" stroke="#11a8cd" stroke-width="3" rx="8"/>
+            <text x="350" y="90" text-anchor="middle" font-size="18" font-weight="bold" fill="#11a8cd">concourse-ci/0</text>
+            <text x="350" y="112" text-anchor="middle" font-size="14" fill="#666">(Leader = Web Server)</text>
+            <line x1="250" y1="120" x2="450" y2="120" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="260" y="145" font-size="13" fill="#333">✅ Generates:</text>
+            <text x="270" y="165" font-size="12" fill="#333">• TSA host key</text>
+            <text x="270" y="182" font-size="12" fill="#333">• TSA public key</text>
+            <text x="270" y="199" font-size="12" fill="#333">• Session signing key</text>
+            
+            <!-- Peer Relation Data Store -->
+            <rect x="260" y="240" width="180" height="50" fill="#fff4e6" stroke="#f99b11" stroke-width="2" rx="6"/>
+            <text x="350" y="262" text-anchor="middle" font-size="14" font-weight="bold" fill="#f99b11">Juju Peer Relation</text>
+            <text x="350" y="280" text-anchor="middle" font-size="11" fill="#666">(Encrypted by Juju)</text>
+            
+            <!-- Arrow: Leader to Peer Data -->
+            <defs>
+                <marker id="arrow-down-peer" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+                    <polygon points="0 0, 8 0, 4 8" fill="#f99b11"/>
+                </marker>
+            </defs>
+            <path d="M 350 220 L 350 240" stroke="#f99b11" stroke-width="2" marker-end="url(#arrow-down-peer)"/>
+            <text x="380" y="235" font-size="11" fill="#f99b11">Stores keys</text>
+            
+            <!-- Worker Units -->
+            <rect x="50" y="330" width="140" height="100" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="120" y="360" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">concourse-ci/1</text>
+            <text x="120" y="378" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <text x="120" y="400" text-anchor="middle" font-size="11" fill="#333">Reads TSA keys</text>
+            <text x="120" y="415" text-anchor="middle" font-size="11" fill="#333">from peer data</text>
+            
+            <rect x="230" y="330" width="140" height="100" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="300" y="360" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">concourse-ci/2</text>
+            <text x="300" y="378" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <text x="300" y="400" text-anchor="middle" font-size="11" fill="#333">Reads TSA keys</text>
+            <text x="300" y="415" text-anchor="middle" font-size="11" fill="#333">from peer data</text>
+            
+            <rect x="410" y="330" width="140" height="100" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="480" y="360" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">concourse-ci/3</text>
+            <text x="480" y="378" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <text x="480" y="400" text-anchor="middle" font-size="11" fill="#333">Reads TSA keys</text>
+            <text x="480" y="415" text-anchor="middle" font-size="11" fill="#333">from peer data</text>
+            
+            <!-- Arrows: Peer Data to Workers -->
+            <defs>
+                <marker id="arrow-diag-down" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <polygon points="0 0, 8 4, 0 8" fill="#0e8420"/>
+                </marker>
+            </defs>
+            <path d="M 280 290 L 120 330" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-diag-down)"/>
+            <path d="M 330 290 L 300 330" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-diag-down)"/>
+            <path d="M 400 290 L 480 330" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-diag-down)"/>
+            
+            <text x="190" y="315" font-size="10" fill="#0e8420">Auto-distributed</text>
+        </svg>
+
+        <p><strong>How it works:</strong></p>
+
+        <ol>
+            <li>Leader generates TSA keys on first install</li>
+            <li>Leader stores keys in peer relation data (encrypted by Juju)</li>
+            <li>Workers read keys from peer relation automatically</li>
+            <li>Workers generate their own worker keypair</li>
+            <li>Workers store their public key in peer relation</li>
+            <li>Leader collects all worker public keys and writes to <code>authorized_worker_keys</code></li>
+        </ol>
+
+        <div class="success">
+            <strong>Zero Configuration:</strong> In <code>mode=auto</code>, <strong>all key distribution is automatic</strong>. No manual key copying, no configuration needed. Just deploy and scale.
+        </div>
+
+        <h3>TSA + Flight Relations (mode=web + mode=worker)</h3>
+
+        <p>When deploying separate <code>web</code> and <code>worker</code> applications, they use explicit <strong>tsa</strong> and <strong>flight</strong> relations:</p>
+
+        <!-- TSA + Flight Relations Diagram (mode=web + mode=worker) -->
+        <svg viewBox="0 0 700 450" xmlns="http://www.w3.org/2000/svg" style="max-width: 100%; height: auto; display: block; margin: 2rem auto;">
+            <!-- Title -->
+            <text x="350" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#5c3c92">mode=web + mode=worker: TSA/Flight Relations (Explicit)</text>
+            
+            <!-- Web Application -->
+            <rect x="230" y="60" width="240" height="140" fill="#e8f4f8" stroke="#11a8cd" stroke-width="3" rx="8"/>
+            <text x="350" y="90" text-anchor="middle" font-size="18" font-weight="bold" fill="#11a8cd">web/0</text>
+            <text x="350" y="112" text-anchor="middle" font-size="14" fill="#666">(Web Server Application)</text>
+            <line x1="250" y1="120" x2="450" y2="120" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="260" y="142" font-size="12" fill="#333">📤 Provides: <tspan font-weight="bold">tsa</tspan> relation</text>
+            <text x="270" y="162" font-size="11" fill="#333">• TSA host key</text>
+            <text x="270" y="177" font-size="11" fill="#333">• TSA public key</text>
+            <text x="270" y="192" font-size="11" fill="#333">• TSA endpoint (IP:2222)</text>
+            
+            <!-- Relation Connection -->
+            <rect x="260" y="230" width="180" height="50" fill="#fff4e6" stroke="#f99b11" stroke-width="2" rx="6"/>
+            <text x="350" y="250" text-anchor="middle" font-size="13" font-weight="bold" fill="#f99b11">juju integrate</text>
+            <text x="350" y="268" text-anchor="middle" font-size="11" fill="#666">web:tsa ↔ worker:flight</text>
+            
+            <!-- Arrow: Web to Relation -->
+            <defs>
+                <marker id="arrow-relation" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+                    <polygon points="0 0, 8 0, 4 8" fill="#f99b11"/>
+                </marker>
+            </defs>
+            <path d="M 350 200 L 350 230" stroke="#f99b11" stroke-width="2" marker-end="url(#arrow-relation)"/>
+            
+            <!-- Worker Units -->
+            <rect x="50" y="320" width="140" height="110" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="120" y="350" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">worker/0</text>
+            <text x="120" y="368" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <line x1="65" y1="375" x2="175" y2="375" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="120" y="392" text-anchor="middle" font-size="10" fill="#333">📥 Requires: <tspan font-weight="bold">flight</tspan></text>
+            <text x="120" y="408" text-anchor="middle" font-size="10" fill="#333">Sends worker</text>
+            <text x="120" y="422" text-anchor="middle" font-size="10" fill="#333">public key ↑</text>
+            
+            <rect x="230" y="320" width="140" height="110" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="300" y="350" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">worker/1</text>
+            <text x="300" y="368" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <line x1="245" y1="375" x2="355" y2="375" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="300" y="392" text-anchor="middle" font-size="10" fill="#333">📥 Requires: <tspan font-weight="bold">flight</tspan></text>
+            <text x="300" y="408" text-anchor="middle" font-size="10" fill="#333">Sends worker</text>
+            <text x="300" y="422" text-anchor="middle" font-size="10" fill="#333">public key ↑</text>
+            
+            <rect x="410" y="320" width="140" height="110" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
+            <text x="480" y="350" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">worker/2</text>
+            <text x="480" y="368" text-anchor="middle" font-size="12" fill="#666">(Worker)</text>
+            <line x1="425" y1="375" x2="535" y2="375" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="480" y="392" text-anchor="middle" font-size="10" fill="#333">📥 Requires: <tspan font-weight="bold">flight</tspan></text>
+            <text x="480" y="408" text-anchor="middle" font-size="10" fill="#333">Sends worker</text>
+            <text x="480" y="422" text-anchor="middle" font-size="10" fill="#333">public key ↑</text>
+            
+            <!-- Arrows: Relation to Workers -->
+            <defs>
+                <marker id="arrow-worker" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <polygon points="0 0, 8 4, 0 8" fill="#0e8420"/>
+                </marker>
+            </defs>
+            <path d="M 280 280 L 120 320" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-worker)"/>
+            <path d="M 330 280 L 300 320" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-worker)"/>
+            <path d="M 400 280 L 480 320" stroke="#0e8420" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrow-worker)"/>
+        </svg>
+
+        <p><strong>How it works:</strong></p>
+
+        <ol>
+            <li>Web application generates TSA keys on install</li>
+            <li>When <code>tsa</code> relation is created, web shares keys with worker application</li>
+            <li>Worker application receives TSA keys via <code>flight</code> relation</li>
+            <li>Workers generate their own worker keypair</li>
+            <li>Workers send their public key back via <code>flight</code> relation</li>
+            <li>Web application collects worker public keys and updates <code>authorized_worker_keys</code></li>
+        </ol>
+
+        <div class="info">
+            <strong>💡 Benefit of Separate Applications:</strong> You can scale workers independently from the web server. Want 10 more workers? <code>juju add-unit worker -n 10</code>—keys are exchanged automatically via the existing relation.
+        </div>
+
+        <h2>Security Model</h2>
+
+        <h3>Threat Model: What We're Protecting Against</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Threat</th>
+                    <th>Protection Mechanism</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Rogue worker registration</strong></td>
+                    <td>Worker public key must be in <code>authorized_worker_keys</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Man-in-the-middle attack</strong></td>
+                    <td>Workers verify TSA host key (prevents impersonation)</td>
+                </tr>
+                <tr>
+                    <td><strong>Key theft from worker</strong></td>
+                    <td>Private keys stored with <code>0600</code> permissions, owned by <code>root</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Relation data interception</strong></td>
+                    <td>Juju encrypts relation data in transit and at rest</td>
+                </tr>
+                <tr>
+                    <td><strong>Unauthorized task execution</strong></td>
+                    <td>ATC controls task assignment; workers cannot self-assign</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Why Workers Don't Need Mutual TLS</h3>
+
+        <p>You might wonder: why not use mutual TLS instead of SSH keys? Several reasons:</p>
+
+        <ul>
+            <li><strong>SSH is simpler</strong>: No certificate chain validation, no CA management</li>
+            <li><strong>Reverse tunnel architecture</strong>: Workers initiate connection; web doesn't connect to workers</li>
+            <li><strong>Public key as identity</strong>: Worker's public key <em>is</em> its identity—no need for separate certificate</li>
+            <li><strong>Ecosystem compatibility</strong>: Concourse's design is built around SSH; changing to TLS would break existing tooling</li>
+        </ul>
+
+        <h3>Attack Scenario: Compromised Worker</h3>
+
+        <p>What happens if a worker's private key is compromised?</p>
+
+        <ol>
+            <li><strong>Attacker gains worker access</strong>: Can connect to TSA as that worker</li>
+            <li><strong>Limited blast radius</strong>: Attacker can only execute tasks assigned to that worker (cannot access other workers' tasks)</li>
+            <li><strong>No ATC access</strong>: Worker keys don't grant access to the web UI or API</li>
+            <li><strong>Revocation</strong>: Remove worker's public key from <code>authorized_worker_keys</code> to block access</li>
+        </ol>
+
+        <div class="warning">
+            <strong>⚠️ Security Best Practice:</strong> Treat worker private keys as sensitive credentials. They're stored as files on disk, not in Juju secrets, so ensure workers run in isolated environments (VMs/containers with restricted access).
+        </div>
+
+        <h2>Key Rotation</h2>
+
+        <p>The charm does <strong>not</strong> currently support automatic key rotation. Keys are generated once on initial deployment and reused indefinitely. To rotate keys:</p>
+
+        <h3>Rotating TSA Keys (Requires Downtime)</h3>
+
+        <ol>
+            <li>Stop all workers: <code>juju run concourse-ci/1,2,3 -- systemctl stop concourse-worker</code></li>
+            <li>SSH to leader: <code>juju ssh concourse-ci/0</code></li>
+            <li>Delete old keys: <code>sudo rm /var/lib/concourse/keys/tsa_*</code></li>
+            <li>Regenerate: <code>sudo ssh-keygen -t rsa -b 4096 -f /var/lib/concourse/keys/tsa_host_key -N ''</code></li>
+            <li>Update peer relation data with new keys (manual Juju operation)</li>
+            <li>Restart web: <code>sudo systemctl restart concourse-server</code></li>
+            <li>Restart workers: <code>juju run concourse-ci/1,2,3 -- systemctl start concourse-worker</code></li>
+        </ol>
+
+        <h3>Rotating Worker Keys (Per-Worker)</h3>
+
+        <ol>
+            <li>Stop worker: <code>juju ssh concourse-ci/1 -- sudo systemctl stop concourse-worker</code></li>
+            <li>Delete old key: <code>sudo rm /var/lib/concourse/keys/worker_key*</code></li>
+            <li>Regenerate: <code>sudo ssh-keygen -t rsa -b 4096 -f /var/lib/concourse/keys/worker_key -N ''</code></li>
+            <li>Update peer relation with new public key</li>
+            <li>Restart worker: <code>sudo systemctl start concourse-worker</code></li>
+        </ol>
+
+        <div class="note">
+            <strong>Future Enhancement:</strong> Automated key rotation with zero downtime is planned for a future version. It would involve generating new keys in parallel, updating TSA to accept both old and new keys temporarily, then phasing out old keys.
+        </div>
+
+        <h2>Debugging Key Issues</h2>
+
+        <h3>Worker Can't Connect to TSA</h3>
+
+        <p><strong>Symptom:</strong> Worker logs show "Permission denied (publickey)"</p>
+
+        <p><strong>Check:</strong></p>
+
+        <pre><code class="language-bash"># On web/leader, verify worker's public key is authorized:
+juju ssh concourse-ci/0
+sudo cat /var/lib/concourse/keys/authorized_worker_keys
+# Should contain: ssh-rsa AAAA...worker/1's key...
+
+# On worker, verify it has TSA host key:
+juju ssh concourse-ci/1
+sudo cat /var/lib/concourse/keys/tsa_host_key.pub
+# Should match web's tsa_host_key.pub</code></pre>
+
+        <h3>Worker Shows "Host Key Verification Failed"</h3>
+
+        <p><strong>Cause:</strong> Worker's <code>tsa_host_key.pub</code> doesn't match web's actual host key</p>
+
+        <p><strong>Fix:</strong></p>
+
+        <pre><code class="language-bash"># Compare keys:
+juju ssh concourse-ci/0 -- sudo cat /var/lib/concourse/keys/tsa_host_key.pub
+juju ssh concourse-ci/1 -- sudo cat /var/lib/concourse/keys/tsa_host_key.pub
+# They must match exactly</code></pre>
+
+        <h2>Related Topics</h2>
+
+        <ul>
+            <li><strong>Tutorial:</strong> <a href="../tutorials/deployment-guide.html">Complete Deployment Guide</a> - See key distribution in action</li>
+            <li><strong>Reference:</strong> <a href="../reference/relations.html">Relations &amp; Integrations</a> - Technical details on peer/tsa/flight relations</li>
+            <li><strong>Reference:</strong> <a href="../reference/deployment-modes.html">Deployment Modes</a> - How modes affect key distribution</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

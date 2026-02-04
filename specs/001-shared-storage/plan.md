@@ -186,7 +186,8 @@ Instead of requiring external NFS setup, use LXD's native storage capabilities w
 
 ```bash
 # Standard approach for all modes with shared storage testing
-juju bootstrap localhost test-controller --config test-mode=true
+juju bootstrap localhost test-controller
+juju add-model concourse-test --config test-mode=true
 
 # MODE=AUTO testing (leader=web, non-leaders=workers)
 juju deploy ./charm.charm concourse-ci \
@@ -296,10 +297,10 @@ test-shared-storage-auto:
         sudo snap install juju-wait --classic
     
     - name: Bootstrap Juju
-      run: juju bootstrap localhost test-controller --config test-mode=true
+      run: juju bootstrap localhost test-controller
     
     - name: Add Juju Model
-      run: juju add-model shared-auto
+      run: juju add-model shared-auto --config test-mode=true
     
     - name: Deploy first unit with storage (becomes leader/web)
       run: |
@@ -429,10 +430,10 @@ test-shared-storage-all:
         sudo snap install juju-wait --classic
     
     - name: Bootstrap Juju
-      run: juju bootstrap localhost test-controller --config test-mode=true
+      run: juju bootstrap localhost test-controller
     
     - name: Add Juju Model
-      run: juju add-model shared-all
+      run: juju add-model shared-all --config test-mode=true
     
     - name: Deploy first unit (mode=all with both web and worker)
       run: |
@@ -513,10 +514,10 @@ test-shared-storage-web-worker:
         sudo snap install juju-wait --classic
     
     - name: Bootstrap Juju
-      run: juju bootstrap localhost test-controller --config test-mode=true
+      run: juju bootstrap localhost test-controller
     
     - name: Add Juju Model
-      run: juju add-model shared-web-worker
+      run: juju add-model shared-web-worker --config test-mode=true
     
     - name: Deploy web server with storage
       run: |
@@ -652,10 +653,10 @@ publish-charm:
         sudo snap install juju-wait --classic
     
     - name: Bootstrap Juju
-      run: juju bootstrap localhost test-controller --config test-mode=true
+      run: juju bootstrap localhost test-controller
     
     - name: Add Juju Model
-      run: juju add-model shared-storage-test
+      run: juju add-model shared-storage-test --config test-mode=true
     
     - name: Deploy first unit with storage
       run: |

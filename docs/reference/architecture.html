@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - Architecture reference: components, directories, systemd services, and deployment structure.">
+    <meta name="keywords" content="Concourse CI, Juju, Architecture, Components, Reference, System Design">
+    <title>Architecture Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--reference-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .diagram {
+            background-color: var(--bg-light);
+            padding: 2rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .diagram pre {
+            background-color: transparent;
+            border: none;
+            color: var(--text-dark);
+            padding: 0;
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .diagram pre code {
+            color: inherit;
+        }
+
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Architecture Reference</h1>
+        <p class="subtitle">Complete system architecture and component specification</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            Architecture
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>The Concourse CI Machine Charm deploys Concourse CI components on bare metal, VMs, or LXD containers managed by Juju. The architecture consists of three primary components: <strong>Web Server</strong> (UI, API, TSA, Scheduler), <strong>Worker</strong> (container runtime, job execution), and <strong>PostgreSQL</strong> (data persistence). Components communicate via HTTP/HTTPS (UI/API) and SSH (TSA for worker registration).</p>
+
+        <div class="note">
+            <strong>Note:</strong> This reference documents the charm's architecture. For Concourse CI's internal architecture, see <a href="https://concourse-ci.org/internals.html" target="_blank">Concourse CI Internals</a>.
+        </div>
+
+        <h2 id="component-diagram">Component Diagram</h2>
+        <div class="diagram">
+            <svg width="100%" height="500" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+                <!-- PostgreSQL Database -->
+                <g id="postgresql">
+                    <rect x="320" y="20" width="160" height="80" rx="8" fill="#336791" stroke="#1a3d5a" stroke-width="2"/>
+                    <text x="400" y="50" fill="white" font-size="16" font-weight="bold" text-anchor="middle">PostgreSQL</text>
+                    <text x="400" y="70" fill="white" font-size="14" text-anchor="middle">Database</text>
+                    <text x="400" y="88" fill="white" font-size="12" text-anchor="middle">:5432</text>
+                </g>
+                
+                <!-- Connection line: PostgreSQL to Web Server -->
+                <line x1="400" y1="100" x2="400" y2="140" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+                <text x="420" y="125" fill="#666" font-size="12">TCP</text>
+                
+                <!-- Web Server Container -->
+                <g id="web-server">
+                    <rect x="200" y="150" width="400" height="140" rx="8" fill="#5c3c92" stroke="#3d2861" stroke-width="2"/>
+                    <text x="400" y="175" fill="white" font-size="18" font-weight="bold" text-anchor="middle">Web Server (ATC)</text>
+                    
+                    <!-- Web UI/API -->
+                    <rect x="220" y="190" width="100" height="60" rx="4" fill="#7d5ca8" stroke="#5c3c92" stroke-width="1.5"/>
+                    <text x="270" y="215" fill="white" font-size="13" font-weight="bold" text-anchor="middle">Web UI</text>
+                    <text x="270" y="233" fill="white" font-size="13" font-weight="bold" text-anchor="middle">API</text>
+                    <text x="270" y="248" fill="white" font-size="11" text-anchor="middle">:8080</text>
+                    
+                    <!-- TSA -->
+                    <rect x="350" y="190" width="100" height="60" rx="4" fill="#7d5ca8" stroke="#5c3c92" stroke-width="1.5"/>
+                    <text x="400" y="215" fill="white" font-size="13" font-weight="bold" text-anchor="middle">TSA</text>
+                    <text x="400" y="233" fill="white" font-size="11" text-anchor="middle">(SSH Gateway)</text>
+                    <text x="400" y="248" fill="white" font-size="11" text-anchor="middle">:2222</text>
+                    
+                    <!-- Scheduler -->
+                    <rect x="480" y="190" width="100" height="60" rx="4" fill="#7d5ca8" stroke="#5c3c92" stroke-width="1.5"/>
+                    <text x="530" y="215" fill="white" font-size="13" font-weight="bold" text-anchor="middle">Scheduler</text>
+                    <text x="530" y="233" fill="white" font-size="11" text-anchor="middle">(Job Queue)</text>
+                    <text x="530" y="248" fill="white" font-size="11" text-anchor="middle">Internal</text>
+                </g>
+                
+                <!-- Connection lines: Web Server to Workers -->
+                <line x1="400" y1="290" x2="250" y2="350" stroke="#11a8cd" stroke-width="2" marker-end="url(#arrowhead-blue)"/>
+                <line x1="400" y1="290" x2="550" y2="350" stroke="#11a8cd" stroke-width="2" marker-end="url(#arrowhead-blue)"/>
+                <text x="295" y="325" fill="#11a8cd" font-size="12" font-weight="bold">SSH/TSA</text>
+                <text x="465" y="325" fill="#11a8cd" font-size="12" font-weight="bold">SSH/TSA</text>
+                
+                <!-- Worker 1 -->
+                <g id="worker1">
+                    <rect x="100" y="360" width="180" height="120" rx="8" fill="#206a5d" stroke="#154a3f" stroke-width="2"/>
+                    <text x="190" y="385" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Worker 1</text>
+                    
+                    <rect x="120" y="400" width="140" height="60" rx="4" fill="#2a8c7a" stroke="#206a5d" stroke-width="1.5"/>
+                    <text x="190" y="420" fill="white" font-size="13" font-weight="bold" text-anchor="middle">containerd</text>
+                    <text x="190" y="438" fill="white" font-size="11" text-anchor="middle">Container</text>
+                    <text x="190" y="453" fill="white" font-size="11" text-anchor="middle">Runtime</text>
+                </g>
+                
+                <!-- Worker 2 -->
+                <g id="worker2">
+                    <rect x="520" y="360" width="180" height="120" rx="8" fill="#206a5d" stroke="#154a3f" stroke-width="2"/>
+                    <text x="610" y="385" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Worker 2</text>
+                    
+                    <rect x="540" y="400" width="140" height="60" rx="4" fill="#2a8c7a" stroke="#206a5d" stroke-width="1.5"/>
+                    <text x="610" y="420" fill="white" font-size="13" font-weight="bold" text-anchor="middle">containerd</text>
+                    <text x="610" y="438" fill="white" font-size="11" text-anchor="middle">Container</text>
+                    <text x="610" y="453" fill="white" font-size="11" text-anchor="middle">Runtime</text>
+                </g>
+                
+                <!-- Arrow markers -->
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+                    </marker>
+                    <marker id="arrowhead-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#11a8cd"/>
+                    </marker>
+                </defs>
+            </svg>
+        </div>
+        
+        <div class="note">
+            <strong>Architecture Overview:</strong> The web server (ATC) coordinates all operations. PostgreSQL stores pipeline definitions, build history, and resource metadata. Workers connect via SSH to TSA and execute tasks in isolated containers. The scheduler assigns jobs to available workers based on tags and resource requirements.
+        </div>
+
+        <h2 id="components">Core Components</h2>
+
+        <h3 id="web-server">Web Server</h3>
+        <p>The web server component hosts the Concourse web node, which provides the UI, API, TSA (worker gateway), and job scheduler.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Subcomponent</th>
+                    <th>Port</th>
+                    <th>Protocol</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Web UI</strong></td>
+                    <td>Configurable (default 8080)</td>
+                    <td>HTTP/HTTPS</td>
+                    <td>Browser-based user interface for pipeline management, build visualization, and team administration</td>
+                </tr>
+                <tr>
+                    <td><strong>API</strong></td>
+                    <td>Same as Web UI</td>
+                    <td>HTTP/HTTPS</td>
+                    <td>RESTful API for fly CLI, webhooks, and programmatic access to pipelines, jobs, and resources</td>
+                </tr>
+                <tr>
+                    <td><strong>TSA</strong></td>
+                    <td>2222</td>
+                    <td>SSH</td>
+                    <td>Transportation Security Administration - SSH gateway for worker authentication and registration</td>
+                </tr>
+                <tr>
+                    <td><strong>Scheduler</strong></td>
+                    <td>Internal</td>
+                    <td>N/A</td>
+                    <td>Job scheduling, resource checking, container placement, and build orchestration</td>
+                </tr>
+                <tr>
+                    <td><strong>Metrics</strong></td>
+                    <td>9391</td>
+                    <td>HTTP</td>
+                    <td>Prometheus metrics endpoint (optional, always exposed)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>User:</strong> <code>concourse</code> (UID: dynamically allocated by Juju)<br>
+        <strong>Service:</strong> <code>concourse-server.service</code><br>
+        <strong>Configuration:</strong> <code>/var/lib/concourse/config.env</code><br>
+        <strong>Data Directory:</strong> <code>/var/lib/concourse/</code></p>
+
+        <h3 id="worker">Worker</h3>
+        <p>The worker component executes build tasks in isolated containers using containerd runtime. Workers connect to the web server via TSA and receive job assignments from the scheduler.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Subcomponent</th>
+                    <th>Port</th>
+                    <th>Protocol</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Worker Process</strong></td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                    <td>Registers with TSA, executes build tasks, manages container lifecycle</td>
+                </tr>
+                <tr>
+                    <td><strong>Container Runtime</strong></td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                    <td>containerd with runc OCI runtime for task container isolation</td>
+                </tr>
+                <tr>
+                    <td><strong>Garden</strong></td>
+                    <td>7777</td>
+                    <td>HTTP</td>
+                    <td>Concourse's container management API (internal, listens on localhost)</td>
+                </tr>
+                <tr>
+                    <td><strong>Baggageclaim</strong></td>
+                    <td>7788</td>
+                    <td>HTTP</td>
+                    <td>Volume management API for resource caching (internal, listens on localhost)</td>
+                </tr>
+                <tr>
+                    <td><strong>Metrics</strong></td>
+                    <td>9391</td>
+                    <td>HTTP</td>
+                    <td>Prometheus metrics endpoint (optional, always exposed)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>User:</strong> <code>root</code> (required for container management)<br>
+        <strong>Service:</strong> <code>concourse-worker.service</code><br>
+        <strong>Configuration:</strong> <code>/var/lib/concourse/worker-config.env</code> (or <code>/mnt/concourse-shared/worker-config.env</code> in shared storage mode)<br>
+        <strong>Data Directory:</strong> <code>/var/lib/concourse/worker/</code></p>
+
+        <div class="note">
+            <strong>Note:</strong> Workers run as <code>root</code> because containerd requires privileged operations for namespace creation, cgroup management, and network configuration. Task containers are still isolated using Linux namespaces, cgroups, and seccomp profiles.
+        </div>
+
+        <h3 id="postgresql">PostgreSQL (External)</h3>
+        <p>PostgreSQL database stores all Concourse persistent data. Provided by external PostgreSQL charm connected via Juju relation.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Data Type</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Pipelines</strong></td>
+                    <td>Pipeline configurations, job definitions, resource types</td>
+                </tr>
+                <tr>
+                    <td><strong>Builds</strong></td>
+                    <td>Build metadata, logs, statuses, timestamps</td>
+                </tr>
+                <tr>
+                    <td><strong>Resources</strong></td>
+                    <td>Resource versions, metadata, check history</td>
+                </tr>
+                <tr>
+                    <td><strong>Authentication</strong></td>
+                    <td>User accounts, teams, roles, OAuth tokens</td>
+                </tr>
+                <tr>
+                    <td><strong>Workers</strong></td>
+                    <td>Worker registration, heartbeat, tags, state</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>Required Version:</strong> PostgreSQL 16/stable<br>
+        <strong>Connection:</strong> Via Juju <code>postgresql_client</code> interface using Juju secrets<br>
+        <strong>Default Port:</strong> 5432</p>
+
+        <h2 id="directories">Key Directories</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Path</th>
+                    <th>Purpose</th>
+                    <th>Owner</th>
+                    <th>Permissions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>/opt/concourse/</code></td>
+                    <td>Concourse binaries (<code>concourse</code>, <code>fly</code>)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>755</code></td>
+                </tr>
+                <tr>
+                    <td><code>/opt/bin/</code></td>
+                    <td>Custom wrapper scripts (<code>runc-wrapper</code>, <code>runc-gpu-wrapper</code>)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>755</code></td>
+                </tr>
+                <tr>
+                    <td><code>/var/lib/concourse/</code></td>
+                    <td>Data, configuration, keys, worker runtime</td>
+                    <td><code>concourse:concourse</code></td>
+                    <td><code>755</code></td>
+                </tr>
+                <tr>
+                    <td><code>/var/lib/concourse/keys/</code></td>
+                    <td>TSA host key, TSA public key, worker keys, session signing key</td>
+                    <td><code>concourse:concourse</code></td>
+                    <td><code>700</code></td>
+                </tr>
+                <tr>
+                    <td><code>/var/lib/concourse/worker/</code></td>
+                    <td>Worker runtime directory (volumes, containers, state)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>755</code></td>
+                </tr>
+                <tr>
+                    <td><code>/var/lib/concourse/bin/</code></td>
+                    <td>Symlink to custom OCI runtime wrapper (runc)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>755</code></td>
+                </tr>
+                <tr>
+                    <td><code>/var/log/concourse-ci.log</code></td>
+                    <td>Charm-generated logs (installation, upgrades, errors)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>644</code></td>
+                </tr>
+                <tr>
+                    <td><code>/srv/</code></td>
+                    <td>Host folders for automatic mounting into task containers</td>
+                    <td><code>varies</code></td>
+                    <td><code>varies</code></td>
+                </tr>
+                <tr>
+                    <td><code>/etc/containerd/</code></td>
+                    <td>containerd configuration (<code>config.toml</code>)</td>
+                    <td><code>root:root</code></td>
+                    <td><code>755</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            <strong>Shared Storage Mode:</strong> When <code>shared-storage=lxc</code>, <code>/var/lib/concourse/</code> is mounted from host via LXC disk device. Binaries are shared across units, reducing disk usage by ~62% (150MB → 60MB per worker).
+        </div>
+
+        <h2 id="systemd-services">Systemd Services</h2>
+
+        <h3>concourse-server.service (Web Server)</h3>
+        <pre><code class="language-ini">[Unit]
+Description=Concourse CI Web Server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=concourse
+Group=concourse
+EnvironmentFile=/var/lib/concourse/config.env
+ExecStart=/opt/concourse/concourse web
+Restart=on-failure
+RestartSec=10s
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+        <p><strong>Key Features:</strong></p>
+        <ul>
+            <li><code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code>: Allows binding to privileged ports (&lt; 1024) without running as root</li>
+            <li><code>NoNewPrivileges=true</code>: Security hardening to prevent privilege escalation</li>
+            <li><code>Restart=on-failure</code>: Automatic restart on crashes</li>
+            <li><code>EnvironmentFile</code>: Configuration loaded from <code>/var/lib/concourse/config.env</code></li>
+        </ul>
+
+        <h3>concourse-worker.service (Worker)</h3>
+        <pre><code class="language-ini">[Unit]
+Description=Concourse CI Worker
+After=network-online.target containerd.service
+Requires=containerd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/var/lib/concourse/worker-config.env
+ExecStart=/opt/concourse/concourse worker
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+        <p><strong>Key Features:</strong></p>
+        <ul>
+            <li><code>User=root</code>: Required for container management (containerd/runc require root privileges)</li>
+            <li><code>Requires=containerd.service</code>: Ensures containerd is running before worker starts</li>
+            <li><code>Restart=on-failure</code>: Automatic restart on crashes</li>
+            <li><code>EnvironmentFile</code>: Configuration loaded from <code>worker-config.env</code> (local or shared storage)</li>
+        </ul>
+
+        <h3>containerd.service (Container Runtime)</h3>
+        <p>Provided by Ubuntu's <code>containerd</code> package. Managed by systemd, configuration at <code>/etc/containerd/config.toml</code>.</p>
+
+        <h2 id="configuration-files">Configuration Files</h2>
+
+        <h3>Web Server: /var/lib/concourse/config.env</h3>
+        <pre><code class="language-bash"># Example configuration (generated by charm)
+CONCOURSE_BIND_IP=0.0.0.0
+CONCOURSE_BIND_PORT=8080
+CONCOURSE_EXTERNAL_URL=http://10.0.0.5:8080
+CONCOURSE_POSTGRES_HOST=10.0.0.10
+CONCOURSE_POSTGRES_PORT=5432
+CONCOURSE_POSTGRES_DATABASE=concourse
+CONCOURSE_POSTGRES_USER=concourse_user
+CONCOURSE_POSTGRES_PASSWORD=&lt;from-juju-secret&gt;
+CONCOURSE_SESSION_SIGNING_KEY=/var/lib/concourse/keys/session_signing_key
+CONCOURSE_TSA_HOST_KEY=/var/lib/concourse/keys/tsa_host_key
+CONCOURSE_TSA_AUTHORIZED_KEYS=/var/lib/concourse/keys/authorized_worker_keys
+CONCOURSE_ADD_LOCAL_USER=admin:&lt;generated-password&gt;
+CONCOURSE_MAIN_TEAM_LOCAL_USER=admin
+CONCOURSE_LOG_LEVEL=info</code></pre>
+
+        <h3>Worker: /var/lib/concourse/worker-config.env</h3>
+        <pre><code class="language-bash"># Example configuration (generated by charm)
+PATH=/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CONCOURSE_WORK_DIR=/var/lib/concourse/worker
+CONCOURSE_TSA_HOST=10.0.0.5:2222
+CONCOURSE_TSA_PUBLIC_KEY=/var/lib/concourse/keys/tsa_host_key.pub
+CONCOURSE_TSA_WORKER_PRIVATE_KEY=/var/lib/concourse/keys/worker_key
+CONCOURSE_GARDEN_BIND_PORT=7777
+CONCOURSE_BAGGAGECLAIM_BIND_PORT=7788
+CONCOURSE_RUNTIME=containerd
+CONCOURSE_TAG=cuda,gpu-count=1
+CONCOURSE_LOG_LEVEL=info</code></pre>
+
+        <div class="note">
+            <strong>Critical:</strong> Worker configuration sets <code>PATH=/opt/bin:...</code> to prioritize custom OCI runtime wrappers (<code>runc-wrapper</code>, <code>runc-gpu-wrapper</code>) for folder mounting and GPU passthrough.
+        </div>
+
+        <h2 id="network-communication">Network Communication</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Destination</th>
+                    <th>Port</th>
+                    <th>Protocol</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>User Browser</td>
+                    <td>Web Server</td>
+                    <td>8080 (configurable)</td>
+                    <td>HTTP/HTTPS</td>
+                    <td>Web UI access, pipeline management</td>
+                </tr>
+                <tr>
+                    <td>fly CLI</td>
+                    <td>Web Server</td>
+                    <td>8080 (configurable)</td>
+                    <td>HTTP/HTTPS</td>
+                    <td>API calls, pipeline operations, build logs</td>
+                </tr>
+                <tr>
+                    <td>Worker</td>
+                    <td>Web Server (TSA)</td>
+                    <td>2222</td>
+                    <td>SSH</td>
+                    <td>Worker registration, heartbeat, job assignment</td>
+                </tr>
+                <tr>
+                    <td>Web Server</td>
+                    <td>PostgreSQL</td>
+                    <td>5432</td>
+                    <td>TCP</td>
+                    <td>Database queries, persistence</td>
+                </tr>
+                <tr>
+                    <td>Prometheus</td>
+                    <td>Web Server / Worker</td>
+                    <td>9391</td>
+                    <td>HTTP</td>
+                    <td>Metrics scraping</td>
+                </tr>
+                <tr>
+                    <td>Prometheus</td>
+                    <td>Web Server</td>
+                    <td>9358</td>
+                    <td>HTTP</td>
+                    <td>Per-job metrics (concourse-exporter)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="security-model">Security Model</h2>
+
+        <h3>Authentication</h3>
+        <ul>
+            <li><strong>Web UI/API:</strong> Local user authentication (default), OAuth (GitHub, GitLab, etc.), LDAP, OIDC</li>
+            <li><strong>Worker-to-TSA:</strong> SSH key-based authentication using asymmetric cryptography</li>
+            <li><strong>Database:</strong> Password authentication via Juju secrets (credentials never logged or exposed)</li>
+        </ul>
+
+        <h3>Isolation</h3>
+        <ul>
+            <li><strong>Task Containers:</strong> Linux namespaces (PID, network, mount, UTS, IPC), cgroups (CPU, memory limits), seccomp profiles</li>
+            <li><strong>Worker Processes:</strong> Run as <code>root</code> but containers run as non-privileged users by default</li>
+            <li><strong>Keys:</strong> Stored in <code>/var/lib/concourse/keys/</code> with <code>700</code> permissions (owner-only access)</li>
+        </ul>
+
+        <h3>Network Security</h3>
+        <ul>
+            <li><strong>TSA Connection:</strong> Encrypted SSH tunnel (no worker credentials exposed)</li>
+            <li><strong>Database Connection:</strong> TCP over private network (use Juju spaces for network isolation)</li>
+            <li><strong>Web UI:</strong> HTTP by default (use TLS certificates for production)</li>
+        </ul>
+
+        <h2 id="deployment-variations">Deployment Variations</h2>
+
+        <h3>mode=auto (Single Application)</h3>
+        <div class="diagram">
+            <svg width="100%" height="420" viewBox="0 0 600 420" xmlns="http://www.w3.org/2000/svg">
+                <!-- Application Container -->
+                <rect x="100" y="20" width="400" height="220" rx="8" fill="#f0f0f0" stroke="#999" stroke-width="2" stroke-dasharray="5,5"/>
+                <text x="300" y="45" fill="#666" font-size="16" font-weight="bold" text-anchor="middle">concourse-ci Application</text>
+                
+                <!-- Unit 0 (Leader/Web) -->
+                <rect x="140" y="70" width="140" height="140" rx="6" fill="#5c3c92" stroke="#3d2861" stroke-width="2"/>
+                <text x="210" y="95" fill="white" font-size="14" font-weight="bold" text-anchor="middle">Unit 0</text>
+                <text x="210" y="115" fill="white" font-size="13" text-anchor="middle">(Leader)</text>
+                <text x="210" y="155" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Web Server</text>
+                <text x="210" y="175" fill="white" font-size="11" text-anchor="middle">• UI/API</text>
+                <text x="210" y="190" fill="white" font-size="11" text-anchor="middle">• TSA</text>
+                <text x="210" y="205" fill="white" font-size="11" text-anchor="middle">• Scheduler</text>
+                
+                <!-- Unit 1 (Worker) -->
+                <rect x="320" y="70" width="140" height="140" rx="6" fill="#206a5d" stroke="#154a3f" stroke-width="2"/>
+                <text x="390" y="95" fill="white" font-size="14" font-weight="bold" text-anchor="middle">Unit 1</text>
+                <text x="390" y="115" fill="white" font-size="13" text-anchor="middle">(Follower)</text>
+                <text x="390" y="155" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Worker</text>
+                <text x="390" y="175" fill="white" font-size="11" text-anchor="middle">• containerd</text>
+                <text x="390" y="190" fill="white" font-size="11" text-anchor="middle">• Task execution</text>
+                
+                <!-- Peer Relation -->
+                <line x1="280" y1="140" x2="320" y2="140" stroke="#11a8cd" stroke-width="2"/>
+                <circle cx="300" cy="140" r="3" fill="#11a8cd"/>
+                <text x="300" y="162" fill="#11a8cd" font-size="11" font-weight="bold" text-anchor="middle">Peer Relation</text>
+                <text x="300" y="178" fill="#11a8cd" font-size="10" text-anchor="middle">(Auto key distribution)</text>
+                
+                <!-- PostgreSQL -->
+                <rect x="220" y="310" width="160" height="80" rx="6" fill="#336791" stroke="#1a3d5a" stroke-width="2"/>
+                <text x="300" y="340" fill="white" font-size="16" font-weight="bold" text-anchor="middle">PostgreSQL</text>
+                <text x="300" y="360" fill="white" font-size="13" text-anchor="middle">Database</text>
+                <text x="300" y="378" fill="white" font-size="11" text-anchor="middle">:5432</text>
+                
+                <!-- Connection: Application to PostgreSQL -->
+                <line x1="300" y1="240" x2="300" y2="310" stroke="#666" stroke-width="2" marker-end="url(#arrowhead-gray)"/>
+                <text x="320" y="280" fill="#666" font-size="12" font-weight="bold">postgresql</text>
+                <text x="320" y="295" fill="#666" font-size="11">relation</text>
+                
+                <!-- Arrow markers -->
+                <defs>
+                    <marker id="arrowhead-gray" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+                    </marker>
+                </defs>
+            </svg>
+        </div>
+
+        <h3>mode=web + mode=worker (Multiple Applications)</h3>
+        <div class="diagram">
+            <svg width="100%" height="400" viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg">
+                <!-- Web Application Container -->
+                <rect x="50" y="20" width="220" height="200" rx="8" fill="#f0f0f0" stroke="#999" stroke-width="2" stroke-dasharray="5,5"/>
+                <text x="160" y="45" fill="#666" font-size="16" font-weight="bold" text-anchor="middle">web Application</text>
+                
+                <!-- Web Unit -->
+                <rect x="75" y="70" width="170" height="120" rx="6" fill="#5c3c92" stroke="#3d2861" stroke-width="2"/>
+                <text x="160" y="95" fill="white" font-size="14" font-weight="bold" text-anchor="middle">Unit 0</text>
+                <text x="160" y="130" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Web Server</text>
+                <text x="160" y="150" fill="white" font-size="11" text-anchor="middle">• UI/API</text>
+                <text x="160" y="165" fill="white" font-size="11" text-anchor="middle">• TSA</text>
+                <text x="160" y="180" fill="white" font-size="11" text-anchor="middle">• Scheduler</text>
+                
+                <!-- Worker Application Container -->
+                <rect x="430" y="20" width="220" height="200" rx="8" fill="#f0f0f0" stroke="#999" stroke-width="2" stroke-dasharray="5,5"/>
+                <text x="540" y="45" fill="#666" font-size="16" font-weight="bold" text-anchor="middle">worker Application</text>
+                
+                <!-- Worker Unit -->
+                <rect x="455" y="70" width="170" height="120" rx="6" fill="#206a5d" stroke="#154a3f" stroke-width="2"/>
+                <text x="540" y="95" fill="white" font-size="14" font-weight="bold" text-anchor="middle">Unit 0</text>
+                <text x="540" y="130" fill="white" font-size="16" font-weight="bold" text-anchor="middle">Worker</text>
+                <text x="540" y="150" fill="white" font-size="11" text-anchor="middle">• containerd</text>
+                <text x="540" y="165" fill="white" font-size="11" text-anchor="middle">• Task execution</text>
+                
+                <!-- TSA/Flight Relation -->
+                <line x1="245" y1="130" x2="455" y2="130" stroke="#11a8cd" stroke-width="2" marker-end="url(#arrowhead-blue2)"/>
+                <text x="350" y="120" fill="#11a8cd" font-size="12" font-weight="bold" text-anchor="middle">tsa / flight</text>
+                <text x="350" y="145" fill="#11a8cd" font-size="10" text-anchor="middle">relation (SSH keys)</text>
+                
+                <!-- PostgreSQL -->
+                <rect x="80" y="280" width="160" height="80" rx="6" fill="#336791" stroke="#1a3d5a" stroke-width="2"/>
+                <text x="160" y="310" fill="white" font-size="16" font-weight="bold" text-anchor="middle">PostgreSQL</text>
+                <text x="160" y="330" fill="white" font-size="13" text-anchor="middle">Database</text>
+                <text x="160" y="348" fill="white" font-size="11" text-anchor="middle">:5432</text>
+                
+                <!-- Connection: Web to PostgreSQL -->
+                <line x1="160" y1="220" x2="160" y2="280" stroke="#666" stroke-width="2" marker-end="url(#arrowhead-gray2)"/>
+                <text x="180" y="255" fill="#666" font-size="12" font-weight="bold">postgresql</text>
+                <text x="180" y="270" fill="#666" font-size="11">relation</text>
+                
+                <!-- Arrow markers -->
+                <defs>
+                    <marker id="arrowhead-blue2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#11a8cd"/>
+                    </marker>
+                    <marker id="arrowhead-gray2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+                    </marker>
+                </defs>
+            </svg>
+        </div>
+        
+        <div class="success">
+            <strong>Deployment Flexibility:</strong> The <code>mode=auto</code> pattern is recommended for most deployments as it provides automatic scaling and zero-configuration key distribution. Use separate <code>web</code> + <code>worker</code> applications when you need independent scaling of workers or want to deploy workers in different environments/regions.
+        </div>
+
+        <h2 id="further-reading">Further Reading</h2>
+        <ul>
+            <li><a href="https://concourse-ci.org/internals.html" target="_blank">Concourse CI Internals</a> - Official architecture documentation</li>
+            <li><a href="https://concourse-ci.org/tasks.html" target="_blank">Task Execution</a> - How Concourse runs tasks in containers</li>
+            <li><a href="https://concourse-ci.org/workers.html" target="_blank">Workers</a> - Worker lifecycle and registration</li>
+            <li><a href="deployment-modes.html">Deployment Modes Reference</a> - Detailed mode comparison</li>
+            <li><a href="relations.html">Relations Reference</a> - Relation interfaces and data exchange</li>
+        </ul>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

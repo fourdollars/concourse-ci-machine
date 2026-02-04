@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Learn how to deploy Concourse CI with the Concourse CI Machine Charm - A step-by-step tutorial for beginners">
+    <title>Your First Concourse CI Deployment - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+        }
+
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumbs a {
+            color: var(--tutorial-color);
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .edit-link a:hover {
+            text-decoration: underline;
+        }
+
+        .content h1 {
+            color: var(--tutorial-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--tutorial-color);
+        }
+
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .content code {
+            font-family: 'Ubuntu Mono', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .content p code, .content li code {
+            background: #f0f0f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            color: #c7254e;
+        }
+
+        .note {
+            background: #e7f3f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        .warning {
+            background: #fff4e5;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .step-box {
+            background: var(--bg-light);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: var(--tutorial-color);
+            color: white;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            text-align: center;
+            border-radius: 50%;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 0 1rem 2rem 1rem;
+            }
+            
+            .content h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#tutorials">Tutorials</a> &gt; 
+        <span>Your First Deployment</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/tutorials/deployment-guide.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Your First Concourse CI Deployment</h1>
+        <p class="subtitle">Learn how to deploy Concourse CI step-by-step in a local environment</p>
+
+        <div class="note">
+            <strong>📚 What You'll Learn:</strong> By the end of this tutorial, you'll have a fully functional Concourse CI installation with a web interface and workers ready to run your first pipeline.
+        </div>
+
+        <h2>Before You Start</h2>
+        
+        <p>This tutorial assumes you have:</p>
+        <ul>
+            <li><strong>Juju 3.x</strong> installed and configured</li>
+            <li><strong>A Juju controller</strong> (we'll use localhost/LXD for this tutorial)</li>
+            <li><strong>Basic command-line familiarity</strong> with bash/terminal</li>
+            <li><strong>~15-20 minutes</strong> of time</li>
+        </ul>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> This charm is currently in active development. Always use <code>--channel edge</code> when deploying to get the latest version.
+        </div>
+
+        <h2>Step 1: Bootstrap Your Juju Controller</h2>
+
+        <p>If you don't already have a Juju controller, let's create one on your local machine using LXD.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">1</span> <strong>Bootstrap a controller named "concourse-tutorial"</strong></p>
+            <pre><code class="language-bash">juju bootstrap localhost concourse-tutorial</code></pre>
+        </div>
+
+        <div class="note">
+            <strong>💡 Optional: Faster feedback during tutorial</strong>
+            <p>To speed up the update-status hook interval from 5 minutes to 10 seconds, add <code>--config test-mode=true</code> when creating your model:</p>
+            <pre><code class="language-bash">juju add-model concourse --config test-mode=true</code></pre>
+        </div>
+
+        <div class="note">
+            <strong>💡 What just happened?</strong> Juju created a controller machine that will manage your deployments. Think of it as the control center for all your applications.
+        </div>
+
+        <h2>Step 2: Create a Model</h2>
+
+        <p>Models in Juju are like namespaces for your applications. Let's create one for Concourse CI.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">2</span> <strong>Create a model called "concourse"</strong></p>
+            <pre><code class="language-bash">juju add-model concourse</code></pre>
+        </div>
+
+        <p>You should see output confirming the model was created.</p>
+
+        <h2>Step 3: Deploy PostgreSQL Database</h2>
+
+        <p>Concourse CI's web server needs a PostgreSQL database to store pipeline configurations and build history.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">3</span> <strong>Deploy PostgreSQL 16</strong></p>
+            <pre><code class="language-bash">juju deploy postgresql --channel 16/stable --base ubuntu@24.04</code></pre>
+        </div>
+
+        <p>This will take a few minutes as Juju creates a container and installs PostgreSQL.</p>
+
+        <div class="note">
+            <strong>💡 Why PostgreSQL 16?</strong> The Concourse CI charm currently requires PostgreSQL 16 for full compatibility with Juju secrets API.
+        </div>
+
+        <h2>Step 4: Deploy Concourse CI</h2>
+
+        <p>Now for the main event! We'll deploy Concourse CI with 3 units in auto mode.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">4</span> <strong>Deploy Concourse CI with 3 units</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine concourse-ci -n 3 \
+  --config mode=auto \
+  --channel edge \
+  --base ubuntu@24.04</code></pre>
+        </div>
+
+        <p><strong>What does this do?</strong></p>
+        <ul>
+            <li><code>-n 3</code>: Creates 3 units (1 web server + 2 workers)</li>
+            <li><code>--config mode=auto</code>: Automatically assigns roles (leader = web, others = workers)</li>
+            <li><code>--channel edge</code>: Uses the latest development version</li>
+        </ul>
+
+        <h2>Step 5: Connect Database and Concourse CI</h2>
+
+        <p>Juju makes connecting applications easy with relations.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">5</span> <strong>Create the database relation</strong></p>
+            <pre><code class="language-bash">juju integrate concourse-ci:postgresql postgresql:database</code></pre>
+        </div>
+
+        <div class="note">
+            <strong>💡 What's a relation?</strong> It's Juju's way of connecting applications. The charm automatically handles database credentials, connection strings, and configuration through this relation.
+        </div>
+
+        <h2>Step 6: Expose the Web Interface</h2>
+
+        <p>Make the Concourse CI web UI accessible from your network.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">6</span> <strong>Expose Concourse CI to the network</strong></p>
+            <pre><code class="language-bash">juju expose concourse-ci</code></pre>
+        </div>
+
+        <h2>Step 7: Watch the Deployment</h2>
+
+        <p>Let's watch everything come online.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">7</span> <strong>Monitor the deployment status</strong></p>
+            <pre><code class="language-bash">juju status --watch 5s</code></pre>
+        </div>
+
+        <p>Wait until you see:</p>
+        <ul>
+            <li><code>postgresql/0</code>: active</li>
+            <li><code>concourse-ci/0</code>: active (Web server ready)</li>
+            <li><code>concourse-ci/1</code>: active (Worker ready)</li>
+            <li><code>concourse-ci/2</code>: active (Worker ready)</li>
+        </ul>
+
+        <p>Press <code>Ctrl+C</code> to stop watching.</p>
+
+        <h2>Step 8: Get Your Admin Credentials</h2>
+
+        <p>Time to log in! First, get the admin password.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">8</span> <strong>Retrieve the admin password</strong></p>
+            <pre><code class="language-bash">juju run concourse-ci/leader get-admin-password</code></pre>
+        </div>
+
+        <p>You'll see output like:</p>
+        <pre><code>username: admin
+password: 01JfF@I!9W^0%re!3I!hyy3C</code></pre>
+
+        <p>Copy that password - you'll need it in a moment!</p>
+
+        <h2>Step 9: Access the Web UI</h2>
+
+        <p>Find the IP address of your web server and open it in a browser.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">9</span> <strong>Get the web server IP</strong></p>
+            <pre><code class="language-bash">juju status concourse-ci/0 --format=json | jq -r '.applications."concourse-ci".units."concourse-ci/0".address'</code></pre>
+        </div>
+
+        <p>Open your web browser to:</p>
+        <pre><code>http://&lt;that-ip-address&gt;:8080</code></pre>
+
+        <p>Log in with:</p>
+        <ul>
+            <li><strong>Username:</strong> admin</li>
+            <li><strong>Password:</strong> (the password from step 8)</li>
+        </ul>
+
+        <div class="success">
+            <strong>🎉 Success!</strong> You should see the Concourse CI dashboard. You now have a fully operational Concourse CI system!
+        </div>
+
+        <h2>What You've Accomplished</h2>
+
+        <p>Let's review what you just built:</p>
+        <ul>
+            <li>✅ A Juju controller managing your infrastructure</li>
+            <li>✅ A PostgreSQL database storing Concourse CI data</li>
+            <li>✅ A Concourse CI web server with UI and API</li>
+            <li>✅ Two Concourse CI workers ready to execute tasks</li>
+            <li>✅ Automatic key distribution (TSA keys configured automatically!)</li>
+            <li>✅ Secure random admin password</li>
+        </ul>
+
+        <div class="note">
+            <strong>💡 Behind the Scenes:</strong> The charm automatically handled TSA key generation, worker registration, and secure communication - no manual key management required!
+        </div>
+
+        <h2>Next Steps</h2>
+
+        <p>Now that you have Concourse CI running, here's what to explore next:</p>
+
+        <ol>
+            <li><strong>Create your first pipeline:</strong> Check out the <a href="https://concourse-ci.org/tutorial-hello-world.html">Concourse CI Hello World tutorial</a></li>
+            <li><strong>Add GPU workers:</strong> Follow our <a href="gpu-workers.html">GPU Workers Tutorial</a> to enable ML/AI workloads</li>
+            <li><strong>Set up shared storage:</strong> Learn about <a href="shared-storage-quickstart.html">Shared Storage</a> for efficient multi-worker deployments</li>
+            <li><strong>Scale your workers:</strong> See <a href="../howto/scale-workers.html">How to Scale Workers</a></li>
+        </ol>
+
+        <h2>Troubleshooting</h2>
+
+        <h3>Web UI won't load</h3>
+        <p><strong>Check:</strong></p>
+        <ul>
+            <li>Is the unit active? Run <code>juju status concourse-ci/0</code></li>
+            <li>Can you reach the IP? Try <code>ping &lt;ip-address&gt;</code></li>
+            <li>Check logs: <code>juju debug-log --include concourse-ci/0</code></li>
+        </ul>
+
+        <h3>Units stuck in "waiting" state</h3>
+        <p><strong>Solution:</strong> Check the relation is connected:</p>
+        <pre><code class="language-bash">juju status --relations</code></pre>
+        <p>You should see <code>concourse-ci:postgresql postgresql:database</code></p>
+
+        <h3>Need more help?</h3>
+        <p>Check the <a href="../howto/troubleshoot.html">Troubleshooting Guide</a> for common issues and solutions.</p>
+
+        <div class="success">
+            <strong>🎓 Congratulations!</strong> You've completed your first Concourse CI deployment. You're ready to start building CI/CD pipelines!
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars" target="_blank">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">GitHub</a>
+            <a href="https://github.com/fourdollars/concourse-ci-machine/issues" target="_blank">Issues</a>
+            <a href="https://charmhub.io/concourse-ci-machine" target="_blank">Charmhub</a>
+            <a href="https://concourse-ci.org/" target="_blank">Concourse CI</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

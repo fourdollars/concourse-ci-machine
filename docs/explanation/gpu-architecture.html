@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Understanding GPU passthrough architecture in Concourse CI - OCI runtime wrappers, device injection, discrete vs integrated GPUs">
+    <title>Understanding GPU Architecture - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --explanation-color: #852c2b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--explanation-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--explanation-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--explanation-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--explanation-color);
+        }
+        .content code {
+            background: #f5f5f5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        .content pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        .note {
+            background: var(--bg-light);
+            border-left: 4px solid var(--text-light);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            background: var(--bg-light);
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            margin-top: 4rem;
+            color: var(--text-light);
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm - Documentation</h1>
+    </header>
+
+    <div class="breadcrumbs">
+        <a href="../index.html">Home</a> &raquo;
+        <a href="../index.html#explanation">Explanation</a> &raquo;
+        Understanding GPU Architecture
+    </div>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/explanation/gpu-architecture.html">Edit this page on GitHub</a>
+        </div>
+
+        <h1>Understanding GPU Architecture</h1>
+        <p class="subtitle">Why GPU passthrough needs /dev/kfd, how OCI runtime wrappers work, and discrete vs integrated GPU differences</p>
+
+        <h2>The Challenge: GPUs in Containers</h2>
+
+        <p>Running GPU workloads in containers is fundamentally different from running them on bare metal. GPUs are hardware devices, not files or processes—you can't simply "copy" them into a container like you would a binary.</p>
+
+        <p>The core challenges:</p>
+
+        <ul>
+            <li><strong>Device access</strong>: Containers have isolated device namespaces. GPUs live in <code>/dev</code> on the host.</li>
+            <li><strong>Driver libraries</strong>: GPU code needs vendor-specific libraries (CUDA for NVIDIA, ROCm for AMD) that must match the host driver version.</li>
+            <li><strong>Permissions</strong>: GPU devices typically require root or specific group membership to access.</li>
+            <li><strong>Container runtime</strong>: Standard OCI runtimes (runc) don't natively understand GPU passthrough.</li>
+        </ul>
+
+        <h2>Solution Overview: OCI Runtime Wrapper + Vendor Toolkits</h2>
+
+        <p>The charm implements GPU support through two complementary mechanisms:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Purpose</th>
+                    <th>Installed When</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Vendor Toolkit</strong></td>
+                    <td>Injects GPU devices and libraries into containers</td>
+                    <td><code>compute-runtime=cuda</code> or <code>compute-runtime=rocm</code></td>
+                </tr>
+                <tr>
+                    <td><strong>OCI Runtime Wrapper</strong></td>
+                    <td>Intercepts container creation to inject folder mounts (datasets, models)</td>
+                    <td>Always (for general folder mounting)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Architecture Flow</h3>
+
+        <!-- GPU Container Creation Flow Diagram -->
+        <svg viewBox="0 0 900 650" xmlns="http://www.w3.org/2000/svg" style="max-width: 100%; height: auto; display: block; margin: 2rem auto;">
+            <!-- Container boundary -->
+            <rect x="30" y="20" width="840" height="600" fill="#f7f7f7" stroke="#666" stroke-width="2" rx="10" stroke-dasharray="8,4"/>
+            <text x="450" y="50" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">Concourse Worker (Host) - Container Creation Flow</text>
+            
+            <!-- Step 1: containerd -->
+            <rect x="330" y="80" width="240" height="60" fill="#e8f4f8" stroke="#11a8cd" stroke-width="2" rx="6"/>
+            <text x="450" y="105" text-anchor="middle" font-size="14" font-weight="bold" fill="#11a8cd">1. containerd</text>
+            <text x="450" y="125" text-anchor="middle" font-size="12" fill="#666">Receives "create container" request</text>
+            
+            <!-- Arrow 1 to 2 -->
+            <defs>
+                <marker id="arrow-flow" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+                    <polygon points="0 0, 8 0, 4 8" fill="#5c3c92"/>
+                </marker>
+            </defs>
+            <path d="M 450 140 L 450 170" stroke="#5c3c92" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="465" y="160" font-size="11" fill="#5c3c92">calls</text>
+            
+            <!-- Step 2: runc symlink -->
+            <rect x="330" y="170" width="240" height="60" fill="#fff4e6" stroke="#f99b11" stroke-width="2" rx="6"/>
+            <text x="450" y="195" text-anchor="middle" font-size="14" font-weight="bold" fill="#f99b11">2. runc (symlink)</text>
+            <text x="450" y="215" text-anchor="middle" font-size="12" fill="#666">/var/lib/concourse/bin/runc</text>
+            
+            <!-- Arrow 2 to 3 -->
+            <path d="M 450 230 L 450 260" stroke="#5c3c92" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="465" y="250" font-size="11" fill="#5c3c92">→ points to</text>
+            
+            <!-- Step 3: Wrapper Intercepts -->
+            <rect x="300" y="260" width="300" height="90" fill="#e8f5e9" stroke="#0e8420" stroke-width="3" rx="6"/>
+            <text x="450" y="285" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">3. OCI Runtime Wrapper</text>
+            <text x="450" y="305" text-anchor="middle" font-size="12" fill="#666">Intercepts call, modifies config.json</text>
+            <line x1="320" y1="312" x2="580" y2="312" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="450" y="330" text-anchor="middle" font-size="11" fill="#333">✅ Injects /srv folder mounts</text>
+            <text x="450" y="345" text-anchor="middle" font-size="10" fill="#999">(datasets, models, outputs)</text>
+            
+            <!-- Arrow 3 to 4 -->
+            <path d="M 450 350 L 450 380" stroke="#5c3c92" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="465" y="370" font-size="11" fill="#5c3c92">calls</text>
+            
+            <!-- Step 4: Vendor Runtime (conditional) -->
+            <rect x="280" y="380" width="340" height="110" fill="#fff0f5" stroke="#852c2b" stroke-width="3" rx="6"/>
+            <text x="450" y="405" text-anchor="middle" font-size="14" font-weight="bold" fill="#852c2b">4. Vendor Runtime (if GPU enabled)</text>
+            <text x="450" y="425" text-anchor="middle" font-size="12" fill="#666">nvidia-container-runtime (CUDA) OR</text>
+            <text x="450" y="442" text-anchor="middle" font-size="12" fill="#666">runc + CDI injection (ROCm)</text>
+            <line x1="300" y1="450" x2="600" y2="450" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="450" y="468" text-anchor="middle" font-size="11" fill="#333">✅ Injects GPU devices</text>
+            <text x="450" y="483" text-anchor="middle" font-size="10" fill="#999">(/dev/nvidia*, /dev/kfd, /dev/dri/*)</text>
+            
+            <!-- Arrow 4 to 5 -->
+            <path d="M 450 490 L 450 520" stroke="#5c3c92" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="465" y="510" font-size="11" fill="#5c3c92">creates</text>
+            
+            <!-- Step 5: Final Container -->
+            <rect x="250" y="520" width="400" height="90" fill="#e0f7fa" stroke="#00838f" stroke-width="3" rx="8"/>
+            <text x="450" y="545" text-anchor="middle" font-size="16" font-weight="bold" fill="#00838f">5. Running Container</text>
+            <line x1="270" y1="555" x2="630" y2="555" stroke="#d9d9d9" stroke-width="1"/>
+            <text x="280" y="575" font-size="12" fill="#333">✅ GPU devices: /dev/nvidia0, /dev/nvidiactl, /dev/kfd</text>
+            <text x="280" y="592" font-size="12" fill="#333">✅ GPU libraries: CUDA/ROCm runtime</text>
+            <text x="280" y="608" font-size="12" fill="#333">✅ Dataset mounts: /srv/datasets, /srv/models, /srv/outputs</text>
+            
+            <!-- Side annotations -->
+            <text x="70" y="200" font-size="11" fill="#666" font-style="italic">Standard OCI</text>
+            <text x="70" y="215" font-size="11" fill="#666" font-style="italic">container flow</text>
+            
+            <text x="70" y="310" font-size="12" fill="#0e8420" font-weight="bold">Folder Mount</text>
+            <text x="70" y="325" font-size="11" fill="#0e8420">Injection</text>
+            
+            <text x="70" y="435" font-size="12" fill="#852c2b" font-weight="bold">GPU Device</text>
+            <text x="70" y="450" font-size="11" fill="#852c2b">Injection</text>
+            
+            <text x="720" y="310" font-size="10" fill="#999">Always runs</text>
+            <text x="720" y="435" font-size="10" fill="#999">compute-runtime</text>
+            <text x="720" y="448" font-size="10" fill="#999">= cuda/rocm</text>
+        </svg>
+
+        <h2>NVIDIA GPU Architecture (CUDA)</h2>
+
+        <h3>Required Devices</h3>
+
+        <p>For NVIDIA GPUs to work in containers, <strong>three categories of devices</strong> must be passed through:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Device Path</th>
+                    <th>Purpose</th>
+                    <th>Required For</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>/dev/nvidia0</code>, <code>/dev/nvidia1</code>, ...</td>
+                    <td>GPU device files (one per GPU)</td>
+                    <td>GPU compute operations</td>
+                </tr>
+                <tr>
+                    <td><code>/dev/nvidiactl</code></td>
+                    <td>NVIDIA control device</td>
+                    <td>GPU initialization</td>
+                </tr>
+                <tr>
+                    <td><code>/dev/nvidia-uvm</code></td>
+                    <td>Unified Virtual Memory</td>
+                    <td>CUDA memory management</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>nvidia-container-toolkit</h3>
+
+        <p>NVIDIA provides <code>nvidia-container-toolkit</code> to automate device injection. It modifies the OCI spec to:</p>
+
+        <ol>
+            <li><strong>Mount GPU devices</strong> into the container's <code>/dev</code></li>
+            <li><strong>Bind-mount CUDA libraries</strong> from host (e.g., <code>/usr/lib/x86_64-linux-gnu/libnvidia-*.so</code>)</li>
+            <li><strong>Set environment variables</strong> (e.g., <code>NVIDIA_VISIBLE_DEVICES</code>)</li>
+            <li><strong>Configure ldconfig</strong> so container can find libraries</li>
+        </ol>
+
+        <div class="info">
+            <strong>💡 Why Version Matching Matters:</strong> CUDA libraries in the container must be ABI-compatible with the host driver. This is why PyTorch images specify CUDA versions (e.g., <code>pytorch/pytorch:2.0.1-cuda11.8</code>). The container toolkit ensures the <em>driver</em> libraries match, while the container supplies the <em>CUDA toolkit</em> libraries.
+        </div>
+
+        <h2>AMD GPU Architecture (ROCm)</h2>
+
+        <h3>The Critical /dev/kfd Device</h3>
+
+        <p>AMD ROCm's architecture differs significantly from NVIDIA. The most important component is <code>/dev/kfd</code> (Kernel Fusion Driver):</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Device</th>
+                    <th>Purpose</th>
+                    <th>Impact if Missing</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>/dev/kfd</code></td>
+                    <td>GPU compute interface (HSA)</td>
+                    <td><strong>❌ No GPU compute</strong> - PyTorch/TensorFlow won't detect GPU</td>
+                </tr>
+                <tr>
+                    <td><code>/dev/dri/cardN</code></td>
+                    <td>GPU device file</td>
+                    <td>Monitoring only (rocm-smi works, but compute doesn't)</td>
+                </tr>
+                <tr>
+                    <td><code>/dev/dri/renderDN</code></td>
+                    <td>Render node (optional)</td>
+                    <td>Only needed for graphics workloads</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="warning">
+            <strong>⚠️ Common Mistake:</strong> Many users pass through <code>/dev/dri/card*</code> but forget <code>/dev/kfd</code>. This makes <code>rocm-smi</code> work (giving false confidence), but PyTorch/TensorFlow fail with "CUDA (ROCm) available: False" because they need KFD for compute operations.
+        </div>
+
+        <h3>Why /dev/kfd is Special</h3>
+
+        <p>The Kernel Fusion Driver provides the HSA (Heterogeneous System Architecture) interface:</p>
+
+        <ul>
+            <li><strong>Unified memory model</strong>: Allows CPU and GPU to share memory pointers</li>
+            <li><strong>Kernel scheduling</strong>: Manages GPU workload dispatch</li>
+            <li><strong>Signal handling</strong>: Coordinates async operations between CPU and GPU</li>
+        </ul>
+
+        <p>Without <code>/dev/kfd</code>, the GPU is essentially "view only"—you can query it, but not run compute kernels on it.</p>
+
+        <h3>amd-container-toolkit</h3>
+
+        <p>Similar to NVIDIA, AMD provides <code>amd-container-toolkit</code> (via <code>amdgpu-dkms</code> package). It:</p>
+
+        <ol>
+            <li><strong>Generates CDI spec</strong>: Discovers AMD GPUs and writes <code>/etc/cdi/amd.yaml</code></li>
+            <li><strong>Mounts ROCm libraries</strong>: Bind-mounts <code>/opt/rocm</code> libraries into container</li>
+            <li><strong>Sets HSA environment</strong>: Configures <code>HSA_OVERRIDE_GFX_VERSION</code> if needed</li>
+        </ol>
+
+        <h2>Discrete vs Integrated GPUs</h2>
+
+        <h3>Discrete GPUs (Recommended)</h3>
+
+        <p><strong>Examples:</strong> NVIDIA RTX 3070/4090, AMD RX 7900 XT, Radeon Pro W6800</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Characteristic</th>
+                    <th>Impact on Concourse</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Dedicated VRAM</strong></td>
+                    <td>✅ Predictable memory allocation, no contention with system RAM</td>
+                </tr>
+                <tr>
+                    <td><strong>PCI-e connection</strong></td>
+                    <td>✅ Full bandwidth for data transfers</td>
+                </tr>
+                <tr>
+                    <td><strong>Fully supported by ROCm/CUDA</strong></td>
+                    <td>✅ No workarounds needed</td>
+                </tr>
+                <tr>
+                    <td><strong>Better cooling</strong></td>
+                    <td>✅ Can sustain higher workloads</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Integrated GPUs (Limited Support)</h3>
+
+        <p><strong>Examples:</strong> AMD Phoenix (Ryzen 7xxx laptops), Intel Iris Xe, NVIDIA Tegra</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Characteristic</th>
+                    <th>Impact on Concourse</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Shared system RAM</strong></td>
+                    <td>⚠️ Memory bandwidth bottleneck, competes with system processes</td>
+                </tr>
+                <tr>
+                    <td><strong>Often unofficial GFX versions</strong></td>
+                    <td>❌ ROCm rejects unsupported architectures (e.g., gfx1103 for Phoenix)</td>
+                </tr>
+                <tr>
+                    <td><strong>Lower power budget</strong></td>
+                    <td>⚠️ Thermal throttling under sustained load</td>
+                </tr>
+                <tr>
+                    <td><strong>Requires workarounds</strong></td>
+                    <td>❌ <code>HSA_OVERRIDE_GFX_VERSION</code> needed for AMD integrated GPUs</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>The HSA_OVERRIDE_GFX_VERSION Workaround</h3>
+
+        <p>For integrated AMD GPUs (like Phoenix/gfx1103), ROCm doesn't officially support the architecture. However, you can force ROCm to use kernels from a similar architecture:</p>
+
+        <pre><code class="language-bash"># In your pipeline's task config:
+env:
+  HSA_OVERRIDE_GFX_VERSION: "11.0.0"  # For gfx1103 (Phoenix)
+
+run:
+  path: python
+  args:
+    - train.py</code></pre>
+
+        <p><strong>Why this works:</strong> ROCm checks the GPU's GFX version and loads optimized kernels for that architecture. By overriding, you tell ROCm "pretend this is gfx1100 and use those kernels." It's suboptimal but functional.</p>
+
+        <div class="note">
+            <strong>Trade-off:</strong> This workaround enables compute but with 20-40% performance penalty compared to native support. Acceptable for development/testing, but not recommended for production ML training.
+        </div>
+
+        <h2>OCI Runtime Wrapper: How Folder Mounting Works</h2>
+
+        <p>The charm installs a custom <code>runc-wrapper</code> script that intercepts container creation to inject folder mounts from <code>/srv</code>:</p>
+
+        <h3>Installation Process</h3>
+
+        <ol>
+            <li><strong>Backup original runc</strong>: <code>mv /usr/bin/runc /opt/bin/runc.real</code></li>
+            <li><strong>Install wrapper</strong>: Copy wrapper script to <code>/opt/bin/runc-wrapper</code></li>
+            <li><strong>Symlink</strong>: <code>ln -s /opt/bin/runc-wrapper /var/lib/concourse/bin/runc</code></li>
+            <li><strong>PATH priority</strong>: Worker config sets <code>PATH=/opt/bin:...</code> to find wrapper first</li>
+        </ol>
+
+        <h3>Runtime Behavior</h3>
+
+        <p>When containerd creates a container, it calls <code>runc create --bundle /path/to/bundle</code>. The wrapper:</p>
+
+        <pre><code class="language-bash">#!/bin/bash
+# 1. Parse --bundle argument
+BUNDLE="$bundle_path_from_args"
+
+# 2. Discover folders in /srv
+for folder in /srv/*; do
+    FOLDER_NAME=$(basename "$folder")
+    
+    # 3. Determine read-only vs writable
+    if [[ "$FOLDER_NAME" == *"_writable"* ]]; then
+        MOUNT_OPTIONS="rbind,rw"
+    else
+        MOUNT_OPTIONS="rbind,ro"
+    fi
+    
+    # 4. Inject mount into config.json
+    jq '.mounts += [{
+        "destination": "/srv/'$FOLDER_NAME'",
+        "type": "bind",
+        "source": "'$folder'",
+        "options": ["'$MOUNT_OPTIONS'"]
+    }]' "$BUNDLE/config.json" > "$BUNDLE/config.json.new"
+    
+    mv "$BUNDLE/config.json.new" "$BUNDLE/config.json"
+done
+
+# 5. Call real runc (or nvidia-container-runtime if GPU)
+exec /opt/bin/runc.real "$@"</code></pre>
+
+        <p><strong>Key design choices:</strong></p>
+
+        <ul>
+            <li><strong>Zero-configuration</strong>: Workers automatically discover folders, no pipeline changes</li>
+            <li><strong>Read-only by default</strong>: Data safety—tasks can't corrupt datasets</li>
+            <li><strong>Writable suffix</strong>: <code>_writable</code> or <code>_rw</code> enables writes for model outputs</li>
+            <li><strong>Transparent</strong>: Tasks see mounts as if they were baked into the image</li>
+        </ul>
+
+        <h2>GPU + Folder Mounting: The Combined Flow</h2>
+
+        <p>When both GPU and folder mounting are enabled, the call chain is:</p>
+
+        <pre><code>containerd
+  ↓
+/var/lib/concourse/bin/runc (symlink to wrapper)
+  ↓
+/opt/bin/runc-wrapper
+  • Injects /srv folder mounts into config.json
+  ↓
+/opt/bin/runc.real → nvidia-container-runtime
+  • Injects GPU devices + libraries
+  ↓
+Real runc
+  • Creates container with GPU + datasets</code></pre>
+
+        <div class="success">
+            <strong>Composability:</strong> The wrapper and GPU runtime are independent. You can use folder mounting without GPUs, or GPUs without folder mounting. They compose cleanly because each modifies a different part of the OCI spec (mounts vs devices).
+        </div>
+
+        <h2>Performance Considerations</h2>
+
+        <h3>Bind Mount Performance</h3>
+
+        <p>Folder mounts use <strong>bind mounts</strong>, not copying:</p>
+
+        <ul>
+            <li><strong>Zero copy overhead</strong>: Files aren't duplicated into container</li>
+            <li><strong>Same inode</strong>: Host and container see the same data</li>
+            <li><strong>Page cache shared</strong>: OS caches data once, benefits both host and container</li>
+        </ul>
+
+        <p>For a 100GB dataset:</p>
+
+        <pre><code>Copy-based approach: 100GB disk + 100GB disk + 5 minutes = 200GB total
+Bind mount approach: 100GB disk + 0s = 100GB total</code></pre>
+
+        <h3>GPU Overhead</h3>
+
+        <p>GPU passthrough via nvidia-container-toolkit or amd-container-toolkit has <strong>near-zero overhead</strong> because:</p>
+
+        <ul>
+            <li>GPU devices are passed through at kernel level (no emulation)</li>
+            <li>Libraries are bind-mounted (no copying)</li>
+            <li>Compute happens directly on GPU hardware</li>
+        </ul>
+
+        <p>Benchmarks show container GPU performance is typically 98-100% of bare metal.</p>
+
+        <h2>Debugging GPU Issues</h2>
+
+        <h3>NVIDIA: GPU Not Detected</h3>
+
+        <pre><code class="language-bash"># 1. Check devices exist on host
+juju ssh worker/0
+ls -la /dev/nvidia*
+# Should show: /dev/nvidia0, /dev/nvidiactl, /dev/nvidia-uvm
+
+# 2. Verify nvidia-container-toolkit installed
+which nvidia-container-runtime
+# Should show: /usr/bin/nvidia-container-runtime
+
+# 3. Check containerd config
+sudo cat /etc/containerd/config.toml | grep nvidia
+# Should show: default_runtime_name = "nvidia"
+
+# 4. Test GPU in container manually
+sudo ctr run --rm --runtime io.containerd.runc.v2 \
+  docker.io/nvidia/cuda:13.1.0-base-ubuntu24.04 test nvidia-smi</code></pre>
+
+        <h3>AMD: /dev/kfd Missing</h3>
+
+        <pre><code class="language-bash"># 1. Check /dev/kfd exists
+juju ssh worker/0
+ls -la /dev/kfd
+# Must exist! If not, amdgpu driver issue
+
+# 2. Check permissions
+ls -la /dev/kfd
+# Should show: crw-rw-rw- 1 root render /dev/kfd
+
+# 3. Verify amd-container-toolkit CDI spec
+cat /etc/cdi/amd.yaml
+# Should list GPU devices including kfd
+
+# 4. Test in container
+sudo ctr run --rm docker.io/rocm/pytorch:latest test \
+  sh -c "ls -la /dev/kfd && python -c 'import torch; print(torch.cuda.is_available())'"</code></pre>
+
+        <h2>Related Topics</h2>
+
+        <ul>
+            <li><strong>Tutorial:</strong> <a href="../tutorials/gpu-workers.html">GPU-Enabled Workers</a> - Step-by-step GPU setup</li>
+            <li><strong>Tutorial:</strong> <a href="../tutorials/dataset-mounting.html">Dataset Mounting</a> - Using folder mounting with ML workloads</li>
+            <li><strong>How-To:</strong> <a href="../howto/configure-gpu.html">How to Configure GPU Workers</a> - Quick GPU configuration</li>
+            <li><strong>Reference:</strong> <a href="../reference/rocm-verification.html">ROCm Verification Guide</a> - AMD GPU troubleshooting</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

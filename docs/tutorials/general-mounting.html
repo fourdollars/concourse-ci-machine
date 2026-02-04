@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Learn how to mount any folder into your Concourse CI tasks - datasets, build caches, artifacts, and more">
+    <title>Mounting Folders Into Tasks - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+        }
+
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumbs a {
+            color: var(--tutorial-color);
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .edit-link a:hover {
+            text-decoration: underline;
+        }
+
+        .content h1 {
+            color: var(--tutorial-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--tutorial-color);
+        }
+
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .content h2 {
+            color: var(--tutorial-color);
+            font-size: 1.8rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .content h3 {
+            color: var(--text-dark);
+            font-size: 1.3rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 1rem;
+            margin-left: 2rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .content code {
+            background: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            font-size: 0.9rem;
+        }
+
+        .content a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .note, .warning, .success {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+
+        .note {
+            background: #e7f2fa;
+            border-color: var(--secondary-color);
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background: #fff4e6;
+            border-color: var(--warning-color);
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .success {
+            background: #e6f4ea;
+            border-color: var(--success-color);
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        .step-box {
+            background: var(--bg-light);
+            border-left: 4px solid var(--tutorial-color);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-radius: 6px;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: var(--tutorial-color);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: var(--bg-light);
+            padding: 1.5rem;
+            border-radius: 6px;
+            border-left: 4px solid var(--tutorial-color);
+        }
+
+        .feature-card h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: var(--tutorial-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: var(--bg-light);
+            font-weight: 600;
+            color: var(--tutorial-color);
+        }
+
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-light);
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 1rem;
+        }
+
+        .footer-links a {
+            margin: 0 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 0 1rem 2rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .content h1 {
+                font-size: 2rem;
+            }
+
+            .content h2 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#tutorials">Tutorials</a> &gt; 
+        <span>Mounting Folders Into Tasks</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/tutorials/general-mounting.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Mounting Folders Into Tasks</h1>
+        <p class="subtitle">Learn how to automatically mount any folder into your Concourse CI tasks - zero configuration, maximum flexibility</p>
+
+        <div class="note">
+            <strong>💡 What you'll learn:</strong>
+            <ul>
+                <li>How the automatic folder discovery system works</li>
+                <li>Mounting read-only folders for datasets, dependencies, and configs</li>
+                <li>Creating writable folders for outputs, caches, and artifacts</li>
+                <li>Using multiple folders in complex workflows</li>
+            </ul>
+        </div>
+
+        <h2>The Magic of /srv</h2>
+
+        <p>The Concourse CI Machine charm automatically discovers and mounts <strong>any folder under <code>/srv</code></strong> in your worker containers. This simple convention gives you incredible flexibility:</p>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>🔍 Zero Configuration</h3>
+                <p>Just create a folder under <code>/srv</code> and it's automatically available in all tasks</p>
+            </div>
+            <div class="feature-card">
+                <h3>🔒 Safe by Default</h3>
+                <p>All folders are read-only unless explicitly marked writable with <code>_writable</code> suffix</p>
+            </div>
+            <div class="feature-card">
+                <h3>⚡ Works Everywhere</h3>
+                <p>GPU workers, CPU workers, auto mode, distributed mode - all supported</p>
+            </div>
+            <div class="feature-card">
+                <h3>🎯 No Pipeline Changes</h3>
+                <p>Your existing pipelines work as-is. Just reference the folder paths.</p>
+            </div>
+        </div>
+
+        <h2>Folder Naming Rules</h2>
+
+        <p>Understanding the naming convention is key to using the system effectively:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Folder Name</th>
+                    <th>Mount Mode</th>
+                    <th>Use Case</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>/srv/datasets</code></td>
+                    <td>Read-only</td>
+                    <td>Training data, reference files</td>
+                </tr>
+                <tr>
+                    <td><code>/srv/models</code></td>
+                    <td>Read-only</td>
+                    <td>Pre-trained models, weights</td>
+                </tr>
+                <tr>
+                    <td><code>/srv/configs</code></td>
+                    <td>Read-only</td>
+                    <td>Configuration files, schemas</td>
+                </tr>
+                <tr>
+                    <td><code>/srv/outputs_writable</code></td>
+                    <td><strong>Read-write</strong></td>
+                    <td>Task results, trained models</td>
+                </tr>
+                <tr>
+                    <td><code>/srv/cache_rw</code></td>
+                    <td><strong>Read-write</strong></td>
+                    <td>Build cache, temporary files</td>
+                </tr>
+                <tr>
+                    <td><code>/srv/artifacts_writable</code></td>
+                    <td><strong>Read-write</strong></td>
+                    <td>Build artifacts, reports</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="warning">
+            <strong>⚠️ Naming is critical:</strong> Only folders ending with <code>_writable</code> or <code>_rw</code> get write permissions. Everything else is read-only for data safety.
+        </div>
+
+        <h2>Quick Start: Mount Your First Folder</h2>
+
+        <div class="step-box">
+            <p><span class="step-number">1</span> <strong>Deploy a Concourse CI worker</strong></p>
+            <pre><code class="language-bash"># Deploy web + worker
+juju deploy concourse-ci-machine --channel edge web --config mode=web
+juju deploy concourse-ci-machine --channel edge worker --config mode=worker
+juju integrate web:tsa worker:flight
+
+# Or use auto mode (simpler)
+juju deploy concourse-ci-machine --channel edge concourse --config mode=auto -n 2</code></pre>
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">2</span> <strong>Find your worker's LXC container</strong></p>
+            <pre><code class="language-bash"># List LXC containers
+lxc list
+
+# Look for containers starting with "juju-"
+# Example: juju-abc123-2 (worker unit)</code></pre>
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">3</span> <strong>Mount a folder from your host machine</strong></p>
+            <pre><code class="language-bash"># Create dataset directory on host
+mkdir -p /data/my-datasets
+echo "Hello from the host!" &gt; /data/my-datasets/test.txt
+
+# Mount it to /srv/datasets in the container (read-only)
+lxc config device add juju-abc123-2 datasets disk \
+  source=/data/my-datasets \
+  path=/srv/datasets \
+  readonly=true
+
+# Verify the mount
+lxc exec juju-abc123-2 -- ls -la /srv/datasets/</code></pre>
+        </div>
+
+        <div class="success">
+            <strong>✅ That's it!</strong> The folder is now automatically available in all tasks running on this worker. No restart needed!
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">4</span> <strong>Test it in a Concourse CI task</strong></p>
+            <pre><code class="language-yaml">jobs:
+  - name: test-folder-mount
+    plan:
+      - task: verify-mount
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Checking /srv ==="
+                ls -la /srv/
+                
+                echo "\n=== Reading test file ==="
+                cat /srv/datasets/test.txt
+                
+                echo "\n✅ Mount verification successful!"</code></pre>
+        </div>
+
+        <h2>Real-World Example: ML Training Pipeline</h2>
+
+        <p>Let's build a complete machine learning workflow with multiple folders:</p>
+
+        <h3>Step 1: Set Up Multiple Folders</h3>
+
+        <pre><code class="language-bash"># On host: Create directory structure
+mkdir -p /data/ml-workflow/{datasets,pretrained,outputs}
+
+# Add some example data
+echo "Training data goes here" &gt; /data/ml-workflow/datasets/train.txt
+echo "Pretrained model" &gt; /data/ml-workflow/pretrained/model.pth
+
+# Mount datasets (read-only)
+lxc config device add juju-abc123-2 datasets disk \
+  source=/data/ml-workflow/datasets \
+  path=/srv/datasets \
+  readonly=true
+
+# Mount pretrained models (read-only)
+lxc config device add juju-abc123-2 pretrained disk \
+  source=/data/ml-workflow/pretrained \
+  path=/srv/pretrained \
+  readonly=true
+
+# Mount outputs directory (WRITABLE - note the suffix!)
+lxc config device add juju-abc123-2 outputs disk \
+  source=/data/ml-workflow/outputs \
+  path=/srv/outputs_writable
+
+# Verify all mounts
+lxc exec juju-abc123-2 -- ls -la /srv/</code></pre>
+
+        <h3>Step 2: Create the Pipeline</h3>
+
+        <pre><code class="language-yaml">jobs:
+  - name: train-model
+    plan:
+      - task: training
+        tags: [cuda]  # GPU worker
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: pytorch/pytorch
+              tag: latest
+          run:
+            path: python3
+            args:
+              - -c
+              - |
+                import os
+                
+                # Read from read-only folders
+                datasets_dir = '/srv/datasets'
+                pretrained_dir = '/srv/pretrained'
+                
+                print(f"Loading data from {datasets_dir}")
+                print(f"Available files: {os.listdir(datasets_dir)}")
+                
+                print(f"\nLoading pretrained model from {pretrained_dir}")
+                print(f"Available models: {os.listdir(pretrained_dir)}")
+                
+                # Write to writable folder
+                output_dir = '/srv/outputs_writable'
+                output_file = f'{output_dir}/trained-model.pth'
+                
+                print(f"\nTraining model...")
+                # Your training code here
+                
+                print(f"Saving model to {output_file}")
+                with open(output_file, 'w') as f:
+                    f.write("Trained model data")
+                
+                print("✅ Training complete!")</code></pre>
+
+        <h3>Step 3: Retrieve Results</h3>
+
+        <pre><code class="language-bash"># After pipeline runs, check outputs on host
+ls -la /data/ml-workflow/outputs/
+cat /data/ml-workflow/outputs/trained-model.pth</code></pre>
+
+        <h2>Common Use Cases</h2>
+
+        <h3>Build Cache for Faster Builds</h3>
+
+        <pre><code class="language-bash"># Create build cache directory
+lxc config device add juju-abc123-2 cache disk \
+  source=/cache/build-cache \
+  path=/srv/cache_rw
+
+# Use in pipeline
+jobs:
+  - name: build-app
+    plan:
+      - task: compile
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: golang, tag: latest}
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                export GOCACHE=/srv/cache_rw/go-build
+                export GOMODCACHE=/srv/cache_rw/go-mod
+                
+                # Subsequent builds will be much faster!
+                go build -o app ./...</code></pre>
+
+        <h3>Shared Configuration Files</h3>
+
+        <pre><code class="language-bash"># Mount shared configs (read-only)
+lxc config device add juju-abc123-2 configs disk \
+  source=/configs/shared \
+  path=/srv/configs \
+  readonly=true</code></pre>
+
+        <pre><code class="language-yaml">jobs:
+  - name: deploy
+    plan:
+      - task: deployment
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: ubuntu}
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                # Read shared configuration
+                CONFIG_FILE=/srv/configs/deployment.yaml
+                
+                if [ -f "$CONFIG_FILE" ]; then
+                  echo "Using config from $CONFIG_FILE"
+                  cat "$CONFIG_FILE"
+                else
+                  echo "Config not found!"
+                  exit 1
+                fi</code></pre>
+
+        <h3>Test Artifacts and Reports</h3>
+
+        <pre><code class="language-bash"># Mount reports directory (writable)
+lxc config device add juju-abc123-2 reports disk \
+  source=/reports/test-results \
+  path=/srv/reports_writable</code></pre>
+
+        <pre><code class="language-yaml">jobs:
+  - name: run-tests
+    plan:
+      - task: test
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: {repository: node, tag: latest}
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                # Run tests and save reports
+                npm test -- --reporter=json &gt; /srv/reports_writable/test-results.json
+                
+                echo "Tests complete. Results saved to /srv/reports_writable/"</code></pre>
+
+        <h2>Advanced: Multiple Workers with Different Folders</h2>
+
+        <p>Each worker can have its own set of mounted folders:</p>
+
+        <pre><code class="language-bash"># GPU Worker 1: ML datasets
+lxc config device add juju-abc123-2 datasets disk \
+  source=/data/ml-datasets \
+  path=/srv/datasets \
+  readonly=true
+
+# CPU Worker 2: Build tools
+lxc config device add juju-xyz789-3 tools disk \
+  source=/tools/build \
+  path=/srv/build-tools \
+  readonly=true
+
+# Use tags to target specific workers
+jobs:
+  - name: ml-training
+    plan:
+      - task: train
+        tags: [cuda]  # Routes to GPU worker with /srv/datasets
+        # ...
+  
+  - name: compile
+    plan:
+      - task: build
+        tags: [cpu]  # Routes to CPU worker with /srv/build-tools
+        # ...</code></pre>
+
+        <h2>Monitoring Folder Status</h2>
+
+        <p>The worker automatically reports mounted folder counts in its status:</p>
+
+        <pre><code class="language-bash">juju status worker
+
+# Example output:
+# worker/0  active  idle  10.0.0.5  Worker ready (3 folders: 2 RO, 1 RW)
+#                                                └─ Folder status</code></pre>
+
+        <h2>Troubleshooting</h2>
+
+        <h3>Folder not visible in tasks</h3>
+
+        <p><strong>Check 1: Path must be under /srv</strong></p>
+        <pre><code class="language-bash"># ✅ Correct - under /srv
+path=/srv/datasets
+
+# ❌ Wrong - not under /srv
+path=/mnt/datasets</code></pre>
+
+        <p><strong>Check 2: Verify LXC mount</strong></p>
+        <pre><code class="language-bash">lxc config device show juju-abc123-2
+lxc exec juju-abc123-2 -- ls -la /srv/</code></pre>
+
+        <h3>Cannot write to writable folder</h3>
+
+        <p><strong>Check 1: Folder name must end with _writable or _rw</strong></p>
+        <pre><code class="language-bash"># ✅ Writable
+path=/srv/outputs_writable
+path=/srv/cache_rw
+
+# ❌ Read-only (no suffix)
+path=/srv/outputs</code></pre>
+
+        <p><strong>Check 2: LXC device must not be readonly</strong></p>
+        <pre><code class="language-bash"># ✅ Correct for writable folder
+lxc config device add ... \
+  path=/srv/outputs_writable
+  # No readonly=true!
+
+# ❌ Wrong - conflicts with _writable suffix
+lxc config device add ... \
+  path=/srv/outputs_writable \
+  readonly=true  # Don't do this!</code></pre>
+
+        <h3>Permission denied errors</h3>
+
+        <pre><code class="language-bash"># Make files readable by all users
+chmod -R a+rX /data/my-datasets/
+
+# For writable folders, ensure write permissions
+chmod -R 777 /data/outputs/</code></pre>
+
+        <h2>What You've Accomplished</h2>
+
+        <div class="success">
+            <strong>🎉 Congratulations!</strong> You've mastered:
+            <ul>
+                <li>✅ Understanding the <code>/srv</code> automatic discovery system</li>
+                <li>✅ Mounting read-only folders for datasets and dependencies</li>
+                <li>✅ Creating writable folders for outputs and caches</li>
+                <li>✅ Building complex workflows with multiple folders</li>
+                <li>✅ Troubleshooting common mounting issues</li>
+            </ul>
+        </div>
+
+        <h2>Next Steps</h2>
+
+        <ul>
+            <li><strong><a href="shared-storage-quickstart.html">Shared Storage</a></strong> - Share binaries across multiple workers for faster upgrades</li>
+            <li><strong><a href="../howto/scale-workers.html">Scale Workers</a></strong> - Add more workers to handle increased load</li>
+            <li><strong><a href="../explanation/container-runtime.html">Container Runtime Deep Dive</a></strong> - Understand how the OCI wrapper works</li>
+        </ul>
+
+        <div class="note">
+            <strong>💡 Pro Tip:</strong> Start with read-only folders by default. Only create writable folders when you explicitly need task output persistence. This prevents accidental data corruption and makes your pipelines more predictable!
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a>
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

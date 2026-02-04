@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Learn how to set up shared storage for Concourse CI to reduce disk usage and speed up deployments">
+    <title>Setting Up Shared Storage - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--tutorial-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--tutorial-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--tutorial-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .content code {
+            font-family: 'Ubuntu Mono', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .content p code, .content li code {
+            background: #f0f0f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            color: #c7254e;
+        }
+        .note {
+            background: #e7f3f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .note strong { color: var(--secondary-color); }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .success strong { color: var(--success-color); }
+        .warning {
+            background: #fff4e5;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .warning strong { color: var(--warning-color); }
+        .step-box {
+            background: var(--bg-light);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+        .step-number {
+            display: inline-block;
+            background: var(--tutorial-color);
+            color: white;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            text-align: center;
+            border-radius: 50%;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        .diagram {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            white-space: pre;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover { text-decoration: underline; }
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 768px) {
+            .content { padding: 0 1rem 2rem 1rem; }
+            .content h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#tutorials">Tutorials</a> &gt; 
+        <span>Setting Up Shared Storage</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/tutorials/shared-storage-quickstart.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Setting Up Shared Storage</h1>
+        <p class="subtitle">Learn how to deploy Concourse CI with shared storage to save disk space and speed up deployments</p>
+
+        <div class="note">
+            <strong>📚 What You'll Learn:</strong> By completing this tutorial, you'll deploy Concourse CI with shared storage that reduces disk usage by 62% and speeds up upgrades by 63% compared to traditional deployments.
+        </div>
+
+        <h2>Why Shared Storage?</h2>
+
+        <p>When you deploy multiple Concourse CI units without shared storage, each unit downloads its own copy of the binaries (~1GB each). With 3 units, that's 3GB of duplicated data!</p>
+
+        <p><strong>Shared storage solves this by:</strong></p>
+        <ul>
+            <li>Having the leader download binaries <strong>once</strong> to a shared volume</li>
+            <li>Workers detect and reuse those binaries automatically</li>
+            <li>Reducing total disk usage from N×1GB to ~1.15GB</li>
+            <li>Speeding up deployments and upgrades significantly</li>
+        </ul>
+
+        <div class="diagram">┌─────────────────────────────────────────────┐
+│  Shared Storage Volume                      │
+│  /var/lib/concourse/                        │
+├─────────────────────────────────────────────┤
+│  ├── bin/           ← Leader writes once    │
+│  │   ├── concourse                          │
+│  │   └── gdn                                │
+│  ├── keys/          ← Shared TSA keys       │
+│  └── worker/        ← Per-unit state        │
+│      ├── concourse-0/                       │
+│      ├── concourse-1/                       │
+│      └── concourse-2/                       │
+└─────────────────────────────────────────────┘
+         ▲              ▲              ▲
+         │              │              │
+    Leader Unit    Worker Unit 1  Worker Unit 2</div>
+
+        <h2>Before You Start</h2>
+
+        <p>This tutorial assumes you have:</p>
+        <ul>
+            <li><strong>Completed</strong> the <a href="deployment-guide.html">first deployment tutorial</a> (or understand Juju basics)</li>
+            <li><strong>Juju 3.1+</strong> installed with a controller</li>
+            <li><strong>LXD cloud</strong> (we'll use local disk shared storage for simplicity)</li>
+            <li><strong>~20 minutes</strong> of time</li>
+        </ul>
+
+        <div class="info">
+            <strong>💡 About this tutorial:</strong> We'll use LXD's built-in disk device passthrough to create shared storage. This is the supported shared storage mode for the charm.
+        </div>
+
+        <h2>Step 1: Create a Model</h2>
+
+        <p>Let's start fresh with a new model for this deployment.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">1</span> <strong>Create the shared-storage model</strong></p>
+            <pre><code class="language-bash">juju add-model concourse-shared</code></pre>
+        </div>
+
+        <h2>Step 2: Deploy PostgreSQL</h2>
+
+        <p>The database is still required for Concourse CI web server.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">2</span> <strong>Deploy PostgreSQL</strong></p>
+            <pre><code class="language-bash">juju deploy postgresql --channel 16/stable --base ubuntu@24.04</code></pre>
+        </div>
+
+        <h2>Step 3: Deploy with Shared Storage</h2>
+
+        <p>Here's where it gets interesting! We'll deploy with the <code>shared-storage=lxc</code> configuration.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">3</span> <strong>Deploy Concourse CI with LXC shared storage mode</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine concourse -n 3 \
+  --config mode=auto \
+  --config shared-storage=lxc \
+  --channel edge \
+  --base ubuntu@24.04</code></pre>
+        </div>
+
+        <p><strong>What's happening?</strong></p>
+        <ul>
+            <li><code>--config shared-storage=lxc</code>: Tells the charm to expect shared storage</li>
+            <li>Units will wait for you to configure the LXC shared folder</li>
+            <li>The leader will download binaries once everyone can see the shared storage</li>
+        </ul>
+
+        <h2>Step 4: Connect Database</h2>
+
+        <div class="step-box">
+            <p><span class="step-number">4</span> <strong>Create the database relation</strong></p>
+            <pre><code class="language-bash">juju integrate concourse:postgresql postgresql:database</code></pre>
+        </div>
+
+        <h2>Step 5: Check Status (Units Will Be Waiting)</h2>
+
+        <div class="step-box">
+            <p><span class="step-number">5</span> <strong>Watch deployment status</strong></p>
+            <pre><code class="language-bash">juju status --watch 5s</code></pre>
+        </div>
+
+        <p>You should see units showing: <code>"Waiting for shared storage mount"</code></p>
+
+        <p>This is expected! Press <code>Ctrl+C</code> to stop watching.</p>
+
+        <div class="note">
+            <strong>💡 What's happening:</strong> The units know they're supposed to use shared storage, but the LXC disk device hasn't been added yet. Let's fix that!
+        </div>
+
+        <h2>Step 6: Configure LXC Shared Storage</h2>
+
+        <p>Now we'll set up the actual shared storage using the provided script.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">6</span> <strong>Create shared storage directory on host</strong></p>
+            <pre><code class="language-bash">mkdir -p /tmp/concourse-shared</code></pre>
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">7</span> <strong>Run the setup script</strong></p>
+            <pre><code class="language-bash">cd /home/sylee/projects/concourse-ci-machine
+./scripts/setup-shared-storage.sh concourse /tmp/concourse-shared</code></pre>
+        </div>
+
+        <p>This script will:</p>
+        <ul>
+            <li>Find all LXC containers for the "concourse" application</li>
+            <li>Add a disk device mounting <code>/tmp/concourse-shared</code> to <code>/var/lib/concourse</code></li>
+            <li>Enable UID/GID mapping so permissions work correctly</li>
+        </ul>
+
+        <div class="success">
+            <strong>✅ Script Output:</strong> You should see messages like "Added device 'concourse-storage' to container juju-xxxxx-0"
+        </div>
+
+        <h2>Step 7: Watch the Magic Happen</h2>
+
+        <p>Within 10 seconds (thanks to test mode), units will detect the shared storage and complete setup automatically!</p>
+
+        <div class="step-box">
+            <p><span class="step-number">8</span> <strong>Watch deployment complete</strong></p>
+            <pre><code class="language-bash">juju status --watch 5s</code></pre>
+        </div>
+
+        <p>You'll see the progression:</p>
+        <ol>
+            <li><code>concourse/0</code> (leader): Downloading binaries to shared storage</li>
+            <li><code>concourse/1-2</code> (workers): Detecting binaries, skipping download</li>
+            <li>All units: Active and ready!</li>
+        </ol>
+
+        <h2>Step 8: Verify Shared Storage is Working</h2>
+
+        <p>Let's confirm the binaries are actually shared.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">9</span> <strong>Check that units share the same filesystem</strong></p>
+            <pre><code class="language-bash"># Check unit 0
+juju ssh concourse/0 "df /var/lib/concourse | tail -1"
+
+# Check unit 1  
+juju ssh concourse/1 "df /var/lib/concourse | tail -1"</code></pre>
+        </div>
+
+        <p>The <strong>device name should be the same</strong> for both units! This proves they're using shared storage.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">10</span> <strong>Verify binaries exist only once</strong></p>
+            <pre><code class="language-bash">juju ssh concourse/0 "ls -lh /var/lib/concourse/bin/"</code></pre>
+        </div>
+
+        <p>You should see:</p>
+        <pre><code>concourse  (~900MB)
+gdn        (~20MB)</code></pre>
+
+        <p>These binaries are shared across all 3 units - not duplicated!</p>
+
+        <h2>What You've Accomplished</h2>
+
+        <p>Congratulations! You've deployed Concourse CI with shared storage. Here's what you gained:</p>
+
+        <ul>
+            <li>✅ <strong>62% disk space savings</strong> (3 units: ~1.15GB instead of 3GB)</li>
+            <li>✅ <strong>Faster deployments</strong> (workers don't download binaries)</li>
+            <li>✅ <strong>Faster upgrades</strong> (coordinated, single download)</li>
+            <li>✅ <strong>Same functionality</strong> (everything works exactly the same)</li>
+        </ul>
+
+        <div class="success">
+            <strong>🎉 Success!</strong> Your Concourse CI deployment is now using shared storage efficiently!
+        </div>
+
+        <h2>Testing the Efficiency</h2>
+
+        <p>Let's add another worker to see how fast it is with shared storage.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">11</span> <strong>Add a new worker unit</strong></p>
+            <pre><code class="language-bash">juju add-unit concourse</code></pre>
+        </div>
+
+        <p>Wait for the new unit to start, then run the setup script again:</p>
+
+        <pre><code class="language-bash">./scripts/setup-shared-storage.sh concourse /tmp/concourse-shared</code></pre>
+
+        <p>Watch how quickly the new unit becomes active! It doesn't download anything - it just uses the existing shared binaries.</p>
+
+        <h2>Next Steps</h2>
+
+        <p>Now that you understand shared storage, explore these advanced topics:</p>
+
+        <ol>
+            <li><strong>GPU Workers:</strong> Try the <a href="gpu-workers.html">GPU workers tutorial</a></li>
+            <li><strong>Dataset Mounting:</strong> Learn <a href="dataset-mounting.html">how to inject datasets into GPU tasks</a></li>
+            <li><strong>Understanding the Architecture:</strong> Read <a href="../explanation/shared-storage.html">how shared storage works internally</a></li>
+        </ol>
+
+        <h2>Troubleshooting</h2>
+
+        <h3>Units stuck on "Waiting for shared storage mount"</h3>
+        <p><strong>Solution:</strong> Make sure you ran the <code>setup-shared-storage.sh</code> script. Check it completed without errors.</p>
+
+        <h3>Permission denied errors</h3>
+        <p><strong>Solution:</strong> The script uses <code>shift=true</code> for UID mapping. If you still see permission errors, check the LXC device configuration:</p>
+        <pre><code class="language-bash">lxc config device show juju-xxxxx-0</code></pre>
+
+        <h3>Binaries not appearing</h3>
+        <p><strong>Solution:</strong> Check the leader unit is active and has completed download:</p>
+        <pre><code class="language-bash">juju debug-log --include concourse/0 --replay | grep -i download</code></pre>
+
+        <div class="success">
+            <strong>🎓 Tutorial Complete!</strong> You now know how to deploy Concourse CI with efficient shared storage. This is a production-ready pattern for multi-worker deployments!
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars" target="_blank">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">GitHub</a>
+            <a href="https://github.com/fourdollars/concourse-ci-machine/issues" target="_blank">Issues</a>
+            <a href="https://charmhub.io/concourse-ci-machine" target="_blank">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

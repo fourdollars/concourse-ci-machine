@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Configure GPU workers for Concourse CI - NVIDIA CUDA and AMD ROCm support">
+    <title>Configure GPU Workers - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+        }
+
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumbs a {
+            color: var(--howto-color);
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .edit-link a:hover {
+            text-decoration: underline;
+        }
+
+        .content h1 {
+            color: var(--howto-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--howto-color);
+        }
+
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .content h2 {
+            color: var(--howto-color);
+            font-size: 1.8rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .content h3 {
+            color: var(--text-dark);
+            font-size: 1.3rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 1rem;
+            margin-left: 2rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .content code {
+            background: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            font-size: 0.9rem;
+        }
+
+        .content a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .note, .warning, .success {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+
+        .note {
+            background: #e7f2fa;
+            border-color: var(--secondary-color);
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background: #fff4e6;
+            border-color: var(--warning-color);
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .success {
+            background: #e6f4ea;
+            border-color: var(--success-color);
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-light);
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 1rem;
+        }
+
+        .footer-links a {
+            margin: 0 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 0 1rem 2rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .content h1 {
+                font-size: 2rem;
+            }
+
+            .content h2 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#howto">How-To</a> &gt; 
+        <span>Configure GPU Workers</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/howto/configure-gpu.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Configure GPU Workers</h1>
+        <p class="subtitle">Enable NVIDIA CUDA or AMD ROCm GPU support on workers</p>
+
+        <h2>Enable NVIDIA GPU</h2>
+
+        <pre><code class="language-bash"># Deploy with CUDA enabled
+juju deploy concourse-ci-machine --channel edge worker \
+  --config mode=worker \
+  --config compute-runtime=cuda
+
+# Or enable on existing worker
+juju config worker compute-runtime=cuda</code></pre>
+
+        <h3>Add GPU to LXC Container</h3>
+
+        <pre><code class="language-bash"># Find container name (look for "juju-" prefix)
+lxc list
+
+# Add GPU device (replace with your actual container name)
+lxc config device add juju-abc123-0 gpu0 gpu
+
+# Verify
+lxc exec juju-abc123-0 -- nvidia-smi</code></pre>
+
+        <h2>Enable AMD GPU (ROCm)</h2>
+
+        <pre><code class="language-bash"># Deploy with ROCm enabled
+juju deploy concourse-ci-machine --channel edge worker \
+  --config mode=worker \
+  --config compute-runtime=rocm
+
+# Or enable on existing worker
+juju config worker compute-runtime=rocm</code></pre>
+
+        <h3>Add AMD GPU to LXC Container</h3>
+
+        <pre><code class="language-bash"># Query available GPUs (important for multi-GPU systems)
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, driver, driver_version, vendor_id, product_id}'
+
+# Add specific AMD GPU by ID (recommended)
+lxc config device add &lt;container-name&gt; gpu1 gpu id=1
+
+# Add /dev/kfd for compute workloads (REQUIRED)
+lxc config device add &lt;container-name&gt; kfd unix-char \
+  source=/dev/kfd \
+  path=/dev/kfd
+
+# Verify
+lxc exec &lt;container-name&gt; -- rocm-smi</code></pre>
+
+        <div class="warning">
+            <strong>⚠️ Multi-GPU systems:</strong> Always use <code>id=N</code> to target specific AMD GPUs when multiple vendors are present. Without ID, all GPUs are passed through causing conflicts.
+        </div>
+
+        <h2>Disable GPU</h2>
+
+        <pre><code class="language-bash">juju config worker compute-runtime=none</code></pre>
+
+        <h2>Configure GPU Device Selection</h2>
+
+        <p>Control which GPUs are exposed to tasks:</p>
+
+        <pre><code class="language-bash"># Expose all GPUs (default)
+juju config worker gpu-device-ids=all
+
+# Expose specific GPUs
+juju config worker gpu-device-ids="0,1"</code></pre>
+
+        <h2>Verify GPU Configuration</h2>
+
+        <pre><code class="language-bash"># Check worker status
+juju status worker
+# Should show: "Worker ready (GPU: 1x NVIDIA)" or "Worker ready (GPU: 1x AMD)"
+
+# Check Concourse CI worker tags
+juju ssh web/0
+fly -t local workers
+# Should show tags: cuda (or rocm), gpu-count=1</code></pre>
+
+        <h2>Test GPU in Pipeline</h2>
+
+        <h3>NVIDIA Test</h3>
+
+        <pre><code class="language-yaml">jobs:
+  - name: test-nvidia
+    plan:
+      - task: gpu-test
+        tags: [cuda]
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: nvidia/cuda
+              tag: 13.1.0-base-ubuntu24.04
+          run:
+            path: nvidia-smi</code></pre>
+
+        <h3>AMD Test</h3>
+
+        <pre><code class="language-yaml">jobs:
+  - name: test-amd
+    plan:
+      - task: gpu-test
+        tags: [rocm]
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: rocm/dev-ubuntu-24.04
+              tag: latest
+          run:
+            path: rocm-smi</code></pre>
+
+        <h2>Common Issues</h2>
+
+        <h3>NVIDIA: "GPU enabled but no GPU detected"</h3>
+
+        <pre><code class="language-bash"># Check host has GPU
+nvidia-smi
+
+# Check LXC device
+lxc config device show &lt;container-name&gt;
+
+# Check inside container
+lxc exec &lt;container-name&gt; -- nvidia-smi</code></pre>
+
+        <h3>AMD: "CUDA (ROCm) available: False" in PyTorch</h3>
+
+        <pre><code class="language-bash"># 1. Verify /dev/kfd exists
+lxc exec &lt;container-name&gt; -- ls -la /dev/kfd
+
+# 2. If missing, add it
+lxc config device add &lt;container-name&gt; kfd unix-char \
+  source=/dev/kfd path=/dev/kfd
+
+# 3. For integrated GPUs (Phoenix1/gfx1103), use override
+# In your pipeline:
+export HSA_OVERRIDE_GFX_VERSION=11.0.0</code></pre>
+
+        <h3>GPU Not Showing in Task</h3>
+
+        <ul>
+            <li>Ensure task uses <code>tags: [cuda]</code> or <code>tags: [rocm]</code></li>
+            <li>Verify GPU-enabled image (nvidia/cuda or rocm/* base)</li>
+            <li>Check worker registered: <code>fly -t local workers</code></li>
+        </ul>
+
+        <h2>Related Documentation</h2>
+
+        <ul>
+            <li><a href="../tutorials/gpu-workers.html">GPU Workers Tutorial</a> - Complete walkthrough with examples</li>
+            <li><a href="../tutorials/dataset-mounting.html">Mount Datasets</a> - Add training data to GPU tasks</li>
+            <li><a href="troubleshoot.html">Troubleshooting</a> - Fix common GPU issues</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a>
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

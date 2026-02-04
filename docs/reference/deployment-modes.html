@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - Deployment modes reference: auto, web, and worker modes with comparison and use cases.">
+    <meta name="keywords" content="Concourse CI, Juju, Deployment Modes, Auto, Web, Worker, Reference">
+    <title>Deployment Modes Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --success-color: #0e8420;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--reference-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .success {
+            background-color: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        .warning {
+            background-color: #fff4e6;
+            border-left: 4px solid #f99b11;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .warning strong {
+            color: #f99b11;
+        }
+
+        .mode-card {
+            background-color: var(--bg-white);
+            border: 2px solid var(--reference-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .mode-card h3 {
+            margin-top: 0;
+            color: var(--reference-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .mode-card .metadata {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+
+        .mode-card .metadata .item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .mode-card .metadata .label {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .mode-card .metadata .value {
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Deployment Modes Reference</h1>
+        <p class="subtitle">Complete specification of Concourse CI deployment modes</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            Deployment Modes
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>The Concourse CI Machine Charm supports three deployment modes, controlled by the <code>mode</code> configuration option. Each mode determines the role of a unit (web server or worker) and affects key distribution, scaling behavior, and resource requirements.</p>
+
+        <div class="note">
+            <strong>Note:</strong> The <code>mode</code> configuration is set at deployment time and cannot be changed dynamically. To change modes, deploy a new application with the desired mode.
+        </div>
+
+        <h2 id="mode-specifications">Mode Specifications</h2>
+
+        <div class="mode-card">
+            <h3 id="auto-mode">auto (Recommended)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Default</span>
+                    <span class="value">Yes</span>
+                </div>
+                <div class="item">
+                    <span class="label">Leader Behavior</span>
+                    <span class="value">Web Server</span>
+                </div>
+                <div class="item">
+                    <span class="label">Follower Behavior</span>
+                    <span class="value">Worker</span>
+                </div>
+                <div class="item">
+                    <span class="label">Minimum Units</span>
+                    <span class="value">2 (1 web + 1 worker)</span>
+                </div>
+                <div class="item">
+                    <span class="label">Key Distribution</span>
+                    <span class="value">Automatic (peer relation)</span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Leader unit runs web server, non-leader units run workers. Keys are automatically distributed via peer relations with zero manual intervention.</p>
+
+            <p><strong>Use Cases:</strong></p>
+            <ul>
+                <li>Production deployments requiring scalability</li>
+                <li>Multi-unit deployments with automatic role assignment</li>
+                <li>Environments where workers scale independently of web server</li>
+                <li>Default choice for most deployments</li>
+            </ul>
+
+            <div class="success">
+                <strong>Best Practice:</strong> This is the recommended mode for production. Deploy with <code>-n 3</code> (1 web + 2 workers) for high availability.
+            </div>
+
+            <p><strong>Example Deployment:</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+juju integrate concourse-ci:postgresql postgresql:database</code></pre>
+
+            <p><strong>Result:</strong></p>
+            <ul>
+                <li><code>concourse-ci/0</code> (leader): Web server with UI, API, TSA, and scheduler</li>
+                <li><code>concourse-ci/1</code>: Worker node</li>
+                <li><code>concourse-ci/2</code>: Worker node</li>
+            </ul>
+        </div>
+
+        <div class="mode-card">
+            <h3 id="web-mode">web</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Default</span>
+                    <span class="value">No</span>
+                </div>
+                <div class="item">
+                    <span class="label">Component</span>
+                    <span class="value">Web Server Only</span>
+                </div>
+                <div class="item">
+                    <span class="label">Typical Units</span>
+                    <span class="value">1</span>
+                </div>
+                <div class="item">
+                    <span class="label">Key Distribution</span>
+                    <span class="value">Via tsa relation</span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Unit runs only the web server (UI, API, TSA, scheduler). Requires separate worker application connected via <code>tsa</code> relation.</p>
+
+            <p><strong>Use Cases:</strong></p>
+            <ul>
+                <li>Independent scaling of web and worker resources</li>
+                <li>Dedicated web server with separate worker pools</li>
+                <li>Specialized worker configurations (GPU, high-memory, etc.)</li>
+                <li>Multi-application architectures</li>
+            </ul>
+
+            <p><strong>Example Deployment:</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine web --channel edge --config mode=web
+juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+juju integrate web:postgresql postgresql:database
+juju integrate web:tsa worker:flight</code></pre>
+
+            <p><strong>Result:</strong></p>
+            <ul>
+                <li><code>web/0</code>: Web server only</li>
+                <li><code>worker/0</code>, <code>worker/1</code>: Workers connected via TSA</li>
+            </ul>
+
+            <div class="note">
+                <strong>Note:</strong> The <code>tsa</code> / <code>flight</code> relation automatically handles SSH key exchange between web and worker applications.
+            </div>
+        </div>
+
+        <div class="mode-card">
+            <h3 id="worker-mode">worker</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Default</span>
+                    <span class="value">No</span>
+                </div>
+                <div class="item">
+                    <span class="label">Component</span>
+                    <span class="value">Worker Only</span>
+                </div>
+                <div class="item">
+                    <span class="label">Typical Units</span>
+                    <span class="value">2+</span>
+                </div>
+                <div class="item">
+                    <span class="label">Key Distribution</span>
+                    <span class="value">Via flight relation</span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Unit runs only the worker component. Connects to web server via <code>flight</code> relation to retrieve TSA keys and register with scheduler.</p>
+
+            <p><strong>Use Cases:</strong></p>
+            <ul>
+                <li>Paired with <code>mode=web</code> for independent scaling</li>
+                <li>GPU workers with specialized hardware</li>
+                <li>Workers with custom tags for job targeting</li>
+                <li>Workers in different availability zones or regions</li>
+            </ul>
+
+            <p><strong>Example Deployment:</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+juju integrate worker:flight web:tsa</code></pre>
+
+            <div class="warning">
+                <strong>Warning:</strong> Worker mode requires a separate web server application. Workers cannot function without connecting to a web server via the <code>flight</code> relation.
+            </div>
+
+            <p><strong>GPU Worker Example:</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker --channel edge \
+  --config mode=worker \
+  --config compute-runtime=cuda \
+  --config tag="cuda,gpu"</code></pre>
+        </div>
+
+        <h2 id="mode-comparison">Mode Comparison Table</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>auto</th>
+                    <th>web</th>
+                    <th>worker</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Web Server</strong></td>
+                    <td>Leader only</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td><strong>Worker</strong></td>
+                    <td>Non-leaders</td>
+                    <td>No</td>
+                    <td>Yes</td>
+                </tr>
+                <tr>
+                    <td><strong>Min Units</strong></td>
+                    <td>2</td>
+                    <td>1</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td><strong>Scalability</strong></td>
+                    <td>High (add units)</td>
+                    <td>Medium (separate apps)</td>
+                    <td>High (add units)</td>
+                </tr>
+                <tr>
+                    <td><strong>Key Distribution</strong></td>
+                    <td>Automatic (peers)</td>
+                    <td>Via tsa relation</td>
+                    <td>Via flight relation</td>
+                </tr>
+                <tr>
+                    <td><strong>PostgreSQL Required</strong></td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td><strong>Production Ready</strong></td>
+                    <td>✅ Yes</td>
+                    <td>✅ Yes</td>
+                    <td>✅ Yes</td>
+                </tr>
+                <tr>
+                    <td><strong>Use Case</strong></td>
+                    <td>Default production</td>
+                    <td>Independent scaling</td>
+                    <td>Specialized workers</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="scaling-behavior">Scaling Behavior</h2>
+
+        <h3>auto Mode Scaling</h3>
+        <pre><code class="language-bash"># Start with 3 units (1 web + 2 workers)
+juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+
+# Add 2 more workers (total: 1 web + 4 workers)
+juju add-unit concourse-ci -n 2</code></pre>
+        <p>Each new unit automatically becomes a worker. Leader remains web server.</p>
+
+        <h3>web + worker Mode Scaling</h3>
+        <pre><code class="language-bash"># Scale workers independently
+juju add-unit worker -n 3
+
+# Web server typically remains at 1 unit (HA not yet supported)</code></pre>
+        <p>Workers scale independently from web server. Web server does not scale horizontally (single leader).</p>
+
+        <h2 id="key-distribution">Key Distribution Mechanisms</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>Mechanism</th>
+                    <th>Keys Exchanged</th>
+                    <th>Manual Setup</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>auto</code></td>
+                    <td>Peer relation</td>
+                    <td>TSA host key, TSA public key, worker private key</td>
+                    <td>None (automatic)</td>
+                </tr>
+                <tr>
+                    <td><code>web</code></td>
+                    <td><code>tsa</code> relation (provides)</td>
+                    <td>TSA host key, TSA public key</td>
+                    <td>None (automatic)</td>
+                </tr>
+                <tr>
+                    <td><code>worker</code></td>
+                    <td><code>flight</code> relation (requires)</td>
+                    <td>Worker public key (sent to web)</td>
+                    <td>None (automatic)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="success">
+            <strong>Best Practice:</strong> All modes handle key distribution automatically. No manual key copying or configuration required.
+        </div>
+
+        <h2 id="recommendations">Deployment Recommendations</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Scenario</th>
+                    <th>Recommended Mode</th>
+                    <th>Reasoning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Production CI/CD</td>
+                    <td><code>auto</code></td>
+                    <td>Simplest production setup with automatic scaling and key management</td>
+                </tr>
+                <tr>
+                    <td>GPU Workers</td>
+                    <td><code>web</code> + <code>worker</code></td>
+                    <td>Separate worker pools for GPU and CPU workloads</td>
+                </tr>
+                <tr>
+                    <td>High Traffic</td>
+                    <td><code>auto</code> (n≥5)</td>
+                    <td>Scale workers to handle increased job throughput</td>
+                </tr>
+                <tr>
+                    <td>Development</td>
+                    <td><code>auto</code> (n=2)</td>
+                    <td>Minimal resource usage for testing (1 web + 1 worker)</td>
+                </tr>
+                <tr>
+                    <td>Multi-Region</td>
+                    <td><code>web</code> + <code>worker</code> (multiple)</td>
+                    <td>Deploy workers in different regions/zones</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="constraints">Constraints and Limitations</h2>
+
+        <h3>auto Mode</h3>
+        <ul>
+            <li>Requires minimum 2 units for functional workers (unit 0 becomes web)</li>
+            <li>Leader election: If leader unit is removed, Juju elects new leader (becomes web server, old leader becomes worker if still present)</li>
+            <li>Cannot run web server on non-leader units</li>
+        </ul>
+
+        <h3>web Mode</h3>
+        <ul>
+            <li>Requires PostgreSQL relation (blocked status without it)</li>
+            <li>Does not support horizontal scaling (single web server only)</li>
+            <li>Must be paired with <code>worker</code> mode units for job execution</li>
+        </ul>
+
+        <h3>worker Mode</h3>
+        <ul>
+            <li>Requires <code>flight</code> relation to web server (blocked status without it)</li>
+            <li>Cannot function independently (no scheduler, no API)</li>
+            <li>Worker tags must be unique if targeting specific jobs</li>
+        </ul>
+
+        <div class="note">
+            <strong>Note:</strong> The <code>mode</code> configuration is immutable after deployment. To change modes, you must deploy a new application with the desired mode and migrate pipelines.
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

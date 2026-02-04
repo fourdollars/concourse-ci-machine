@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - Complete configuration reference with all available options, types, defaults, and descriptions.">
+    <meta name="keywords" content="Concourse CI, Juju, Configuration, Reference, Options, Settings">
+    <title>Configuration Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--reference-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background-color: #fff4e6;
+            border-left: 4px solid #f99b11;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .warning strong {
+            color: #f99b11;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Configuration Reference</h1>
+        <p class="subtitle">Complete configuration options for Concourse CI Machine Charm</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            Configuration Options
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>This reference lists all configuration options available for the Concourse CI Machine Charm. Configuration is managed through Juju's <code>juju config</code> command. Changes to most options trigger automatic service restarts with zero downtime.</p>
+
+        <div class="note">
+            <strong>Note:</strong> Configuration changes are applied immediately and persist across charm upgrades. Use <code>juju config &lt;application&gt; --reset &lt;option&gt;</code> to restore defaults.
+        </div>
+
+        <h2 id="core-options">Core Deployment Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>mode</code></td>
+                    <td>string</td>
+                    <td><code>auto</code></td>
+                    <td>Deployment mode for this unit:<br>
+                        • <code>auto</code>: Leader runs web server, non-leaders run workers (recommended for multi-unit)<br>
+                        • <code>web</code>: Only run web server<br>
+                        • <code>worker</code>: Only run worker</td>
+                </tr>
+                <tr>
+                    <td><code>version</code></td>
+                    <td>string</td>
+                    <td><code>""</code> (latest)</td>
+                    <td>Concourse CI version to deploy (e.g., <code>8.0.1</code>). Leave empty to automatically use the latest stable release from GitHub.</td>
+                </tr>
+                <tr>
+                    <td><code>shared-storage</code></td>
+                    <td>string</td>
+                    <td><code>none</code></td>
+                    <td>Shared storage mode for LXC environments:<br>
+                        • <code>none</code>: Disable shared storage, each unit downloads binaries independently<br>
+                        • <code>lxc</code>: Enable LXC-mounted shared storage (requires <code>.lxc_shared_storage</code> marker file and manual LXC disk device setup)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="web-server-options">Web Server Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>web-port</code></td>
+                    <td>int</td>
+                    <td><code>8080</code></td>
+                    <td>Port for Concourse web UI and API server. Supports dynamic changes with automatic service restart. Privileged ports (&lt; 1024) are supported via <code>CAP_NET_BIND_SERVICE</code>.</td>
+                </tr>
+                <tr>
+                    <td><code>external-url</code></td>
+                    <td>string</td>
+                    <td><code>""</code> (auto-detect)</td>
+                    <td>External URL for Concourse web UI (used for redirects and webhooks). If not set, automatically detects and uses <code>http://&lt;unit-ip&gt;:&lt;web-port&gt;</code>. Set this to your actual external URL if behind a proxy, load balancer, or NAT.</td>
+                </tr>
+                <tr>
+                    <td><code>tls-enabled</code></td>
+                    <td>boolean</td>
+                    <td><code>false</code></td>
+                    <td>Enable TLS/HTTPS for Concourse web UI. Currently requires manual TLS certificate configuration (future enhancement will support TLS relations).</td>
+                </tr>
+                <tr>
+                    <td><code>initial-admin-username</code></td>
+                    <td>string</td>
+                    <td><code>admin</code></td>
+                    <td>Initial admin username for Concourse authentication. Password is auto-generated and stored in Juju peer relation data (retrieve with <code>juju run &lt;app&gt;/leader get-admin-password</code>).</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="worker-options">Worker Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>worker-procs</code></td>
+                    <td>int</td>
+                    <td><code>1</code></td>
+                    <td>Number of worker processes to spawn on this unit. Controls parallelism for job execution. Increasing this value allows more concurrent tasks but requires more system resources.</td>
+                </tr>
+                <tr>
+                    <td><code>tag</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Comma-separated list of tags to assign to this worker. Tags are added to <code>CONCOURSE_TAG</code> and merged with any GPU-generated tags (e.g., <code>cuda</code>, <code>rocm</code>). Example: <code>"gpu,high-mem,ssd"</code></td>
+                </tr>
+                <tr>
+                    <td><code>container-placement-strategy</code></td>
+                    <td>string</td>
+                    <td><code>volume-locality</code></td>
+                    <td>Container placement strategy for worker resource caching:<br>
+                        • <code>volume-locality</code>: Place containers near cached volumes (recommended)<br>
+                        • <code>random</code>: Randomly distribute containers<br>
+                        • <code>fewest-build-containers</code>: Balance load across workers</td>
+                </tr>
+                <tr>
+                    <td><code>max-concurrent-downloads</code></td>
+                    <td>int</td>
+                    <td><code>10</code></td>
+                    <td>Maximum number of concurrent resource downloads per worker. Higher values improve throughput but increase network and disk I/O load.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="container-runtime-options">Container Runtime Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>containerd-dns-proxy-enable</code></td>
+                    <td>boolean</td>
+                    <td><code>false</code></td>
+                    <td>Enable containerd DNS proxy for container name resolution. When <code>false</code>, containers use external DNS servers directly (specified by <code>containerd-dns-server</code>).</td>
+                </tr>
+                <tr>
+                    <td><code>containerd-dns-server</code></td>
+                    <td>string</td>
+                    <td><code>1.1.1.1,8.8.8.8</code></td>
+                    <td>Comma-separated list of DNS servers for containerd containers. Used when <code>containerd-dns-proxy-enable</code> is <code>false</code>. Example: <code>"1.1.1.1,8.8.8.8"</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="gpu-options">GPU Compute Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>compute-runtime</code></td>
+                    <td>string</td>
+                    <td><code>none</code></td>
+                    <td>GPU compute runtime to enable:<br>
+                        • <code>none</code>: No GPU support (default)<br>
+                        • <code>cuda</code>: Enable NVIDIA CUDA GPU support (requires NVIDIA GPU hardware and host drivers)<br>
+                        • <code>rocm</code>: Enable AMD ROCm GPU support (requires AMD GPU hardware)<br>
+                        When enabled, automatically installs container toolkit and configures GPU passthrough. Worker will be tagged with GPU capabilities for job targeting.</td>
+                </tr>
+                <tr>
+                    <td><code>gpu-device-ids</code></td>
+                    <td>string</td>
+                    <td><code>all</code></td>
+                    <td>GPU device IDs to expose to worker (comma-separated). Use <code>"all"</code> to expose all GPUs, or specify devices like <code>"0,1"</code>. Only used when <code>compute-runtime</code> is set to <code>cuda</code> or <code>rocm</code>.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="warning">
+            <strong>Warning:</strong> GPU configuration (<code>compute-runtime</code>) requires additional setup:<br>
+            • NVIDIA CUDA: Host must have NVIDIA drivers installed (tested with driver 580.95+)<br>
+            • AMD ROCm: Host must have AMD GPU drivers (<code>amdgpu</code> kernel module)<br>
+            • LXD deployments: GPU passthrough must be configured manually (<code>lxc config device add &lt;container&gt; gpu0 gpu</code>)
+        </div>
+
+        <h2 id="monitoring-options">Monitoring Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>log-level</code></td>
+                    <td>string</td>
+                    <td><code>info</code></td>
+                    <td>Logging level for Concourse components. Valid values: <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>. Higher verbosity useful for troubleshooting but generates more log data.</td>
+                </tr>
+                <tr>
+                    <td><code>enable-metrics</code></td>
+                    <td>boolean</td>
+                    <td><code>false</code></td>
+                    <td>Enable Prometheus metrics endpoint on port 9391 and per-job status exporter on port 9358. When enabled, installs and runs <code>concourse-exporter</code> service that exposes job-level metrics. Integrate with Prometheus using <code>juju integrate &lt;app&gt;:monitoring prometheus:target</code>.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="vault-options">Vault Integration Options</h2>
+        <p>Configure HashiCorp Vault for credential management in Concourse CI pipelines. All Vault options are optional and only used when <code>vault-url</code> is set.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>vault-url</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>URL of the Vault server. If set, enables Vault credential management. Example: <code>https://vault.example.com:8200</code></td>
+                </tr>
+                <tr>
+                    <td><code>vault-auth-backend</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Vault authentication backend (e.g., <code>approle</code>, <code>token</code>).</td>
+                </tr>
+                <tr>
+                    <td><code>vault-auth-backend-max-ttl</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Maximum TTL (Time To Live) for the Vault authentication backend token. Example: <code>"1h"</code>, <code>"30m"</code></td>
+                </tr>
+                <tr>
+                    <td><code>vault-auth-param</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Comma-separated key-value pairs for the selected auth backend. Example: <code>"role_id:...,secret_id:..."</code></td>
+                </tr>
+                <tr>
+                    <td><code>vault-ca-cert</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Path to a PEM-encoded CA certificate file to use for TLS verification to Vault.</td>
+                </tr>
+                <tr>
+                    <td><code>vault-client-cert</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Path to a PEM-encoded client certificate for TLS authentication to Vault.</td>
+                </tr>
+                <tr>
+                    <td><code>vault-client-key</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Path to an unencrypted, PEM-encoded private key for TLS authentication to Vault.</td>
+                </tr>
+                <tr>
+                    <td><code>vault-client-token</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Vault client token for authentication.</td>
+                </tr>
+                <tr>
+                    <td><code>vault-lookup-templates</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Vault lookup templates for custom secret path resolution.</td>
+                </tr>
+                <tr>
+                    <td><code>vault-namespace</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Vault namespace for multi-tenancy (Vault Enterprise feature).</td>
+                </tr>
+                <tr>
+                    <td><code>vault-path-prefix</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Prefix for all secret paths in Vault. Example: <code>"/concourse/my-team"</code></td>
+                </tr>
+                <tr>
+                    <td><code>vault-shared-path</code></td>
+                    <td>string</td>
+                    <td><code>""</code></td>
+                    <td>Shared path for Vault secrets accessible across teams.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="examples">Configuration Examples</h2>
+
+        <h3>Basic Web Server</h3>
+        <pre><code class="language-bash"># Deploy web server on custom port
+juju deploy concourse-ci-machine web --channel edge \
+  --config mode=web \
+  --config web-port=8080 \
+  --config external-url=https://ci.example.com</code></pre>
+
+        <h3>GPU Worker with NVIDIA CUDA</h3>
+        <pre><code class="language-bash"># Deploy worker with NVIDIA GPU support
+juju deploy concourse-ci-machine gpu-worker --channel edge \
+  --config mode=worker \
+  --config compute-runtime=cuda \
+  --config gpu-device-ids=all \
+  --config tag="cuda,gpu"</code></pre>
+
+        <h3>AMD ROCm Worker</h3>
+        <pre><code class="language-bash"># Deploy worker with AMD ROCm GPU support
+juju deploy concourse-ci-machine rocm-worker --channel edge \
+  --config mode=worker \
+  --config compute-runtime=rocm \
+  --config tag="rocm,amd-gpu"</code></pre>
+
+        <h3>High-Performance Worker</h3>
+        <pre><code class="language-bash"># Deploy worker with increased parallelism
+juju deploy concourse-ci-machine worker --channel edge \
+  --config mode=worker \
+  --config worker-procs=4 \
+  --config max-concurrent-downloads=20 \
+  --config tag="high-perf,ssd"</code></pre>
+
+        <h3>Monitoring-Enabled Deployment</h3>
+        <pre><code class="language-bash"># Enable Prometheus metrics
+juju config concourse-ci enable-metrics=true
+juju integrate concourse-ci:monitoring prometheus:target</code></pre>
+
+        <h3>Vault Integration</h3>
+        <pre><code class="language-bash"># Configure Vault for credential management
+juju config concourse-ci \
+  vault-url=https://vault.example.com:8200 \
+  vault-auth-backend=approle \
+  vault-auth-param="role_id:abc123,secret_id:def456" \
+  vault-path-prefix="/concourse/prod"</code></pre>
+
+        <h2 id="viewing-config">Viewing Current Configuration</h2>
+        <pre><code class="language-bash"># View all configuration options and current values
+juju config concourse-ci
+
+# View specific option
+juju config concourse-ci web-port
+
+# Reset option to default
+juju config concourse-ci --reset web-port</code></pre>
+
+        <h2 id="runtime-changes">Runtime Configuration Changes</h2>
+        <p>Most configuration changes take effect immediately with automatic service restart:</p>
+
+        <ul>
+            <li><strong>Immediate effect (with restart):</strong> <code>web-port</code>, <code>log-level</code>, <code>worker-procs</code>, <code>compute-runtime</code></li>
+            <li><strong>Requires manual action:</strong> <code>version</code> (requires upgrade action after config change)</li>
+            <li><strong>Deploy-time only:</strong> <code>mode</code> (cannot be changed after deployment)</li>
+        </ul>
+
+        <div class="note">
+            <strong>Note:</strong> Service restarts are orchestrated to minimize downtime. Workers complete in-progress tasks before restarting, and web servers use rolling restart in multi-unit deployments.
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

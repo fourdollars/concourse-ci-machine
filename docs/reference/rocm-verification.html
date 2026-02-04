@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - ROCm verification reference: supported AMD GPUs, HSA_OVERRIDE_GFX_VERSION workaround, verification commands, and troubleshooting.">
+    <meta name="keywords" content="Concourse CI, AMD, ROCm, GPU, PyTorch, TensorFlow, Verification">
+    <title>ROCm Verification Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --warning-color: #f99b11;
+            --error-color: #c62828;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--reference-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background-color: #fff4e6;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .error {
+            background-color: #ffebee;
+            border-left: 4px solid var(--error-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .error strong {
+            color: var(--error-color);
+        }
+
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ROCm Verification Reference</h1>
+        <p class="subtitle">AMD GPU support, verification commands, and troubleshooting</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            ROCm Verification
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>This reference provides complete specifications for verifying AMD GPU support in Concourse CI workers. ROCm (Radeon Open Compute) is AMD's platform for GPU compute, supporting machine learning frameworks like PyTorch and TensorFlow.</p>
+
+        <div class="note">
+            <strong>Note:</strong> ROCm support requires AMD GPU hardware, <code>amdgpu</code> kernel module, and <code>/dev/kfd</code> device access. Integrated AMD GPUs (APUs) require additional workarounds (see below).
+        </div>
+
+        <h2 id="supported-gpus">Supported AMD GPU Types</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>GPU Type</th>
+                    <th>Support Level</th>
+                    <th>Workaround Required</th>
+                    <th>Production Ready</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Discrete GPUs</strong><br>(RX 6000/7000, Radeon Pro, Instinct MI)</td>
+                    <td>Full Native Support</td>
+                    <td>No</td>
+                    <td>✅ Yes</td>
+                </tr>
+                <tr>
+                    <td><strong>Integrated GPUs (APUs)</strong><br>(Phoenix1/gfx1103, Renoir/gfx90c, Cezanne/gfx90c)</td>
+                    <td>Experimental with Workaround</td>
+                    <td>Yes (<code>HSA_OVERRIDE_GFX_VERSION</code>)</td>
+                    <td>❌ No (Dev/Test only)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Discrete GPU Examples</h3>
+        <ul>
+            <li>AMD Radeon RX 7900 XT/XTX (RDNA 3, gfx1100)</li>
+            <li>AMD Radeon RX 6000 series (RDNA 2, gfx1030)</li>
+            <li>AMD Radeon Pro W6000/W7000 series</li>
+            <li>AMD Instinct MI200/MI100 (data center)</li>
+        </ul>
+
+        <h3>Integrated GPU Examples</h3>
+        <ul>
+            <li>AMD Ryzen 7000 series (Phoenix1, gfx1103) - Requires <code>HSA_OVERRIDE_GFX_VERSION=11.0.0</code></li>
+            <li>AMD Ryzen 5000 series (Cezanne, gfx90c) - Requires <code>HSA_OVERRIDE_GFX_VERSION=9.0.0</code></li>
+            <li>AMD Ryzen 4000 series (Renoir, gfx90c) - Requires <code>HSA_OVERRIDE_GFX_VERSION=9.0.0</code></li>
+        </ul>
+
+        <div class="warning">
+            <strong>Warning:</strong> Integrated GPUs share system memory and use suboptimal ROCm kernels. Performance is significantly lower than discrete GPUs. Not recommended for production ML training workloads.
+        </div>
+
+        <h2 id="verification-commands">Verification Commands</h2>
+
+        <h3>Host-Level Verification</h3>
+        <p>Run these commands on the host machine to verify AMD GPU hardware and drivers.</p>
+
+        <h4>1. Check GPU Hardware</h4>
+        <pre><code class="language-bash"># List AMD GPUs
+lspci | grep -i amd
+
+# Expected output (example):
+# 03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 31 [Radeon RX 7900 XT]
+# 06:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Phoenix1 (integrated)</code></pre>
+
+        <h4>2. Check AMD GPU Driver</h4>
+        <pre><code class="language-bash"># Verify amdgpu kernel module loaded
+lsmod | grep amdgpu
+
+# Expected output:
+# amdgpu              12345678  0
+# drm_ttm_helper        16384  1 amdgpu
+# ...</code></pre>
+
+        <h4>3. Check DRM Devices</h4>
+        <pre><code class="language-bash"># List DRM devices
+ls -la /dev/dri/
+
+# Expected output:
+# crw-rw----+ 1 root video 226,   0 Feb  4 09:00 card0
+# crw-rw----+ 1 root video 226,   1 Feb  4 09:00 card1
+# crw-rw----+ 1 root render 226, 128 Feb  4 09:00 renderD128
+# crw-rw----+ 1 root render 226, 129 Feb  4 09:00 renderD129</code></pre>
+
+        <h4>4. Check /dev/kfd (Critical for Compute)</h4>
+        <pre><code class="language-bash"># Verify KFD device exists
+ls -la /dev/kfd
+
+# Expected output:
+# crw-rw-rw- 1 root root 236, 0 Feb  4 09:00 /dev/kfd</code></pre>
+
+        <div class="error">
+            <strong>Critical:</strong> <code>/dev/kfd</code> (Kernel Fusion Driver) is <strong>required</strong> for ROCm compute workloads. PyTorch and TensorFlow will not detect the GPU without this device. <code>rocm-smi</code> works without it (monitoring only), but compute operations fail.
+        </div>
+
+        <h4>5. Query GPU Information (LXC)</h4>
+        <pre><code class="language-bash"># Query all GPU cards with detailed information
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, driver, driver_version, vendor_id, product_id}'
+
+# Expected output (example):
+# {
+#   "id": 0,
+#   "driver": "nvidia",
+#   "driver_version": "580.95",
+#   "vendor_id": "10de",
+#   "product_id": "2484"
+# }
+# {
+#   "id": 1,
+#   "driver": "amdgpu",
+#   "driver_version": "5.15.0-97-generic",
+#   "vendor_id": "1002",
+#   "product_id": "744c"
+# }</code></pre>
+
+        <h3>Container-Level Verification</h3>
+        <p>Run these commands inside the Concourse worker container to verify GPU passthrough.</p>
+
+        <h4>1. Check DRM Devices in Container</h4>
+        <pre><code class="language-bash"># SSH into worker unit
+juju ssh worker/0
+
+# List DRM devices
+ls -la /dev/dri/
+
+# Expected output (same devices as host):
+# crw-rw----+ 1 root video 226,   0 Feb  4 09:00 card0
+# crw-rw----+ 1 root render 226, 128 Feb  4 09:00 renderD128</code></pre>
+
+        <h4>2. Check /dev/kfd in Container</h4>
+        <pre><code class="language-bash"># Inside worker container
+ls -la /dev/kfd
+
+# Expected output:
+# crw-rw-rw- 1 root root 236, 0 Feb  4 09:00 /dev/kfd</code></pre>
+
+        <div class="warning">
+            <strong>Common Issue:</strong> <code>/dev/kfd</code> is often missing in containers even when <code>/dev/dri/*</code> devices are present. This causes PyTorch to report "CUDA (ROCm) available: False". Solution: <code>lxc config device add &lt;container&gt; kfd unix-char source=/dev/kfd path=/dev/kfd</code>
+        </div>
+
+        <h4>3. Check ROCm Installation</h4>
+        <pre><code class="language-bash"># Inside worker container
+which rocm-smi
+
+# Expected output:
+# /opt/rocm/bin/rocm-smi</code></pre>
+
+        <h4>4. Run rocm-smi</h4>
+        <pre><code class="language-bash"># Inside worker container
+rocm-smi
+
+# Expected output (example):
+# ======================= ROCm System Management Interface =======================
+# ================================= Concise Info =================================
+# GPU  Temp (DieEdge)  AvgPwr  SCLK    MCLK    Fan  Perf  PwrCap  VRAM%  GPU%
+# 0    35.0c           20.0W   800Mhz  1000Mhz  0%   auto  203.0W    0%   0%
+# ================================================================================</code></pre>
+
+        <h3>PyTorch Verification in Concourse Task</h3>
+        <p>Verify GPU access from within a Concourse CI task container.</p>
+
+        <h4>Discrete GPU Test</h4>
+        <pre><code class="language-yaml">jobs:
+- name: verify-rocm-discrete
+  plan:
+  - task: test-gpu
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/pytorch
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          # Check ROCm availability
+          rocm-smi
+          
+          # Check devices
+          ls -la /dev/dri/ /dev/kfd
+          
+          # PyTorch GPU test
+          python3 -c "
+          import torch
+          print('PyTorch version:', torch.__version__)
+          print('CUDA (ROCm) available:', torch.cuda.is_available())
+          print('GPU count:', torch.cuda.device_count())
+          if torch.cuda.is_available():
+              print('GPU name:', torch.cuda.get_device_name(0))
+              x = torch.rand(5, 3).cuda()
+              y = x * 2
+              print('GPU computation succeeded!')
+              print('Result:', y)
+          "</code></pre>
+
+        <h4>Integrated GPU Test (with HSA_OVERRIDE_GFX_VERSION)</h4>
+        <pre><code class="language-yaml">jobs:
+- name: verify-rocm-integrated
+  plan:
+  - task: test-gpu
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/pytorch
+          tag: latest
+      run:
+        path: sh
+        args:
+        - -c
+        - |
+          # Set override for gfx1103 (Phoenix1 APU)
+          export HSA_OVERRIDE_GFX_VERSION=11.0.0
+          
+          # Check GPU architecture
+          rocm-smi --showproductname
+          
+          # PyTorch GPU test
+          python3 -c "
+          import torch
+          print('PyTorch version:', torch.__version__)
+          print('CUDA (ROCm) available:', torch.cuda.is_available())
+          if torch.cuda.is_available():
+              print('GPU name:', torch.cuda.get_device_name(0))
+              x = torch.rand(5, 3).cuda()
+              y = x * 2
+              print('GPU computation succeeded!')
+              print('Result:', y)
+          else:
+              print('ERROR: GPU not detected. Check /dev/kfd and HSA_OVERRIDE_GFX_VERSION.')
+          "</code></pre>
+
+        <h2 id="hsa-override">HSA_OVERRIDE_GFX_VERSION Workaround</h2>
+
+        <h3>Why It's Needed</h3>
+        <p>Integrated AMD GPUs (APUs) use GFX architectures not officially supported by ROCm. ROCm checks the GPU's GFX version and rejects unsupported versions. The <code>HSA_OVERRIDE_GFX_VERSION</code> environment variable tells ROCm to use compute kernels from a supported architecture instead.</p>
+
+        <h3>Override Values Table</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>GPU Architecture</th>
+                    <th>GFX Version</th>
+                    <th>Override Value</th>
+                    <th>Examples</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Phoenix1 (RDNA 3)</td>
+                    <td>gfx1103</td>
+                    <td><code>11.0.0</code></td>
+                    <td>Ryzen 7 7840HS (780M iGPU)</td>
+                </tr>
+                <tr>
+                    <td>Renoir (Zen 2)</td>
+                    <td>gfx90c</td>
+                    <td><code>9.0.0</code></td>
+                    <td>Ryzen 4000 series (Vega iGPU)</td>
+                </tr>
+                <tr>
+                    <td>Cezanne (Zen 3)</td>
+                    <td>gfx90c</td>
+                    <td><code>9.0.0</code></td>
+                    <td>Ryzen 5000 series (Vega iGPU)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>How to Use in Concourse Tasks</h3>
+        <p>Add <code>export HSA_OVERRIDE_GFX_VERSION=&lt;value&gt;</code> at the beginning of your task script:</p>
+
+        <pre><code class="language-yaml">run:
+  path: sh
+  args:
+  - -c
+  - |
+    # Set override BEFORE importing PyTorch/TensorFlow
+    export HSA_OVERRIDE_GFX_VERSION=11.0.0
+    
+    # Your GPU workload
+    python3 train.py --use-gpu</code></pre>
+
+        <h3>Limitations</h3>
+        <ul>
+            <li>⚠️ <strong>Suboptimal Kernels:</strong> Uses compute kernels designed for different architecture → lower performance</li>
+            <li>⚠️ <strong>Shared Memory:</strong> Integrated GPUs share system RAM → memory bandwidth bottleneck</li>
+            <li>⚠️ <strong>Incomplete Support:</strong> Some ROCm features may not work or crash</li>
+            <li>✅ <strong>Good For:</strong> Development, testing, experimentation, light compute</li>
+            <li>❌ <strong>Bad For:</strong> Production ML training, high-throughput inference, large models</li>
+        </ul>
+
+        <h3>Testing Override on Host</h3>
+        <pre><code class="language-bash"># Test integrated GPU with Docker before deploying pipeline
+docker run --rm -it --device=/dev/kfd --device=/dev/dri \
+  rocm/pytorch:latest sh -c "
+    export HSA_OVERRIDE_GFX_VERSION=11.0.0
+    python3 -c 'import torch; print(torch.cuda.is_available()); x = torch.rand(5,3).cuda(); print(x * 2)'
+  "</code></pre>
+
+        <h2 id="troubleshooting">Common Issues and Solutions</h2>
+
+        <h3>Issue: "GPU enabled but no GPU detected"</h3>
+        <p><strong>Symptom:</strong> Charm status shows "GPU enabled" but worker doesn't detect GPU.</p>
+        <p><strong>Causes &amp; Solutions:</strong></p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Cause</th>
+                    <th>Verification Command</th>
+                    <th>Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>No AMD GPU hardware</td>
+                    <td><code>lspci | grep -i amd</code></td>
+                    <td>Verify GPU is installed and recognized by host</td>
+                </tr>
+                <tr>
+                    <td>amdgpu driver not loaded</td>
+                    <td><code>lsmod | grep amdgpu</code></td>
+                    <td><code>modprobe amdgpu</code></td>
+                </tr>
+                <tr>
+                    <td>Missing /dev/dri/ devices</td>
+                    <td><code>ls -la /dev/dri/</code></td>
+                    <td>Check driver installation, reboot if necessary</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Issue: "CUDA (ROCm) available: False" in PyTorch</h3>
+        <p><strong>Symptom:</strong> <code>torch.cuda.is_available()</code> returns <code>False</code> in task containers.</p>
+        <p><strong>Causes &amp; Solutions (in order of likelihood):</strong></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Cause</th>
+                    <th>Verification Command</th>
+                    <th>Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Missing /dev/kfd</strong> (most common)</td>
+                    <td><code>juju ssh worker/0 -- ls -la /dev/kfd</code></td>
+                    <td><code>lxc config device add &lt;container&gt; kfd unix-char source=/dev/kfd path=/dev/kfd</code></td>
+                </tr>
+                <tr>
+                    <td>Integrated GPU without override</td>
+                    <td><code>rocm-smi --showproductname</code></td>
+                    <td>Add <code>export HSA_OVERRIDE_GFX_VERSION=11.0.0</code> to task script (adjust version for your GPU)</td>
+                </tr>
+                <tr>
+                    <td>Wrong LXC GPU passthrough</td>
+                    <td><code>lxc config device show &lt;container&gt;</code></td>
+                    <td>Use <code>lxc config device add &lt;container&gt; gpu1 gpu id=1</code> to target specific AMD GPU (not generic <code>gpu</code>)</td>
+                </tr>
+                <tr>
+                    <td>Unsupported GPU</td>
+                    <td><code>cat /sys/class/drm/card*/device/uevent | grep PCI_ID</code></td>
+                    <td>Check GPU compatibility: <a href="https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html" target="_blank">ROCm GPU Support</a></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Issue: "rocm-smi works but PyTorch doesn't detect GPU"</h3>
+        <p><strong>Symptom:</strong> <code>rocm-smi</code> shows GPU info, but PyTorch/TensorFlow can't use GPU.</p>
+        <p><strong>Root Cause:</strong> <code>/dev/kfd</code> is missing or inaccessible.</p>
+        <p><strong>Explanation:</strong></p>
+        <ul>
+            <li><code>rocm-smi</code> only needs <code>/dev/dri/*</code> devices for monitoring (temperature, clock speeds, etc.)</li>
+            <li>PyTorch and TensorFlow need <code>/dev/kfd</code> for GPU compute operations (kernel submission, memory management)</li>
+        </ul>
+        <p><strong>Solution:</strong></p>
+        <pre><code class="language-bash"># Add /dev/kfd device to LXC container
+lxc config device add &lt;container-name&gt; kfd unix-char source=/dev/kfd path=/dev/kfd
+
+# Restart worker service
+juju ssh worker/0 -- sudo systemctl restart concourse-worker</code></pre>
+
+        <h3>Issue: "HSA_STATUS_ERROR_OUT_OF_RESOURCES"</h3>
+        <p><strong>Symptom:</strong> PyTorch raises <code>HSA_STATUS_ERROR_OUT_OF_RESOURCES</code> exception.</p>
+        <p><strong>Causes &amp; Solutions:</strong></p>
+        <ul>
+            <li><strong>Unsupported GPU:</strong> GPU not in ROCm compatibility list. Check <a href="https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html" target="_blank">ROCm GPU Support</a>.</li>
+            <li><strong>Integrated GPU without override:</strong> Add <code>HSA_OVERRIDE_GFX_VERSION</code> (see above).</li>
+            <li><strong>Insufficient memory:</strong> Task trying to allocate more VRAM than available. Reduce batch size or model size.</li>
+        </ul>
+
+        <h3>Issue: Multi-GPU System Detects Wrong GPU</h3>
+        <p><strong>Symptom:</strong> Worker detects NVIDIA GPU when AMD GPU is desired (or vice versa).</p>
+        <p><strong>Cause:</strong> Generic <code>lxc config device add ... gpu</code> passes <strong>all GPUs</strong> to container.</p>
+        <p><strong>Solution:</strong> Use specific GPU ID:</p>
+        <pre><code class="language-bash"># Query GPU IDs
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, driver, vendor_id, product_id}'
+
+# Output example:
+# {"id": 0, "driver": "nvidia", "vendor_id": "10de", "product_id": "2484"}
+# {"id": 1, "driver": "amdgpu", "vendor_id": "1002", "product_id": "744c"}
+
+# Add specific AMD GPU (id=1)
+lxc config device add &lt;container&gt; gpu1 gpu id=1</code></pre>
+
+        <h2 id="performance">Performance Expectations</h2>
+
+        <h3>Discrete GPU Performance</h3>
+        <ul>
+            <li>✅ Native ROCm kernel execution (no workarounds)</li>
+            <li>✅ Dedicated VRAM (8GB - 24GB typical)</li>
+            <li>✅ High memory bandwidth (500+ GB/s)</li>
+            <li>✅ Production ML training and inference</li>
+        </ul>
+
+        <h3>Integrated GPU Performance</h3>
+        <ul>
+            <li>⚠️ Suboptimal kernels (20-50% slower than discrete GPU)</li>
+            <li>⚠️ Shared system RAM (no dedicated VRAM)</li>
+            <li>⚠️ Lower memory bandwidth (50-100 GB/s)</li>
+            <li>⚠️ Development and testing only</li>
+        </ul>
+
+        <h3>Benchmark Comparison (Example)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Workload</th>
+                    <th>RX 7900 XT (Discrete)</th>
+                    <th>Ryzen 7 7840HS (Integrated)</th>
+                    <th>Performance Ratio</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PyTorch MNIST Training</td>
+                    <td>15 seconds</td>
+                    <td>45 seconds</td>
+                    <td>3x slower</td>
+                </tr>
+                <tr>
+                    <td>TensorFlow Image Classification</td>
+                    <td>120 seconds</td>
+                    <td>380 seconds</td>
+                    <td>3.2x slower</td>
+                </tr>
+                <tr>
+                    <td>Matrix Multiplication (4096x4096)</td>
+                    <td>8 ms</td>
+                    <td>25 ms</td>
+                    <td>3.1x slower</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="further-reading">Further Reading</h2>
+        <ul>
+            <li><a href="https://rocm.docs.amd.com/en/latest/" target="_blank">ROCm Documentation</a> - Official AMD ROCm documentation</li>
+            <li><a href="https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html" target="_blank">ROCm GPU Support</a> - Supported GPU list</li>
+            <li><a href="https://github.com/ROCm/ROCm" target="_blank">ROCm GitHub</a> - Open-source ROCm repositories</li>
+            <li><a href="https://pytorch.org/get-started/locally/" target="_blank">PyTorch ROCm Installation</a> - PyTorch with ROCm support</li>
+            <li><a href="test-matrix.html">Test Matrix Reference</a> - Tested AMD GPU configurations</li>
+            <li><a href="../tutorials/gpu-workers.html">GPU Workers Tutorial</a> - Step-by-step GPU setup guide</li>
+        </ul>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

@@ -309,8 +309,7 @@ step_deploy() {
     fi
 
     echo "Adding model $MODEL_NAME..."
-    juju add-model "$MODEL_NAME"
-    juju model-config test-mode=true
+    juju add-model "$MODEL_NAME" --config test-mode=true
 
     # Configuration
     CHARM_FILE="./concourse-ci-machine_amd64.charm"
@@ -1035,8 +1034,7 @@ step_pytorch() {
     # Create model if it doesn't exist
     if ! juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; then
         echo "Creating model $MODEL_NAME..."
-        juju add-model "$MODEL_NAME"
-        juju model-config test-mode=true
+        juju add-model "$MODEL_NAME" --config test-mode=true
     else
         echo "Using existing model $MODEL_NAME..."
     fi

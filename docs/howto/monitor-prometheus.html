@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Monitor Concourse CI with Prometheus metrics">
+    <title>Monitor with Prometheus - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+        }
+
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumbs a {
+            color: var(--howto-color);
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .edit-link a:hover {
+            text-decoration: underline;
+        }
+
+        .content h1 {
+            color: var(--howto-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--howto-color);
+        }
+
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .content h2 {
+            color: var(--howto-color);
+            font-size: 1.8rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .content h3 {
+            color: var(--text-dark);
+            font-size: 1.3rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 1rem;
+            margin-left: 2rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .content code {
+            background: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            font-size: 0.9rem;
+        }
+
+        .content a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .note, .warning, .success {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+
+        .note {
+            background: #e7f2fa;
+            border-color: var(--secondary-color);
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background: #fff4e6;
+            border-color: var(--warning-color);
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .success {
+            background: #e6f4ea;
+            border-color: var(--success-color);
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-light);
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 1rem;
+        }
+
+        .footer-links a {
+            margin: 0 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 0 1rem 2rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .content h1 {
+                font-size: 2rem;
+            }
+
+            .content h2 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#howto">How-To</a> &gt; 
+        <span>Monitor with Prometheus</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/howto/monitor-prometheus.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Monitor with Prometheus</h1>
+        <p class="subtitle">Enable Prometheus metrics endpoint for monitoring</p>
+
+        <h2>Enable Metrics</h2>
+
+        <p>Metrics are enabled by default on port 9391:</p>
+
+        <pre><code class="language-bash"># Verify metrics are enabled
+juju config concourse-ci enable-metrics
+# Should show: true
+
+# To disable (not recommended)
+juju config concourse-ci enable-metrics=false</code></pre>
+
+        <h2>Access Metrics Endpoint</h2>
+
+        <pre><code class="language-bash"># Get web server IP
+juju status concourse-ci
+
+# Fetch metrics
+curl http://&lt;web-ip&gt;:9391/metrics</code></pre>
+
+        <h2>Integrate with Prometheus Charm</h2>
+
+        <pre><code class="language-bash"># Deploy Prometheus (machine charm)
+juju deploy prometheus-machine prometheus --channel edge
+
+# Create relation
+juju integrate concourse-ci:monitoring prometheus:target
+
+# Verify relation
+juju status --relations</code></pre>
+
+        <p><strong>Result:</strong> Prometheus automatically scrapes metrics from Concourse CI web server.</p>
+
+        <div class="note">
+            <strong>Note:</strong> This guide uses <a href="https://charmhub.io/prometheus-machine">prometheus-machine</a> and <a href="https://charmhub.io/grafana-machine">grafana-machine</a> charms, which are machine charms compatible with this Concourse CI machine charm deployment.
+        </div>
+
+        <h2>Key Metrics to Monitor</h2>
+
+        <h3>Worker Metrics</h3>
+        <ul>
+            <li><code>concourse_workers_running</code> - Active workers</li>
+            <li><code>concourse_workers_stalled</code> - Stalled workers</li>
+            <li><code>concourse_containers</code> - Running containers</li>
+        </ul>
+
+        <h3>Build Metrics</h3>
+        <ul>
+            <li><code>concourse_builds_running</code> - Builds in progress</li>
+            <li><code>concourse_builds_finished_total</code> - Completed builds</li>
+            <li><code>concourse_builds_duration_seconds</code> - Build duration histogram</li>
+        </ul>
+
+        <h3>Database Metrics</h3>
+        <ul>
+            <li><code>concourse_db_connections</code> - Active DB connections</li>
+            <li><code>concourse_db_queries_total</code> - Query count</li>
+        </ul>
+
+        <h2>Sample Prometheus Queries</h2>
+
+        <pre><code class="language-promql"># Number of running workers
+concourse_workers_running
+
+# Build success rate (last hour)
+rate(concourse_builds_finished_total{status="succeeded"}[1h])
+/ rate(concourse_builds_finished_total[1h])
+
+# Average build duration
+rate(concourse_builds_duration_seconds_sum[5m])
+/ rate(concourse_builds_duration_seconds_count[5m])
+
+# Worker utilization
+concourse_containers / concourse_workers_running</code></pre>
+
+        <h2>Set Up Grafana Dashboard</h2>
+
+        <pre><code class="language-bash"># Deploy Grafana (machine charm)
+juju deploy grafana-machine grafana --channel edge
+
+# Integrate with Prometheus
+juju integrate grafana:grafana-source prometheus:grafana-source
+
+# Get Grafana URL and credentials
+juju run grafana/leader get-admin-password</code></pre>
+
+        <p>Import Concourse CI dashboard from <a href="https://grafana.com/grafana/dashboards/">Grafana.com</a>.</p>
+
+        <h2>Alert Rules Example</h2>
+
+        <pre><code class="language-yaml">groups:
+  - name: concourse
+    interval: 30s
+    rules:
+      - alert: ConcourseNoWorkersRunning
+        expr: concourse_workers_running == 0
+        for: 5m
+        annotations:
+          summary: "No Concourse workers running"
+      
+      - alert: ConcourseStalledWorkers
+        expr: concourse_workers_stalled &gt; 0
+        for: 10m
+        annotations:
+          summary: "{{ $value }} stalled workers detected"
+      
+      - alert: ConcourseHighBuildDuration
+        expr: rate(concourse_builds_duration_seconds_sum[5m]) &gt; 300
+        for: 15m
+        annotations:
+          summary: "Average build duration exceeds 5 minutes"</code></pre>
+
+        <h2>Verify Metrics Working</h2>
+
+        <pre><code class="language-bash"># Check Prometheus targets
+# Open Prometheus UI: http://&lt;prometheus-ip&gt;:9090/targets
+# Look for concourse-ci endpoint with status "UP"
+
+# Run test query in Prometheus UI
+concourse_workers_running</code></pre>
+
+        <div class="success">
+            <strong>✅ Success:</strong> Query returns current number of workers (should match <code>fly workers</code> output).
+        </div>
+
+        <h2>Related Documentation</h2>
+
+        <ul>
+            <li><a href="../reference/configuration.html">Configuration Reference</a> - All monitoring options</li>
+            <li><a href="troubleshoot.html">Troubleshooting</a> - Debug monitoring issues</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a>
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

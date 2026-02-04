@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Learn how to add GPU-enabled workers to Concourse CI for ML/AI workloads">
+    <title>Adding GPU Workers for ML - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { font-size: 2rem; font-weight: 300; }
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+        .breadcrumbs a {
+            color: var(--tutorial-color);
+            text-decoration: none;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        .content h1 {
+            color: var(--tutorial-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--tutorial-color);
+        }
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        .content h2 {
+            color: var(--primary-color);
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+        .content h3 {
+            color: var(--secondary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+        .content p {
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        .content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.7;
+        }
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .content code {
+            font-family: 'Ubuntu Mono', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .content p code, .content li code {
+            background: #f0f0f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            color: #c7254e;
+        }
+        .note {
+            background: #e7f3f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .note strong { color: var(--secondary-color); }
+        .success {
+            background: #e8f5e9;
+            border-left: 4px solid var(--success-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .success strong { color: var(--success-color); }
+        .warning {
+            background: #fff4e5;
+            border-left: 4px solid var(--warning-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .warning strong { color: var(--warning-color); }
+        .step-box {
+            background: var(--bg-light);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+        .step-number {
+            display: inline-block;
+            background: var(--tutorial-color);
+            color: white;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            text-align: center;
+            border-radius: 50%;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            padding: 2rem;
+            margin-top: 4rem;
+            text-align: center;
+        }
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        footer a:hover { text-decoration: underline; }
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 768px) {
+            .content { padding: 0 1rem 2rem 1rem; }
+            .content h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#tutorials">Tutorials</a> &gt; 
+        <span>GPU Workers for ML</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/tutorials/gpu-workers.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Adding GPU Workers for ML</h1>
+        <p class="subtitle">Learn how to deploy GPU-enabled Concourse CI workers for machine learning and AI workloads</p>
+
+        <div class="note">
+            <strong>📚 What You'll Build:</strong> By the end of this tutorial, you'll have a Concourse CI worker with GPU support that can run PyTorch, TensorFlow, and other ML training tasks.
+        </div>
+
+        <h2>Why GPU Workers?</h2>
+
+        <p>GPU-enabled workers let you run:</p>
+        <ul>
+            <li><strong>ML model training</strong> (PyTorch, TensorFlow, JAX)</li>
+            <li><strong>GPU-accelerated builds</strong> (CUDA applications, ROCm workloads)</li>
+            <li><strong>Parallel computation tasks</strong> (scientific computing, rendering)</li>
+            <li><strong>AI inference pipelines</strong> (model serving, batch prediction)</li>
+        </ul>
+
+        <p>The charm handles all GPU setup automatically - you just need to configure the hardware passthrough!</p>
+
+        <h2>Before You Start</h2>
+
+        <p>This tutorial requires:</p>
+        <ul>
+            <li><strong>A GPU in your machine</strong> (NVIDIA or AMD)</li>
+            <li><strong>GPU drivers installed on the host</strong> (nvidia-smi or rocm-smi working)</li>
+            <li><strong>Completed</strong> the <a href="deployment-guide.html">first deployment tutorial</a></li>
+            <li><strong>LXD environment</strong> (for localhost/LXD cloud)</li>
+            <li><strong>~30 minutes</strong> of time</li>
+        </ul>
+
+        <div class="warning">
+            <strong>⚠️ GPU Requirement:</strong> You must have a physical GPU and working drivers. Virtual machines typically don't have GPU passthrough configured.
+        </div>
+
+        <h2>Step 1: Verify GPU on Host</h2>
+
+        <p>First, let's make sure your GPU is visible on the host machine.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">1</span> <strong>Check for NVIDIA GPU</strong></p>
+            <pre><code class="language-bash">nvidia-smi</code></pre>
+        </div>
+
+        <p><strong>Or for AMD GPU:</strong></p>
+        <pre><code class="language-bash">rocm-smi</code></pre>
+
+        <p>You should see your GPU listed. If not, install drivers first!</p>
+
+        <div class="note">
+            <strong>💡 Example Output (NVIDIA):</strong> You should see your GPU model, driver version, and CUDA version. Something like "NVIDIA RTX A500" or "RTX 3070".
+        </div>
+
+        <h2>Step 2: Deploy PostgreSQL and Web Server</h2>
+
+        <p>If you don't have a web server running yet, let's deploy one.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">2</span> <strong>Create model and deploy prerequisites</strong></p>
+            <pre><code class="language-bash">juju add-model concourse-gpu
+
+# Deploy database
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
+
+# Deploy web server
+juju deploy concourse-ci-machine web \
+  --config mode=web \
+  --channel edge \
+  --base ubuntu@24.04
+
+# Connect them
+juju integrate web:postgresql postgresql:database</code></pre>
+        </div>
+
+        <h2>Step 3: Deploy GPU-Enabled Worker</h2>
+
+        <p>Now for the exciting part - deploying a GPU worker!</p>
+
+        <div class="step-box">
+            <p><span class="step-number">3</span> <strong>Deploy worker with GPU enabled (NVIDIA)</strong></p>
+            <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker \
+  --config mode=worker \
+  --config compute-runtime=cuda \
+  --channel edge \
+  --base ubuntu@24.04</code></pre>
+        </div>
+
+        <p><strong>For AMD GPUs, use:</strong></p>
+        <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker \
+  --config mode=worker \
+  --config compute-runtime=rocm \
+  --channel edge \
+  --base ubuntu@24.04</code></pre>
+
+        <div class="step-box">
+            <p><span class="step-number">4</span> <strong>Connect worker to web server</strong></p>
+            <pre><code class="language-bash">juju integrate web:tsa gpu-worker:flight</code></pre>
+        </div>
+
+        <p>This creates the TSA connection between web and worker.</p>
+
+        <h2>Step 4: Add GPU to LXC Container</h2>
+
+        <p>This is the crucial step! We need to pass the GPU hardware into the container.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">5</span> <strong>Find the container name</strong></p>
+            <pre><code class="language-bash">juju status gpu-worker</code></pre>
+        </div>
+
+        <p>Note the machine number (e.g., "4"). The container name is <code>juju-&lt;model-id&gt;-&lt;machine-num&gt;</code>.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">6</span> <strong>List containers to find exact name</strong></p>
+            <pre><code class="language-bash"># List all containers - look for "juju-" prefix
+lxc list
+
+# Example output shows: juju-abc123-4 (your actual container)</code></pre>
+        </div>
+
+        <p>Copy the container name from the output (e.g., <code>juju-abc123-4</code>).</p>
+
+        <div class="step-box">
+            <p><span class="step-number">7</span> <strong>Add GPU device to container</strong></p>
+            <pre><code class="language-bash"># Replace juju-xxxxx-4 with your actual container name
+lxc config device add juju-xxxxx-4 gpu0 gpu</code></pre>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Multi-GPU Systems:</strong> If you have both NVIDIA and AMD GPUs, specify which one:
+            <pre><code class="language-bash"># List available GPUs
+lxc query /1.0/resources | jq '.gpu.cards[] | {id: .drm.id, driver, driver_version, vendor_id, product_id}'
+
+# Add specific GPU (e.g., GPU ID 1)
+lxc config device add juju-xxxxx-4 gpu1 gpu id=1</code></pre>
+        </div>
+
+        <p><strong>For AMD ROCm GPUs, also add /dev/kfd:</strong></p>
+        <pre><code class="language-bash">lxc config device add juju-xxxxx-4 kfd unix-char \
+  source=/dev/kfd \
+  path=/dev/kfd</code></pre>
+
+        <h2>Step 5: Wait for Charm to Configure GPU</h2>
+
+        <p>The charm will automatically detect the GPU and configure everything!</p>
+
+        <div class="step-box">
+            <p><span class="step-number">8</span> <strong>Watch the worker configure itself</strong></p>
+            <pre><code class="language-bash">juju status gpu-worker --watch 5s</code></pre>
+        </div>
+
+        <p>Wait for the status to show:</p>
+        <pre><code>Worker ready (v7.14.2) (GPU: 1x NVIDIA)</code></pre>
+
+        <p>Or for AMD:</p>
+        <pre><code>Worker ready (v7.14.2) (GPU: 1x AMD)</code></pre>
+
+        <div class="success">
+            <strong>🎉 GPU Detected!</strong> The charm has automatically installed nvidia-container-toolkit (or amd-container-toolkit), configured the runtime, and tagged the worker with GPU capabilities.
+        </div>
+
+        <h2>Step 6: Test GPU Access</h2>
+
+        <p>Let's verify the GPU is actually accessible in tasks.</p>
+
+        <div class="step-box">
+            <p><span class="step-number">9</span> <strong>Create a test pipeline</strong></p>
+            <pre><code class="language-bash">cat &gt; gpu-test.yml &lt;&lt;'EOF'
+jobs:
+- name: gpu-check
+  plan:
+  - task: nvidia-smi
+    tags: [cuda]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: nvidia/cuda
+          tag: 12.1.0-base-ubuntu22.04
+      run:
+        path: nvidia-smi
+EOF</code></pre>
+        </div>
+
+        <p><strong>For AMD, use this instead:</strong></p>
+        <pre><code class="language-bash">cat &gt; gpu-test.yml &lt;&lt;'EOF'
+jobs:
+- name: gpu-check
+  plan:
+  - task: rocm-smi
+    tags: [rocm]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: rocm/dev-ubuntu-24.04
+          tag: latest
+      run:
+        path: rocm-smi
+EOF</code></pre>
+        </div>
+
+        <h2>Step 7: Run Your First GPU Task</h2>
+
+        <div class="step-box">
+            <p><span class="step-number">10</span> <strong>Get web server IP and login</strong></p>
+            <pre><code class="language-bash"># Get IP
+WEB_IP=$(juju status web/0 --format=json | jq -r '.applications.web.units["web/0"]["public-address"]')
+
+# Get password
+ADMIN_PASS=$(juju run web/leader get-admin-password --format=json | jq -r '."unit-web-0".results.password')
+
+# Login
+fly -t gpu login -c http://$WEB_IP:8080 -u admin -p "$ADMIN_PASS"</code></pre>
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">11</span> <strong>Set and run the pipeline</strong></p>
+            <pre><code class="language-bash">fly -t gpu set-pipeline -p gpu-test -c gpu-test.yml
+fly -t gpu unpause-pipeline -p gpu-test
+fly -t gpu trigger-job -j gpu-test/gpu-check -w</code></pre>
+        </div>
+
+        <div class="success">
+            <strong>🚀 Success!</strong> If you see GPU information in the output (device name, driver version, memory), your GPU worker is fully operational!
+        </div>
+
+        <h2>Step 8: Run a Real ML Task</h2>
+
+        <p>Let's run something more exciting - a PyTorch GPU test!</p>
+
+        <div class="step-box">
+            <p><span class="step-number">12</span> <strong>Create PyTorch test pipeline</strong></p>
+            <pre><code class="language-bash">cat &gt; pytorch-test.yml &lt;&lt;'EOF'
+jobs:
+- name: pytorch-gpu-test
+  plan:
+  - task: test-pytorch
+    tags: [cuda]
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: pytorch/pytorch
+          tag: latest
+      run:
+        path: python
+        args:
+          - -c
+          - |
+            import torch
+            print(f"PyTorch version: {torch.__version__}")
+            print(f"CUDA available: {torch.cuda.is_available()}")
+            print(f"CUDA version: {torch.version.cuda}")
+            if torch.cuda.is_available():
+                print(f"GPU device: {torch.cuda.get_device_name(0)}")
+                print(f"GPU count: {torch.cuda.device_count()}")
+                # Test actual GPU computation
+                x = torch.rand(5, 3).cuda()
+                y = x * 2
+                print(f"GPU tensor computation successful!")
+                print(f"Result: {y}")
+            else:
+                print("ERROR: CUDA not available!")
+                exit(1)
+EOF</code></pre>
+        </div>
+
+        <div class="step-box">
+            <p><span class="step-number">13</span> <strong>Run the PyTorch test</strong></p>
+            <pre><code class="language-bash">fly -t gpu set-pipeline -p pytorch-test -c pytorch-test.yml
+fly -t gpu unpause-pipeline -p pytorch-test  
+fly -t gpu trigger-job -j pytorch-test/pytorch-gpu-test -w</code></pre>
+        </div>
+
+        <p>You should see output showing:</p>
+        <ul>
+            <li>✅ CUDA is available</li>
+            <li>✅ Your GPU device name</li>
+            <li>✅ Successful tensor computation on GPU</li>
+        </ul>
+
+        <h2>What You've Accomplished</h2>
+
+        <p>Congratulations! You now have:</p>
+        <ul>
+            <li>✅ A GPU-enabled Concourse CI worker</li>
+            <li>✅ Automatic GPU device injection into tasks</li>
+            <li>✅ Worker tagged with GPU capabilities (<code>cuda</code> or <code>rocm</code>)</li>
+            <li>✅ Verified GPU access from PyTorch</li>
+            <li>✅ Ready to run ML training pipelines!</li>
+        </ul>
+
+        <div class="note">
+            <strong>💡 What Happened Behind the Scenes:</strong>
+            <ul>
+                <li>Charm installed <code>nvidia-container-toolkit</code> or <code>amd-container-toolkit</code></li>
+                <li>Created a custom OCI runtime wrapper</li>
+                <li>Configured containerd to inject GPU devices</li>
+                <li>Tagged the worker so pipelines can target it</li>
+            </ul>
+        </div>
+
+        <h2>Next Steps</h2>
+
+        <p>Now that you have GPU workers, explore these advanced topics:</p>
+
+        <ol>
+            <li><strong>Mount datasets:</strong> Follow the <a href="dataset-mounting.html">Dataset Mounting tutorial</a> to automatically inject training data</li>
+            <li><strong>Scale GPU workers:</strong> Add more GPU workers for parallel training</li>
+            <li><strong>Mixed worker fleet:</strong> Deploy both CPU and GPU workers, use tags to route tasks</li>
+            <li><strong>Understanding the implementation:</strong> Read <a href="../explanation/gpu-architecture.html">how GPU support works</a></li>
+        </ol>
+
+        <h2>Troubleshooting</h2>
+
+        <h3>Worker shows "GPU enabled but no GPU detected"</h3>
+        <p><strong>Solution:</strong> The LXC GPU device isn't added yet. Run step 7 again to add the GPU device to the container.</p>
+
+        <h3>PyTorch says "CUDA not available"</h3>
+        <p><strong>Check these:</strong></p>
+        <ul>
+            <li>Is the GPU visible in container? <code>lxc exec &lt;container&gt; -- nvidia-smi</code></li>
+            <li>Is nvidia-container-runtime installed? <code>juju ssh gpu-worker/0 'which nvidia-container-runtime'</code></li>
+            <li>Check worker logs: <code>juju debug-log --include gpu-worker/0</code></li>
+        </ul>
+
+        <h3>AMD GPU: "HSA_STATUS_ERROR_OUT_OF_RESOURCES"</h3>
+        <p><strong>For integrated AMD GPUs (APUs):</strong> Add this to your pipeline task:</p>
+        <pre><code class="language-yaml">env:
+  HSA_OVERRIDE_GFX_VERSION: "11.0.0"  # For gfx1103/Phoenix1</code></pre>
+
+        <h3>Task can't find GPU devices</h3>
+        <p><strong>Verify:</strong></p>
+        <ul>
+            <li>Task uses <code>tags: [cuda]</code> or <code>tags: [rocm]</code></li>
+            <li>Worker is registered: <code>fly -t gpu workers</code> should show GPU tags</li>
+            <li>Container has GPU device: <code>lxc config device show &lt;container&gt;</code></li>
+        </ul>
+
+        <div class="success">
+            <strong>🎓 Congratulations!</strong> You've successfully deployed GPU-enabled Concourse CI workers. You're ready to run ML training pipelines at scale!
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars" target="_blank">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine" target="_blank">GitHub</a>
+            <a href="https://github.com/fourdollars/concourse-ci-machine/issues" target="_blank">Issues</a>
+            <a href="https://charmhub.io/concourse-ci-machine" target="_blank">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

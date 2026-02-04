@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concourse CI Machine Charm - Relations reference: postgresql, monitoring, tsa, flight, and peers relations.">
+    <meta name="keywords" content="Concourse CI, Juju, Relations, PostgreSQL, Prometheus, TSA, Reference">
+    <title>Relations Reference - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --reference-color: #216583;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--reference-color) 0%, #1a4d63 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 300;
+        }
+
+        header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 0.5rem;
+        }
+
+        nav {
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        nav li {
+            margin: 0;
+        }
+
+        nav a {
+            display: block;
+            padding: 1rem 1.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-light);
+            color: var(--reference-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .breadcrumb a {
+            color: var(--reference-color);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: var(--reference-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--reference-color);
+            font-weight: 400;
+        }
+
+        h3 {
+            color: var(--reference-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 400;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background-color: var(--bg-white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background-color: var(--reference-color);
+            color: white;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background-color: var(--bg-light);
+        }
+
+        code {
+            background-color: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--reference-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            background-color: #e8f4f8;
+            border-left: 4px solid var(--secondary-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background-color: #fff4e6;
+            border-left: 4px solid #f99b11;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .warning strong {
+            color: #f99b11;
+        }
+
+        .relation-card {
+            background-color: var(--bg-white);
+            border: 2px solid var(--reference-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .relation-card h3 {
+            margin-top: 0;
+            color: var(--reference-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .relation-card .metadata {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .relation-card .metadata .item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .relation-card .metadata .label {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .relation-card .metadata .value {
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-right: 0.5rem;
+        }
+
+        .badge.required {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .badge.optional {
+            background-color: #e8f4f8;
+            color: #1565c0;
+        }
+
+        .badge.automatic {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        footer {
+            background-color: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Relations Reference</h1>
+        <p class="subtitle">Complete specification of Concourse CI charm relations and interfaces</p>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="../tutorials/deployment-guide.html">Tutorials</a></li>
+            <li><a href="../howto/scale-workers.html">How-To</a></li>
+            <li><a href="configuration.html">Reference</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a> &raquo; 
+            <a href="configuration.html">Reference</a> &raquo; 
+            Relations
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>Relations connect Concourse CI units to external services (PostgreSQL, Prometheus) and coordinate between Concourse components (web servers and workers). The Concourse CI Machine Charm defines three relation types: <strong>requires</strong> (consumes data), <strong>provides</strong> (exposes data), and <strong>peers</strong> (coordinates between units).</p>
+
+        <div class="note">
+            <strong>Note:</strong> Relations are established using <code>juju integrate &lt;app1&gt;:&lt;endpoint1&gt; &lt;app2&gt;:&lt;endpoint2&gt;</code> (Juju 3.x) or <code>juju relate</code> (Juju 2.x).
+        </div>
+
+        <h2 id="relation-summary">Relation Summary</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Relation Name</th>
+                    <th>Type</th>
+                    <th>Interface</th>
+                    <th>Status</th>
+                    <th>Applied To</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>postgresql</code></td>
+                    <td>requires</td>
+                    <td><code>postgresql_client</code></td>
+                    <td><span class="badge required">Required</span></td>
+                    <td>Web server units</td>
+                </tr>
+                <tr>
+                    <td><code>monitoring</code></td>
+                    <td>provides</td>
+                    <td><code>prometheus_scrape</code></td>
+                    <td><span class="badge optional">Optional</span></td>
+                    <td>All units</td>
+                </tr>
+                <tr>
+                    <td><code>tsa</code></td>
+                    <td>provides</td>
+                    <td><code>concourse-ci_tsa</code></td>
+                    <td><span class="badge optional">Optional</span></td>
+                    <td>Web server units</td>
+                </tr>
+                <tr>
+                    <td><code>flight</code></td>
+                    <td>requires</td>
+                    <td><code>concourse-ci_tsa</code></td>
+                    <td><span class="badge optional">Optional</span></td>
+                    <td>Worker units</td>
+                </tr>
+                <tr>
+                    <td><code>peers</code></td>
+                    <td>peer</td>
+                    <td><code>concourse-ci_peers</code></td>
+                    <td><span class="badge automatic">Automatic</span></td>
+                    <td>All units (same app)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="required-relations">Required Relations</h2>
+
+        <div class="relation-card">
+            <h3 id="postgresql">postgresql (requires)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>postgresql_client</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Limit</span>
+                    <span class="value">1 connection</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">Web server units</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge required">Required</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Provides PostgreSQL database backend for the Concourse web server. Stores pipelines, build metadata, resource versions, and authentication data. Uses Juju secrets API for secure credential management.</p>
+
+            <p><strong>Supported PostgreSQL Versions:</strong></p>
+            <ul>
+                <li>PostgreSQL 16/stable (recommended)</li>
+                <li>Any charm providing <code>postgresql_client</code> interface with Juju secrets support</li>
+            </ul>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>From PostgreSQL:</strong> Database name, host, port, username, password (via Juju secret), connection string</li>
+                <li><strong>To PostgreSQL:</strong> Database name request, schema initialization</li>
+            </ul>
+
+            <p><strong>Usage Example:</strong></p>
+            <pre><code class="language-bash"># Deploy PostgreSQL 16
+juju deploy postgresql --channel 16/stable --base ubuntu@24.04
+
+# Deploy Concourse CI
+juju deploy concourse-ci-machine concourse-ci --channel edge --config mode=auto
+
+# Integrate
+juju integrate concourse-ci:postgresql postgresql:database</code></pre>
+
+            <div class="warning">
+                <strong>Warning:</strong> Web server units will enter <strong>Blocked</strong> status without this relation. Worker-only units (<code>mode=worker</code>) do not require this relation.
+            </div>
+
+            <p><strong>Related Configuration:</strong> None (credentials managed automatically via relation)</p>
+
+            <p><strong>Troubleshooting:</strong></p>
+            <ul>
+                <li><strong>Blocked status "Database not connected":</strong> Ensure <code>postgresql</code> relation is established and PostgreSQL is ready</li>
+                <li><strong>Connection errors:</strong> Check PostgreSQL logs (<code>juju debug-log --include postgresql</code>) and network connectivity</li>
+                <li><strong>Schema errors:</strong> Concourse auto-initializes database schema on first connection. Check Concourse logs for migration failures.</li>
+            </ul>
+        </div>
+
+        <h2 id="optional-relations">Optional Relations</h2>
+
+        <div class="relation-card">
+            <h3 id="monitoring">monitoring (provides)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>prometheus_scrape</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Limit</span>
+                    <span class="value">Unlimited</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">All units</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge optional">Optional</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Exposes Prometheus metrics endpoints for monitoring Concourse CI performance, resource usage, and job statistics. Enables integration with Prometheus and Grafana for observability.</p>
+
+            <p><strong>Metrics Endpoints:</strong></p>
+            <ul>
+                <li><strong>Port 9391:</strong> Core Concourse metrics (web server and worker metrics)</li>
+                <li><strong>Port 9358:</strong> Per-job status metrics (when <code>enable-metrics=true</code> and <code>concourse-exporter</code> is installed)</li>
+            </ul>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>To Prometheus:</strong> Scrape targets (unit IP, port 9391/9358), job name, labels</li>
+            </ul>
+
+            <p><strong>Usage Example:</strong></p>
+            <pre><code class="language-bash"># Enable metrics in Concourse
+juju config concourse-ci enable-metrics=true
+
+# Deploy Prometheus
+juju deploy prometheus-machine prometheus --channel edge
+
+# Integrate monitoring relation
+juju integrate concourse-ci:monitoring prometheus:target
+
+# Access Prometheus UI and query Concourse metrics
+# Example PromQL: concourse_jobs_running{team="main"}</code></pre>
+
+            <p><strong>Available Metrics (Port 9391):</strong></p>
+            <ul>
+                <li><code>concourse_builds_*</code>: Build counts, durations, statuses</li>
+                <li><code>concourse_workers_*</code>: Worker states, container counts</li>
+                <li><code>concourse_db_*</code>: Database connection pool metrics</li>
+                <li><code>concourse_steps_*</code>: Pipeline step execution metrics</li>
+                <li><code>concourse_http_*</code>: Web server HTTP request metrics</li>
+            </ul>
+
+            <p><strong>Available Metrics (Port 9358, requires <code>concourse-exporter</code>):</strong></p>
+            <ul>
+                <li><code>concourse_job_status</code>: Per-job status (succeeded, failed, errored)</li>
+                <li><code>concourse_job_last_build_duration</code>: Last build duration per job</li>
+            </ul>
+
+            <p><strong>Related Configuration:</strong> <code>enable-metrics</code> (boolean, default: <code>false</code>)</p>
+
+            <div class="note">
+                <strong>Note:</strong> Metrics are always exposed on port 9391 regardless of <code>enable-metrics</code>. The configuration option controls <code>concourse-exporter</code> installation (port 9358).
+            </div>
+        </div>
+
+        <div class="relation-card">
+            <h3 id="tsa-provides">tsa (provides)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>concourse-ci_tsa</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Limit</span>
+                    <span class="value">Unlimited</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">Web server units</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge optional">Optional</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Provides TSA (Transportation Security Administration) endpoint for worker registration. TSA is the SSH-based gateway that workers connect to for authenticating and registering with the Concourse web server. Used when deploying separate web and worker applications (<code>mode=web</code> + <code>mode=worker</code>).</p>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>To Workers:</strong> TSA host key, TSA public key, web server IP/hostname, TSA port (default: 2222)</li>
+            </ul>
+
+            <p><strong>Usage Example:</strong></p>
+            <pre><code class="language-bash"># Deploy web server
+juju deploy concourse-ci-machine web --channel edge --config mode=web
+
+# Deploy workers
+juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+
+# Integrate web TSA endpoint with workers
+juju integrate web:tsa worker:flight</code></pre>
+
+            <div class="note">
+                <strong>Note:</strong> This relation is <strong>not needed</strong> in <code>mode=auto</code> deployments, where TSA keys are distributed via peer relations automatically.
+            </div>
+
+            <p><strong>Related Configuration:</strong> None (TSA port and keys managed automatically)</p>
+        </div>
+
+        <div class="relation-card">
+            <h3 id="flight-requires">flight (requires)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>concourse-ci_tsa</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Limit</span>
+                    <span class="value">1 connection</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">Worker units</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge optional">Optional</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Consumes TSA endpoint from web server to retrieve TSA keys and connection details. Worker units use this relation to authenticate and register with the web server's TSA gateway.</p>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>From Web Server:</strong> TSA host key, TSA public key, web server IP/hostname, TSA port</li>
+                <li><strong>To Web Server:</strong> Worker public key (for authorized_keys)</li>
+            </ul>
+
+            <p><strong>Usage Example:</strong></p>
+            <pre><code class="language-bash"># Workers require TSA endpoint from web server
+juju integrate worker:flight web:tsa</code></pre>
+
+            <div class="warning">
+                <strong>Warning:</strong> Worker units in <code>mode=worker</code> will enter <strong>Blocked</strong> status without this relation. Workers cannot function without connecting to a web server's TSA.
+            </div>
+
+            <p><strong>Related Configuration:</strong> None (worker keys and TSA connection managed automatically)</p>
+        </div>
+
+        <h2 id="peer-relation">Peer Relation</h2>
+
+        <div class="relation-card">
+            <h3 id="peers">peers (peer)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>concourse-ci_peers</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Scope</span>
+                    <span class="value">Same application</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">All units (automatic)</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge automatic">Automatic</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Automatically coordinates data between units in the same application. Used in <code>mode=auto</code> deployments to distribute TSA keys, worker keys, and admin password across all units. No manual configuration required—Juju creates this relation automatically.</p>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>TSA host key:</strong> Generated by leader, shared with all units</li>
+                <li><strong>TSA public key:</strong> Generated by leader, shared with all units</li>
+                <li><strong>Worker keys:</strong> Generated by workers, shared with leader for TSA authorization</li>
+                <li><strong>Admin password:</strong> Generated by leader, shared with all units</li>
+                <li><strong>Session signing key:</strong> Generated by leader, shared with all units</li>
+            </ul>
+
+            <p><strong>Usage:</strong> Automatic—no manual action required.</p>
+
+            <div class="note">
+                <strong>Note:</strong> Peer relation enables <strong>zero-configuration key distribution</strong> in <code>mode=auto</code> deployments. Workers automatically receive TSA keys from the leader and register without manual SSH key copying.
+            </div>
+
+            <p><strong>Related Configuration:</strong> None (peer coordination is automatic)</p>
+        </div>
+
+        <h2 id="relation-matrix">Relation Applicability Matrix</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Relation</th>
+                    <th>mode=auto (leader)</th>
+                    <th>mode=auto (follower)</th>
+                    <th>mode=web</th>
+                    <th>mode=worker</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>postgresql</code></td>
+                    <td>✅ Required</td>
+                    <td>❌ N/A</td>
+                    <td>✅ Required</td>
+                    <td>❌ N/A</td>
+                </tr>
+                <tr>
+                    <td><code>monitoring</code></td>
+                    <td>✅ Optional</td>
+                    <td>✅ Optional</td>
+                    <td>✅ Optional</td>
+                    <td>✅ Optional</td>
+                </tr>
+                <tr>
+                    <td><code>tsa</code> (provides)</td>
+                    <td>✅ Available</td>
+                    <td>❌ N/A</td>
+                    <td>✅ Available</td>
+                    <td>❌ N/A</td>
+                </tr>
+                <tr>
+                    <td><code>flight</code> (requires)</td>
+                    <td>❌ N/A</td>
+                    <td>✅ Auto-connected</td>
+                    <td>❌ N/A</td>
+                    <td>✅ Required</td>
+                </tr>
+                <tr>
+                    <td><code>peers</code></td>
+                    <td>✅ Automatic</td>
+                    <td>✅ Automatic</td>
+                    <td>✅ Automatic</td>
+                    <td>✅ Automatic</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="examples">Relation Examples</h2>
+
+        <h3>auto Mode (Fully Automated)</h3>
+        <pre><code class="language-bash"># Deploy with auto mode (peer relation handles key distribution)
+juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+juju integrate concourse-ci:postgresql postgresql:database
+juju integrate concourse-ci:monitoring prometheus:target
+
+# All TSA keys distributed automatically via peers relation ✨</code></pre>
+
+        <h3>web + worker Mode (Separate Applications)</h3>
+        <pre><code class="language-bash"># Deploy web and workers as separate apps
+juju deploy concourse-ci-machine web --channel edge --config mode=web
+juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+
+# Required relations
+juju integrate web:postgresql postgresql:database
+juju integrate web:tsa worker:flight  # Key exchange between apps
+
+# Optional monitoring
+juju integrate web:monitoring prometheus:target
+juju integrate worker:monitoring prometheus:target</code></pre>
+
+        <h3>GPU Workers with Monitoring</h3>
+        <pre><code class="language-bash"># Deploy web server
+juju deploy concourse-ci-machine web --channel edge --config mode=web
+
+# Deploy GPU workers
+juju deploy concourse-ci-machine gpu-worker --channel edge \
+  --config mode=worker \
+  --config compute-runtime=cuda \
+  --config tag="cuda,gpu"
+
+# Deploy CPU workers
+juju deploy concourse-ci-machine cpu-worker -n 2 --channel edge \
+  --config mode=worker \
+  --config tag="cpu,high-mem"
+
+# Integrate all applications
+juju integrate web:postgresql postgresql:database
+juju integrate web:tsa gpu-worker:flight
+juju integrate web:tsa cpu-worker:flight
+juju integrate web:monitoring prometheus:target
+juju integrate gpu-worker:monitoring prometheus:target
+juju integrate cpu-worker:monitoring prometheus:target</code></pre>
+
+        <h2 id="troubleshooting">Troubleshooting Relations</h2>
+
+        <h3>Blocked Status</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Message</th>
+                    <th>Cause</th>
+                    <th>Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>"Database not connected"</td>
+                    <td>Web server missing <code>postgresql</code> relation</td>
+                    <td><code>juju integrate &lt;app&gt;:postgresql postgresql:database</code></td>
+                </tr>
+                <tr>
+                    <td>"TSA endpoint not available"</td>
+                    <td>Worker missing <code>flight</code> relation</td>
+                    <td><code>juju integrate &lt;worker&gt;:flight &lt;web&gt;:tsa</code></td>
+                </tr>
+                <tr>
+                    <td>"Waiting for peer relation"</td>
+                    <td>Peer relation not established (rare)</td>
+                    <td>Wait for Juju to establish peer relation (automatic)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Viewing Relations</h3>
+        <pre><code class="language-bash"># View all relations for an application
+juju status --relations
+
+# View specific relation status
+juju show-unit concourse-ci/0 | grep -A 5 "relation-info"
+
+# Debug relation data (for charm developers)
+juju run concourse-ci/0 -- relation-get -r &lt;relation-id&gt; - &lt;remote-unit&gt;</code></pre>
+
+        <h3>Removing Relations</h3>
+        <pre><code class="language-bash"># Remove a relation
+juju remove-relation concourse-ci:monitoring prometheus:target
+
+# Re-establish if needed
+juju integrate concourse-ci:monitoring prometheus:target</code></pre>
+
+        <div class="warning">
+            <strong>Warning:</strong> Removing the <code>postgresql</code> relation from a web server will cause the web service to stop and enter <strong>Blocked</strong> status. Pipelines and build data remain in the database and will be restored when the relation is re-established.
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Shih-Yuan Lee (FourDollars). Licensed under Apache 2.0.</p>
+        <p>
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a> |
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a> |
+            <a href="https://concourse-ci.org/">Concourse CI</a>
+        </p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

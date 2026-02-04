@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Troubleshoot common Concourse CI Machine Charm issues">
+    <title>Troubleshooting - Concourse CI Machine Charm</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --primary-color: #5c3c92;
+            --secondary-color: #11a8cd;
+            --accent-color: #fd5f00;
+            --success-color: #0e8420;
+            --warning-color: #f99b11;
+            --text-dark: #111;
+            --text-light: #666;
+            --bg-light: #f7f7f7;
+            --bg-white: #fff;
+            --border-color: #d9d9d9;
+            --tutorial-color: #5e2750;
+            --howto-color: #206a5d;
+            --reference-color: #216583;
+            --explanation-color: #852c2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-white);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 300;
+        }
+
+        .breadcrumbs {
+            background: var(--bg-light);
+            padding: 1rem 2rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumbs a {
+            color: var(--howto-color);
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .edit-link {
+            text-align: right;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .edit-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .edit-link a:hover {
+            text-decoration: underline;
+        }
+
+        .content h1 {
+            color: var(--howto-color);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--howto-color);
+        }
+
+        .content .subtitle {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .content h2 {
+            color: var(--howto-color);
+            font-size: 1.8rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .content h3 {
+            color: var(--text-dark);
+            font-size: 1.3rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .content ul, .content ol {
+            margin-bottom: 1rem;
+            margin-left: 2rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .content code {
+            background: var(--bg-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            font-size: 0.9rem;
+        }
+
+        .content a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .note, .warning, .success {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+
+        .note {
+            background: #e7f2fa;
+            border-color: var(--secondary-color);
+        }
+
+        .note strong {
+            color: var(--secondary-color);
+        }
+
+        .warning {
+            background: #fff4e6;
+            border-color: var(--warning-color);
+        }
+
+        .warning strong {
+            color: var(--warning-color);
+        }
+
+        .success {
+            background: #e6f4ea;
+            border-color: var(--success-color);
+        }
+
+        .success strong {
+            color: var(--success-color);
+        }
+
+        footer {
+            background: var(--bg-light);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-light);
+            margin-top: 4rem;
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 1rem;
+        }
+
+        .footer-links a {
+            margin: 0 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 0 1rem 2rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .content h1 {
+                font-size: 2rem;
+            }
+
+            .content h2 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Concourse CI Machine Charm</h1>
+        <p>Documentation</p>
+    </header>
+
+    <nav class="breadcrumbs">
+        <a href="../index.html">Home</a> &gt; 
+        <a href="../index.html#howto">How-To</a> &gt; 
+        <span>Troubleshooting</span>
+    </nav>
+
+    <main class="content">
+        <div class="edit-link">
+            <a href="https://github.com/fourdollars/concourse-ci-machine/edit/main/docs/howto/troubleshoot.html">✏️ Edit on GitHub</a>
+        </div>
+
+        <h1>Troubleshooting</h1>
+        <p class="subtitle">Fix common issues with Concourse CI Machine Charm</p>
+
+        <h2>Charm Shows "Blocked" Status</h2>
+
+        <p><strong>Cause:</strong> Usually means PostgreSQL relation is missing (for web units).</p>
+
+        <pre><code class="language-bash"># Fix: Create PostgreSQL relation
+juju integrate concourse-ci:postgresql postgresql:database</code></pre>
+
+        <h2>Web Server Won't Start</h2>
+
+        <h3>Check Logs</h3>
+
+        <pre><code class="language-bash"># View charm logs
+juju debug-log --include concourse-ci/0 --replay --no-tail | tail -50
+
+# SSH to unit and check systemd
+juju ssh concourse-ci/0
+sudo journalctl -u concourse-server -f</code></pre>
+
+        <h3>Common Causes</h3>
+
+        <ul>
+            <li><strong>Database not configured:</strong> Check PostgreSQL relation exists</li>
+            <li><strong>Auth configuration missing:</strong> <code>sudo cat /var/lib/concourse/config.env</code></li>
+            <li><strong>Port already in use:</strong> Change <code>web-port</code> config</li>
+        </ul>
+
+        <h2>Workers Not Connecting</h2>
+
+        <pre><code class="language-bash"># Check worker status
+juju ssh concourse-ci/1  # Worker unit
+sudo systemctl status concourse-worker
+sudo journalctl -u concourse-worker -f</code></pre>
+
+        <h3>Common Causes</h3>
+
+        <ul>
+            <li><strong>TSA keys not generated:</strong> Check <code>/var/lib/concourse/keys/</code></li>
+            <li><strong>Containerd not running:</strong> <code>sudo systemctl status containerd</code></li>
+            <li><strong>Network connectivity:</strong> Ensure workers can reach web server</li>
+        </ul>
+
+        <h2>GPU Not Detected</h2>
+
+        <h3>NVIDIA GPU</h3>
+
+        <pre><code class="language-bash"># Check GPU on host
+nvidia-smi
+
+# Check LXC device added
+lxc config device show &lt;container-name&gt;
+
+# Check inside container
+lxc exec &lt;container-name&gt; -- nvidia-smi
+
+# If missing, add GPU device
+lxc config device add &lt;container-name&gt; gpu0 gpu</code></pre>
+
+        <h3>AMD GPU</h3>
+
+        <pre><code class="language-bash"># Verify GPU device AND /dev/kfd exist
+lxc exec &lt;container-name&gt; -- ls -la /dev/dri/
+lxc exec &lt;container-name&gt; -- ls -la /dev/kfd
+
+# Add missing /dev/kfd (REQUIRED for ROCm compute)
+lxc config device add &lt;container-name&gt; kfd unix-char \
+  source=/dev/kfd path=/dev/kfd
+
+# For integrated GPUs, use override in pipeline
+export HSA_OVERRIDE_GFX_VERSION=11.0.0</code></pre>
+
+        <h2>Shared Storage Issues</h2>
+
+        <h3>"Waiting for shared storage mount"</h3>
+
+        <pre><code class="language-bash"># Run setup script to mount storage
+./scripts/setup-shared-storage.sh &lt;app-name&gt; /path/to/shared
+
+# Verify mount exists
+juju ssh &lt;unit&gt; -- mount | grep concourse</code></pre>
+
+        <h3>Permission Denied in Shared Storage</h3>
+
+        <pre><code class="language-bash"># Ensure LXC device uses shift=true for UID/GID mapping
+lxc config device show &lt;container-name&gt;
+
+# Should show: shift: "true"</code></pre>
+
+        <h2>Tasks Failing to Start</h2>
+
+        <h3>Missing Image Resource</h3>
+
+        <p>This charm uses containerd runtime. All tasks <strong>must</strong> include an <code>image_resource</code>:</p>
+
+        <pre><code class="language-yaml"># ❌ Wrong - no image_resource
+config:
+  platform: linux
+  run:
+    path: echo
+    args: ["hello"]
+
+# ✅ Correct - with image_resource
+config:
+  platform: linux
+  image_resource:
+    type: registry-image
+    source:
+      repository: busybox
+  run:
+    path: echo
+    args: ["hello"]</code></pre>
+
+        <h3>Container Pull Failures</h3>
+
+        <pre><code class="language-bash"># Check containerd status
+juju ssh &lt;worker-unit&gt;
+sudo systemctl status containerd
+
+# Check DNS configuration
+cat /etc/resolv.conf
+
+# Enable containerd DNS proxy if needed
+juju config &lt;app&gt; containerd-dns-proxy-enable=true
+juju config &lt;app&gt; containerd-dns-server="8.8.8.8,1.1.1.1"</code></pre>
+
+        <h2>Folder Mounts Not Working</h2>
+
+        <h3>Folders Not Visible in Tasks</h3>
+
+        <pre><code class="language-bash"># 1. Path MUST be under /srv
+# ✅ Correct
+path=/srv/datasets
+
+# ❌ Wrong - not under /srv
+path=/mnt/datasets
+
+# 2. Verify LXC mount exists
+lxc config device show &lt;container-name&gt;
+lxc exec &lt;container-name&gt; -- ls -la /srv/</code></pre>
+
+        <h3>Cannot Write to Writable Folder</h3>
+
+        <pre><code class="language-bash"># Folder name MUST end with _writable or _rw
+# ✅ Correct
+path=/srv/outputs_writable
+
+# ❌ Wrong - missing suffix
+path=/srv/outputs
+
+# LXC device must not be readonly
+lxc config device show &lt;container-name&gt;
+# Should NOT show: readonly: "true" for writable folders</code></pre>
+
+        <h2>Upgrade Failed</h2>
+
+        <pre><code class="language-bash"># Rollback to previous version
+juju config concourse-ci version=&lt;previous-version&gt;
+
+# Check error logs
+juju debug-log --include concourse-ci --replay | grep -i error
+
+# Verify database connectivity
+juju ssh concourse-ci/0
+sudo journalctl -u concourse-server | grep -i database</code></pre>
+
+        <h2>View Configuration</h2>
+
+        <pre><code class="language-bash"># Check all config values
+juju config concourse-ci
+
+# View runtime config file
+juju ssh concourse-ci/0
+sudo cat /var/lib/concourse/config.env</code></pre>
+
+        <h2>Check Service Status</h2>
+
+        <pre><code class="language-bash"># Web server
+juju ssh concourse-ci/0
+sudo systemctl status concourse-server
+sudo journalctl -u concourse-server -n 100
+
+# Worker
+juju ssh concourse-ci/1
+sudo systemctl status concourse-worker
+sudo journalctl -u concourse-worker -n 100
+
+# Containerd (on workers)
+sudo systemctl status containerd</code></pre>
+
+        <h2>Database Connection Issues</h2>
+
+        <pre><code class="language-bash"># Verify PostgreSQL relation
+juju status --relations
+
+# Check database credentials (stored in Juju secrets)
+juju ssh concourse-ci/0
+sudo cat /var/lib/concourse/config.env | grep DATABASE
+
+# Test connection manually
+sudo -u concourse psql &lt;connection-string&gt;</code></pre>
+
+        <h2>Get Help</h2>
+
+        <p>If issues persist:</p>
+
+        <ul>
+            <li><strong>GitHub Issues:</strong> <a href="https://github.com/fourdollars/concourse-ci-machine/issues">Report bugs</a></li>
+            <li><strong>Logs to include:</strong>
+                <ul>
+                    <li><code>juju debug-log --include &lt;app&gt; --replay --no-tail</code></li>
+                    <li><code>juju status --relations --storage</code></li>
+                    <li><code>juju config &lt;app&gt;</code></li>
+                </ul>
+            </li>
+        </ul>
+
+        <h2>Related Documentation</h2>
+
+        <ul>
+            <li><a href="../reference/architecture.html">Architecture Reference</a> - Understand system components</li>
+            <li><a href="../reference/configuration.html">Configuration Reference</a> - All config options</li>
+            <li><a href="../tutorials/deployment-guide.html">Deployment Guide</a> - Start fresh</li>
+        </ul>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Concourse CI Machine Charm | Maintained by <a href="https://github.com/fourdollars">Shih-Yuan Lee (FourDollars)</a></p>
+        <div class="footer-links">
+            <a href="https://github.com/fourdollars/concourse-ci-machine">GitHub</a>
+            <a href="https://charmhub.io/concourse-ci-machine">Charmhub</a>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>
