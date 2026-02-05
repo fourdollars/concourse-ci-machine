@@ -368,16 +368,22 @@ WantedBy=multi-user.target
         try:
             if graceful:
                 # Graceful restart - restart in order
-                subprocess.run(["systemctl", "restart", "concourse-server"], check=True)
-                subprocess.run(["systemctl", "restart", "concourse-worker"], check=True)
+                subprocess.run(
+                    ["systemctl", "restart", "concourse-server.service"], check=True
+                )
+                subprocess.run(
+                    ["systemctl", "restart", "concourse-worker.service"], check=True
+                )
                 logger.info("Services restarted gracefully")
             else:
                 # Force restart
                 subprocess.run(
-                    ["systemctl", "kill", "-9", "concourse-server"], capture_output=True
+                    ["systemctl", "kill", "-9", "concourse-server.service"],
+                    capture_output=True,
                 )
                 subprocess.run(
-                    ["systemctl", "kill", "-9", "concourse-worker"], capture_output=True
+                    ["systemctl", "kill", "-9", "concourse-worker.service"],
+                    capture_output=True,
                 )
                 self.start_services()
                 logger.info("Services force restarted")

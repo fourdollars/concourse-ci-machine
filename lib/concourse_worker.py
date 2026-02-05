@@ -1085,8 +1085,12 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
     def start_service(self):
         """Start Concourse worker service"""
         try:
-            subprocess.run(["systemctl", "enable", "concourse-worker"], check=True)
-            subprocess.run(["systemctl", "start", "concourse-worker"], check=True)
+            subprocess.run(
+                ["systemctl", "enable", "concourse-worker.service"], check=True
+            )
+            subprocess.run(
+                ["systemctl", "start", "concourse-worker.service"], check=True
+            )
             logger.info("Worker service started")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to start worker: {e}")
@@ -1096,10 +1100,11 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
         """Stop Concourse worker service"""
         try:
             subprocess.run(
-                ["systemctl", "stop", "concourse-worker"], capture_output=True
+                ["systemctl", "stop", "concourse-worker.service"], capture_output=True
             )
             subprocess.run(
-                ["systemctl", "disable", "concourse-worker"], capture_output=True
+                ["systemctl", "disable", "concourse-worker.service"],
+                capture_output=True,
             )
             logger.info("Worker service stopped")
         except subprocess.CalledProcessError as e:
@@ -1108,7 +1113,9 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
     def restart_service(self):
         """Restart Concourse worker service"""
         try:
-            subprocess.run(["systemctl", "restart", "concourse-worker"], check=True)
+            subprocess.run(
+                ["systemctl", "restart", "concourse-worker.service"], check=True
+            )
             logger.info("Worker service restarted")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to restart worker: {e}")
@@ -1118,7 +1125,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
         """Check if worker is running"""
         try:
             result = subprocess.run(
-                ["systemctl", "is-active", "concourse-worker"],
+                ["systemctl", "is-active", "concourse-worker.service"],
                 capture_output=True,
                 text=True,
             )

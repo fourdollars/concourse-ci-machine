@@ -272,8 +272,12 @@ WantedBy=multi-user.target
     def start_service(self):
         """Start Concourse web server service"""
         try:
-            subprocess.run(["systemctl", "enable", "concourse-server"], check=True)
-            subprocess.run(["systemctl", "start", "concourse-server"], check=True)
+            subprocess.run(
+                ["systemctl", "enable", "concourse-server.service"], check=True
+            )
+            subprocess.run(
+                ["systemctl", "start", "concourse-server.service"], check=True
+            )
             logger.info("Web server service started")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to start web server: {e}")
@@ -283,10 +287,11 @@ WantedBy=multi-user.target
         """Stop Concourse web server service"""
         try:
             subprocess.run(
-                ["systemctl", "stop", "concourse-server"], capture_output=True
+                ["systemctl", "stop", "concourse-server.service"], capture_output=True
             )
             subprocess.run(
-                ["systemctl", "disable", "concourse-server"], capture_output=True
+                ["systemctl", "disable", "concourse-server.service"],
+                capture_output=True,
             )
             logger.info("Web server service stopped")
         except subprocess.CalledProcessError as e:
@@ -295,7 +300,9 @@ WantedBy=multi-user.target
     def restart_service(self):
         """Restart Concourse web server service"""
         try:
-            subprocess.run(["systemctl", "restart", "concourse-server"], check=True)
+            subprocess.run(
+                ["systemctl", "restart", "concourse-server.service"], check=True
+            )
             logger.info("Web server service restarted")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to restart web server: {e}")
@@ -305,7 +312,7 @@ WantedBy=multi-user.target
         """Check if web server is running"""
         try:
             result = subprocess.run(
-                ["systemctl", "is-active", "concourse-server"],
+                ["systemctl", "is-active", "concourse-server.service"],
                 capture_output=True,
                 text=True,
             )
