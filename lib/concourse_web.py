@@ -309,6 +309,8 @@ WantedBy=multi-user.target
                 )
                 os.chown(CONCOURSE_BIN, concourse_uid, concourse_gid)
 
+            subprocess.run(["systemctl", "daemon-reload"], check=True)
+
             is_active_check = subprocess.run(
                 ["systemctl", "is-active", "concourse-server.service"],
                 capture_output=True,
@@ -317,12 +319,24 @@ WantedBy=multi-user.target
             service_not_active = is_active_check.returncode != 0
 
             if service_not_active:
-                subprocess.run(
+                start_result = subprocess.run(
                     ["systemctl", "start", "concourse-server.service"],
-                    check=True,
                     capture_output=True,
                     text=True,
                 )
+                if start_result.returncode != 0:
+                    error_details = f"Exit code {start_result.returncode}"
+                    if start_result.stderr:
+                        error_details += f", stderr: {start_result.stderr.strip()}"
+                    if start_result.stdout:
+                        error_details += f", stdout: {start_result.stdout.strip()}"
+                    logger.error(f"Failed to start web server: {error_details}")
+                    raise subprocess.CalledProcessError(
+                        start_result.returncode,
+                        start_result.args,
+                        start_result.stdout,
+                        start_result.stderr,
+                    )
                 logger.info("Web server service started")
             else:
                 logger.info("Web server service already active")
