@@ -272,9 +272,19 @@ WantedBy=multi-user.target
     def start_service(self):
         """Start Concourse web server service"""
         try:
-            subprocess.run(
-                ["systemctl", "enable", "concourse-server.service"], check=True
+            is_enabled_check = subprocess.run(
+                ["systemctl", "is-enabled", "concourse-server.service"],
+                capture_output=True,
+                text=True,
             )
+            service_not_enabled = is_enabled_check.returncode != 0
+
+            if service_not_enabled:
+                subprocess.run(
+                    ["systemctl", "enable", "concourse-server.service"], check=True
+                )
+                logger.info("Web server service enabled")
+
             subprocess.run(
                 ["systemctl", "start", "concourse-server.service"], check=True
             )

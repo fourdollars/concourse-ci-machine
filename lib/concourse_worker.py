@@ -1085,9 +1085,19 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
     def start_service(self):
         """Start Concourse worker service"""
         try:
-            subprocess.run(
-                ["systemctl", "enable", "concourse-worker.service"], check=True
+            is_enabled_check = subprocess.run(
+                ["systemctl", "is-enabled", "concourse-worker.service"],
+                capture_output=True,
+                text=True,
             )
+            service_not_enabled = is_enabled_check.returncode != 0
+
+            if service_not_enabled:
+                subprocess.run(
+                    ["systemctl", "enable", "concourse-worker.service"], check=True
+                )
+                logger.info("Worker service enabled")
+
             subprocess.run(
                 ["systemctl", "start", "concourse-worker.service"], check=True
             )
