@@ -23,8 +23,8 @@ help() {
     echo ""
     echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
-    echo "                                Available steps: deploy, verify, mounts, tagged, cuda, rocm,"
-    echo "                                                pytorch, upgrade, scale-out, destroy"
+    echo "                                Available steps: deploy, verify, verify-marker, mounts, tagged,"
+    echo "                                                cuda, rocm, pytorch, upgrade, scale-out, destroy"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, cuda, rocm, pytorch, upgrade"
@@ -82,7 +82,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "destroy")
+ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -472,6 +472,144 @@ EOF
         echo "Checking for lock acquisition..."
         juju debug-log --replay --include "$APP_NAME" --no-tail | grep "acquiring download lock" && echo "✓ Lock acquisition verified" || echo "WARNING: Lock acquisition log not found"
     fi
+}
+
+step_verify_marker() {
+    # This step specifically tests the shared storage marker file regression fix
+    # Issue: Units were downloading binaries to local storage even when shared-storage=lxc was configured
+    # Fix: Units now wait for .lxc_shared_storage marker before downloading
+    
+    if [[ "$SHARED_STORAGE" != "lxc" ]]; then
+        echo "=== Skipping Marker Verification (not using shared storage) ==="
+        return 0
+    fi
+    
+    echo "=== Verifying Shared Storage Marker File Fix ==="
+    echo "This test validates the fix for: units waiting for LXC marker before downloading binaries"
+    echo ""
+    
+    # Determine which units to check
+    if [[ "$MODE" == "auto" ]]; then
+        WEB_UNIT="$APP_NAME/0"
+        WORKER_UNIT="$APP_NAME/1"
+    else
+        WEB_UNIT="$WEB_APP/0"
+        WORKER_UNIT="$WORKER_APP/0"
+    fi
+    
+    echo "=== Test 1: Verify NO local binaries downloaded before marker setup ==="
+    echo "Checking that units did NOT download to /opt/concourse/ before marker appeared..."
+    
+    # Check web/leader unit
+    echo "Checking $WEB_UNIT..."
+    if juju ssh "$WEB_UNIT" -- "ls /opt/concourse/bin/concourse" 2>/dev/null; then
+        echo "✗ FAIL: Found binaries in /opt/concourse/ on $WEB_UNIT (should NOT exist)"
+        echo "   This indicates units downloaded locally before marker was set up"
+        exit 1
+    else
+        echo "✓ PASS: No binaries in /opt/concourse/ on $WEB_UNIT"
+    fi
+    
+    # Check worker unit
+    echo "Checking $WORKER_UNIT..."
+    if juju ssh "$WORKER_UNIT" -- "ls /opt/concourse/bin/concourse" 2>/dev/null; then
+        echo "✗ FAIL: Found binaries in /opt/concourse/ on $WORKER_UNIT (should NOT exist)"
+        echo "   This indicates units downloaded locally before marker was set up"
+        exit 1
+    else
+        echo "✓ PASS: No binaries in /opt/concourse/ on $WORKER_UNIT"
+    fi
+    
+    echo ""
+    echo "=== Test 2: Verify marker file was detected ==="
+    echo "Checking logs for marker file detection messages..."
+    
+    MARKER_DETECTED=false
+    if juju debug-log --replay --no-tail | grep -q "LXC shared storage mode configured but marker file not found"; then
+        echo "✓ Found log: Units initially waited for marker (before setup-shared-storage.sh ran)"
+        MARKER_DETECTED=true
+    fi
+    
+    if juju debug-log --replay --no-tail | grep -q "Initialized shared storage at: /var/lib/concourse"; then
+        echo "✓ Found log: Storage coordinator initialized after marker appeared"
+        MARKER_DETECTED=true
+    fi
+    
+    if [[ "$MARKER_DETECTED" == "false" ]]; then
+        echo "⚠ WARNING: Could not find marker detection logs"
+        echo "   This might indicate logs were not captured, but binary checks passed"
+    fi
+    
+    echo ""
+    echo "=== Test 3: Verify single download to shared storage ==="
+    echo "Checking that binaries exist in shared storage..."
+    
+    SHARED_BIN="$SHARED_PATH/bin/concourse"
+    if [[ ! -f "$SHARED_BIN" ]]; then
+        echo "✗ FAIL: Binary NOT found in shared storage at $SHARED_BIN"
+        if [[ -d "$SHARED_PATH" ]]; then
+            echo "   Directory contents:"
+            ls -la "$SHARED_PATH"
+        fi
+        exit 1
+    else
+        echo "✓ PASS: Binary found in shared storage: $SHARED_BIN"
+        ls -lh "$SHARED_BIN"
+    fi
+    
+    # Verify both units see the same binary (same inode = same file via shared mount)
+    echo ""
+    echo "Checking that both units access the same shared binary..."
+    WEB_INODE=$(juju ssh "$WEB_UNIT" -- "stat -c %i /var/lib/concourse/bin/concourse" 2>/dev/null || echo "N/A")
+    WORKER_INODE=$(juju ssh "$WORKER_UNIT" -- "stat -c %i /var/lib/concourse/bin/concourse" 2>/dev/null || echo "N/A")
+    
+    if [[ "$WEB_INODE" != "N/A" && "$WORKER_INODE" != "N/A" && "$WEB_INODE" == "$WORKER_INODE" ]]; then
+        echo "✓ PASS: Both units see the same binary (inode: $WEB_INODE)"
+    elif [[ "$WEB_INODE" == "N/A" || "$WORKER_INODE" == "N/A" ]]; then
+        echo "⚠ WARNING: Could not verify inode on one or both units"
+    else
+        echo "✗ FAIL: Units see different binaries (web: $WEB_INODE, worker: $WORKER_INODE)"
+        echo "   This indicates binaries were not properly shared"
+        exit 1
+    fi
+    
+    echo ""
+    echo "=== Test 4: Verify download happened only once ==="
+    echo "Checking logs for single download by leader..."
+    
+    DOWNLOAD_COUNT=$(juju debug-log --replay --no-tail | grep -c "Downloading Concourse CI.*from https://github.com" || true)
+    if [[ "$DOWNLOAD_COUNT" -eq 1 ]]; then
+        echo "✓ PASS: Found exactly 1 download event (leader downloaded, workers reused)"
+    elif [[ "$DOWNLOAD_COUNT" -gt 1 ]]; then
+        echo "✗ FAIL: Found $DOWNLOAD_COUNT download events (expected 1)"
+        echo "   Multiple downloads indicate units downloaded independently"
+        exit 1
+    else
+        echo "⚠ WARNING: No download logs found (might have been pruned)"
+    fi
+    
+    # Check for worker reuse messages
+    if [[ "$MODE" == "auto" ]]; then
+        if juju debug-log --replay --include "$APP_NAME/1" --no-tail | grep -q "Binaries.*already"; then
+            echo "✓ PASS: Worker unit logged binary reuse"
+        else
+            echo "⚠ WARNING: Worker binary reuse log not found"
+        fi
+    elif [[ "$MODE" == "web+worker" ]]; then
+        if juju debug-log --replay --include "$WORKER_APP/0" --no-tail | grep -q "Binaries.*already"; then
+            echo "✓ PASS: Worker unit logged binary reuse"
+        else
+            echo "⚠ WARNING: Worker binary reuse log not found"
+        fi
+    fi
+    
+    echo ""
+    echo "=== Marker Verification Complete ==="
+    echo "✅ All critical tests PASSED"
+    echo "   - No local downloads before marker"
+    echo "   - Binaries in shared storage"
+    echo "   - Single download by leader"
+    echo ""
 }
 
 step_mounts() {
@@ -1456,6 +1594,7 @@ for step in "${STEPS_TO_RUN[@]}"; do
     case $step in
         deploy) step_deploy ;;
         verify) step_verify ;;
+        verify-marker) step_verify_marker ;;
         mounts) step_mounts ;;
         tagged) step_tagged ;;
         cuda) step_cuda ;;

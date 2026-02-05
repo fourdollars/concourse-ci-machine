@@ -233,6 +233,9 @@ jobs:
       - name: Verify
         run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=verify
 
+      - name: Verify Marker File Fix
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=verify-marker
+
       - name: Test Mounts
         run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=mounts
 
@@ -311,6 +314,9 @@ jobs:
 
       - name: Verify
         run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=verify
+
+      - name: Verify Marker File Fix
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=verify-marker
 
       - name: Test Mounts
         run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=mounts
