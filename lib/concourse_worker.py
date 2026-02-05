@@ -123,6 +123,15 @@ class ConcourseWorkerHelper:
                         f"Creating {storage_path} directory for LXC shared storage"
                     )
                     storage_path.mkdir(parents=True, exist_ok=True)
+
+                # Check for LXC shared storage marker BEFORE initializing storage
+                marker_file = storage_path / ".lxc_shared_storage"
+                if not marker_file.exists():
+                    logger.info(
+                        "LXC shared storage mode configured but marker file not found. "
+                        f"Waiting for {marker_file} to appear."
+                    )
+                    return None
             else:
                 logger.info(f"Unknown shared-storage mode: {shared_storage_mode}")
                 return None

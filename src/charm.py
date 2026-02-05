@@ -401,6 +401,14 @@ class ConcourseCharm(CharmBase):
                         )
                         event.defer()
                         return
+                elif self.config.get("shared-storage", "none") != "none":
+                    storage_mode = self.config["shared-storage"]
+                    logger.warning(
+                        f"Shared storage mode '{storage_mode}' configured but /var/lib/concourse not mounted. "
+                        "Unit will wait for storage to be configured."
+                    )
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                    return
                 else:
                     download_and_install_concourse(self, version)
 
