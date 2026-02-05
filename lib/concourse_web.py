@@ -271,7 +271,33 @@ WantedBy=multi-user.target
 
     def start_service(self):
         """Start Concourse web server service"""
+        import os
+        import stat
+
         try:
+            concourse_bin = Path(CONCOURSE_BIN)
+
+            if not concourse_bin.exists():
+                error_msg = f"Cannot start service: {CONCOURSE_BIN} does not exist"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+
+            if not concourse_bin.is_file():
+                error_msg = f"Cannot start service: {CONCOURSE_BIN} is not a file"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+
+            file_stat = concourse_bin.stat()
+            is_executable = bool(
+                file_stat.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            )
+            if not is_executable:
+                logger.warning(f"{CONCOURSE_BIN} is not executable, fixing permissions")
+                os.chmod(
+                    CONCOURSE_BIN,
+                    file_stat.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+                )
+
             is_enabled_check = subprocess.run(
                 ["systemctl", "is-enabled", "concourse-server.service"],
                 capture_output=True,
@@ -281,16 +307,25 @@ WantedBy=multi-user.target
 
             if service_not_enabled:
                 subprocess.run(
-                    ["systemctl", "enable", "concourse-server.service"], check=True
+                    ["systemctl", "enable", "concourse-server.service"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
                 logger.info("Web server service enabled")
 
             subprocess.run(
-                ["systemctl", "start", "concourse-server.service"], check=True
+                ["systemctl", "start", "concourse-server.service"],
+                check=True,
+                capture_output=True,
+                text=True,
             )
             logger.info("Web server service started")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to start web server: {e}")
+            stderr = (
+                e.stderr if hasattr(e, "stderr") and e.stderr else "No stderr available"
+            )
+            logger.error(f"Failed to start web server: {e}. Stderr: {stderr}")
             raise
 
     def stop_service(self):
