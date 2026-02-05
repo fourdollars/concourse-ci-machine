@@ -298,6 +298,17 @@ WantedBy=multi-user.target
                     file_stat.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
                 )
 
+            # Ensure binary is owned by concourse user (critical for LXC shared storage with UID mapping)
+            import pwd
+
+            concourse_uid = pwd.getpwnam("concourse").pw_uid
+            concourse_gid = pwd.getpwnam("concourse").pw_gid
+            if file_stat.st_uid != concourse_uid or file_stat.st_gid != concourse_gid:
+                logger.warning(
+                    f"{CONCOURSE_BIN} owned by {file_stat.st_uid}:{file_stat.st_gid}, changing to concourse:{concourse_gid}"
+                )
+                os.chown(CONCOURSE_BIN, concourse_uid, concourse_gid)
+
             is_enabled_check = subprocess.run(
                 ["systemctl", "is-enabled", "concourse-server.service"],
                 capture_output=True,
