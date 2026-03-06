@@ -229,6 +229,8 @@ ensure_cli() {
         IP=$(cat concourse-ip.txt)
     fi
 
+    echo "DEBUG ensure_cli: fly=$(test -f fly && echo yes || echo no) PASSWORD=$(test -n "$PASSWORD" && echo set || echo empty) IP='${IP}'"
+
     if [[ -f "fly" && -n "$PASSWORD" && -n "$IP" ]]; then
         _fly_login_with_retry "$IP" "$PASSWORD"
         ./fly -t test sync 2>/dev/null || true
@@ -239,69 +241,67 @@ ensure_cli() {
 
     # Get password if missing
     if [[ -z "$PASSWORD" ]]; then
+        echo "Fetching admin password via juju run..."
         PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' | sed "s/^'//;s/'$//" || echo "")
         if [[ -z "$PASSWORD" ]]; then
             echo "Error: Failed to retrieve admin password."
             exit 1
         fi
+        echo "Password retrieved."
         echo "$PASSWORD" > admin-password.txt
     fi
 
-    # Wait for the web unit to be active AND reachable.
-    #
-    # IMPORTANT: All Juju JSON address fields (public-address, machine.dns-name)
-    # return the GitHub Actions runner host IP, NOT the LXD container IP.
-    # The only reliable source of the correct IP is the workload-status message
-    # URL (set by the charm via ops network binding's ingress_address). However,
-    # ingress_address may initially resolve to the wrong IP and self-correct after
-    # a subsequent hook fires. So we poll the status message AND verify actual
-    # TCP reachability on each attempt, accepting the first IP that responds.
-    if [[ -z "$IP" ]]; then
-        echo "Waiting for web unit to be active and reachable..."
-        local attempt=0
-        while true; do
-            local status_json
-            status_json=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null || echo "")
-            local unit_state
-            unit_state=$(echo "$status_json" \
+    echo "Waiting for web unit to be active and reachable..."
+    IP=""
+    local attempt=0
+    while true; do
+        local status_json
+        status_json=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null || echo "")
+        local unit_state
+        unit_state=$(echo "$status_json" \
+            | jq -r ".applications.\"${LEADER%%/*}\".units \
+                | to_entries[] | select(.value.leader == true) \
+                | .value[\"workload-status\"].current" 2>/dev/null || echo "")
+        if [[ "$unit_state" == "active" ]]; then
+            local status_msg status_ip machine_id machine_ip
+            status_msg=$(echo "$status_json" \
                 | jq -r ".applications.\"${LEADER%%/*}\".units \
                     | to_entries[] | select(.value.leader == true) \
-                    | .value[\"workload-status\"].current" 2>/dev/null || echo "")
-            if [[ "$unit_state" == "active" ]]; then
-                local status_msg candidate_ip
-                status_msg=$(echo "$status_json" \
-                    | jq -r ".applications.\"${LEADER%%/*}\".units \
-                        | to_entries[] | select(.value.leader == true) \
-                        | .value[\"workload-status\"].message" 2>/dev/null || echo "")
-                candidate_ip=$(echo "$status_msg" | grep -oP 'http://\K[^:/]+' || echo "")
-                if [[ -n "$candidate_ip" && "$candidate_ip" != "null" ]]; then
-                    echo "Status message URL candidate IP: $candidate_ip (status: $status_msg)"
-                    # Use curl to hit /api/v1/info and verify a valid Concourse JSON response.
-                    # nc -z is insufficient: the GitHub runner host may have something
-                    # listening on port 8080 that is NOT Concourse.
-                    local info_response
-                    info_response=$(curl -sf --max-time 5 "http://$candidate_ip:8080/api/v1/info" 2>/dev/null || echo "")
-                    echo "  /api/v1/info response from $candidate_ip: ${info_response:0:120}"
-                    if echo "$info_response" | grep -q '"worker_version"'; then
-                        IP="$candidate_ip"
-                        echo "Confirmed Concourse API responding at $IP:8080"
-                        break
-                    else
-                        echo "  $candidate_ip:8080 is not Concourse (no worker_version), waiting..."
-                    fi
+                    | .value[\"workload-status\"].message" 2>/dev/null || echo "")
+            status_ip=$(echo "$status_msg" | grep -oP 'http://\K[^:/]+' || echo "")
+            machine_id=$(echo "$status_json" \
+                | jq -r ".applications.\"${LEADER%%/*}\".units \
+                    | to_entries[] | select(.value.leader == true) \
+                    | .value.machine" 2>/dev/null || echo "")
+            machine_ip=$(echo "$status_json" \
+                | jq -r ".machines[\"${machine_id}\"][\"dns-name\"]" 2>/dev/null || echo "")
+            echo "  unit=active status_ip='$status_ip' machine_ip='$machine_ip' (machine=$machine_id)"
+
+            local candidate_ip
+            for candidate_ip in "$status_ip" "$machine_ip"; do
+                if [[ -z "$candidate_ip" || "$candidate_ip" == "null" ]]; then
+                    continue
                 fi
-            fi
-            attempt=$((attempt + 1))
-            if [[ $attempt -ge 90 ]]; then
-                echo "Error: Web unit did not become reachable within timeout."
-                echo "Last workload state: ${unit_state:-unknown}"
-                exit 1
-            fi
-            echo "Waiting for web unit (attempt $attempt/90, state: ${unit_state:-unknown})..."
-            sleep 10
-        done
-        echo "$IP" > concourse-ip.txt
-    fi
+                local info_response
+                info_response=$(curl -sf --max-time 5 "http://$candidate_ip:8080/api/v1/info" 2>/dev/null || echo "")
+                echo "  curl http://$candidate_ip:8080/api/v1/info => ${info_response:0:120}"
+                if echo "$info_response" | grep -q '"worker_version"'; then
+                    IP="$candidate_ip"
+                    echo "Confirmed Concourse API responding at $IP:8080"
+                    break 2
+                fi
+            done
+        fi
+        attempt=$((attempt + 1))
+        if [[ $attempt -ge 90 ]]; then
+            echo "Error: Web unit did not become reachable within timeout."
+            echo "Last workload state: ${unit_state:-unknown}"
+            exit 1
+        fi
+        echo "Waiting for web unit (attempt $attempt/90, state: ${unit_state:-unknown})..."
+        sleep 10
+    done
+    echo "$IP" > concourse-ip.txt
 
     local version
     version=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
