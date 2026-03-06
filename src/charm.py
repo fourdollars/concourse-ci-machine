@@ -834,6 +834,25 @@ class ConcourseCharm(CharmBase):
                                 self.worker_helper.setup_systemd_service()
                                 if self._should_run_web():
                                     self.web_helper.setup_systemd_service()
+
+                                # Publish worker public key to peer relation immediately
+                                # so the web leader can authorize it without waiting for
+                                # the next peer_relation_changed event
+                                peer_relation = self.model.get_relation("peers")
+                                if peer_relation:
+                                    from concourse_common import WORKER_KEYS_DIR
+
+                                    worker_pub_key_path = (
+                                        Path(WORKER_KEYS_DIR) / "worker_key.pub"
+                                    )
+                                    if worker_pub_key_path.exists():
+                                        peer_relation.data[self.unit][
+                                            "worker-public-key"
+                                        ] = worker_pub_key_path.read_text().strip()
+                                        logger.info(
+                                            "Published worker public key to peer relation from update-status"
+                                        )
+
                                 logger.info("Worker setup completed via update-status")
                                 self._update_status()
                                 return
@@ -863,6 +882,9 @@ class ConcourseCharm(CharmBase):
                                 logger.info(
                                     "Web service setup completed via update-status"
                                 )
+                                # Publish TSA keys and web-ip to peer relation immediately
+                                # so workers can get the correct TSA host right away
+                                self._publish_keys_to_peers()
                                 self._update_status()
                                 return
                             except Exception as e:
