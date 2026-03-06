@@ -284,6 +284,14 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
     import shutil
     import hashlib
 
+    # Early exit: if binary already exists, skip re-download (idempotency guard)
+    concourse_bin = target_dir / "concourse"
+    if concourse_bin.exists():
+        logger.info(
+            f"Concourse binary already exists at {target_dir}, skipping download"
+        )
+        return
+
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
     sha1_url = f"{url}.sha1"
     logger.info(f"Downloading Concourse CI {version} from {url}")
