@@ -203,6 +203,22 @@ trap_cleanup() {
 }
 trap trap_cleanup EXIT
 
+# Helper: login to fly target with retry (up to 12 attempts x 10s = 2 minutes)
+_fly_login_with_retry() {
+    local ip="$1" password="$2"
+    echo "Logging in to Concourse at http://${ip}:8080..."
+    for attempt in $(seq 1 12); do
+        if ./fly -t test login -c "http://${ip}:8080" -u admin -p "$password"; then
+            echo "Fly login successful (attempt $attempt)."
+            return 0
+        fi
+        echo "Login failed (attempt $attempt/12), retrying in 10s..."
+        sleep 10
+    done
+    echo "Error: Could not log in to Concourse after 12 attempts."
+    return 1
+}
+
 # Helper to ensure CLI is set up
 ensure_cli() {
     # Restore vars from files if present
@@ -214,13 +230,13 @@ ensure_cli() {
     fi
 
     if [[ -f "fly" && -n "$PASSWORD" && -n "$IP" ]]; then
-        # Already setup, just ensure login
-        ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
+        _fly_login_with_retry "$IP" "$PASSWORD"
+        ./fly -t test sync 2>/dev/null || true
         return
     fi
-    
+
     echo "=== Setting up CLI ==="
-    
+
     # Get password if missing
     if [[ -z "$PASSWORD" ]]; then
         PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' | sed "s/^'//;s/'$//" || echo "")
@@ -231,19 +247,42 @@ ensure_cli() {
         echo "$PASSWORD" > admin-password.txt
     fi
 
-    local web_status version
-    web_status=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value[\"workload-status\"].message")
-    version=$(echo "$web_status" | grep -oP '\(v\K[0-9]+\.[0-9]+\.[0-9]+(?=\))')
-
-    # Get IP if missing - extract from workload status message (the charm sets this to its actual bind URL)
+    # Wait for web unit to become active (URL appears in status message).
+    # This handles both: (a) shared-storage mode where unit starts Blocked/Waiting
+    # until update-status fires, and (b) timing where juju-wait finishes before
+    # the charm has set its final Active status message containing the URL.
     if [[ -z "$IP" ]]; then
-        IP=$(echo "$web_status" | grep -oP 'http://\K[^:/]+')
-        if [[ "$IP" == "null" || -z "$IP" ]]; then
-            echo "Error: Could not determine Concourse IP from status message."
-            exit 1
-        fi
+        echo "Waiting for web unit to become active (URL in status message)..."
+        local attempt=0
+        while true; do
+            local web_status
+            web_status=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+                | jq -r ".applications.\"${LEADER%%/*}\".units \
+                    | to_entries[] | select(.value.leader == true) \
+                    | .value[\"workload-status\"].message" 2>/dev/null || echo "")
+            IP=$(echo "$web_status" | grep -oP 'http://\K[^:/]+' || echo "")
+            if [[ -n "$IP" && "$IP" != "null" ]]; then
+                echo "Web unit active, IP: $IP"
+                break
+            fi
+            attempt=$((attempt + 1))
+            if [[ $attempt -ge 90 ]]; then
+                echo "Error: Web unit did not become active within timeout."
+                echo "Last status message: ${web_status:-unknown}"
+                exit 1
+            fi
+            echo "Waiting for web unit (attempt $attempt/90, status: ${web_status:-unknown})..."
+            sleep 10
+        done
         echo "$IP" > concourse-ip.txt
     fi
+
+    local version
+    version=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+        | jq -r ".applications.\"${LEADER%%/*}\".units \
+            | to_entries[] | select(.value.leader == true) \
+            | .value[\"workload-status\"].message" 2>/dev/null \
+        | grep -oP '\(v\K[0-9]+\.[0-9]+\.[0-9]+(?=\))' || echo "")
 
     # Download fly if missing - try GitHub releases first (no Concourse connectivity needed)
     if [[ ! -f "fly" ]]; then
@@ -274,9 +313,7 @@ ensure_cli() {
         fi
     fi
 
-    # Login
-    echo "Logging in to Concourse..."
-    ./fly -t test login -c "http://${IP}:8080" -u admin -p "$PASSWORD" 2>/dev/null || true
+    _fly_login_with_retry "$IP" "$PASSWORD"
 
     # Sync to avoid version mismatch warnings
     ./fly -t test sync 2>/dev/null || true
