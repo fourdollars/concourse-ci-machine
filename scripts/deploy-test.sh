@@ -247,17 +247,17 @@ ensure_cli() {
         echo "$PASSWORD" > admin-password.txt
     fi
 
-    # Wait for the web unit to reach Active state. In shared-storage mode the
-    # unit starts Blocked/Waiting until update-status fires (~10s later), so
-    # juju-wait finishing does not guarantee the unit is Active yet.
+    # Wait for the web unit to be active AND reachable.
     #
-    # IMPORTANT: All Juju JSON fields (public-address, machine.dns-name) return
-    # the GitHub Actions runner host IP (10.47.x.x), NOT the LXD container IP.
-    # The only reliable source of the correct container IP is the workload-status
-    # message, which the charm sets to "... http://<ingress_address>:PORT" when
-    # active. The ingress_address is correctly detected inside the LXD container.
+    # IMPORTANT: All Juju JSON address fields (public-address, machine.dns-name)
+    # return the GitHub Actions runner host IP, NOT the LXD container IP.
+    # The only reliable source of the correct IP is the workload-status message
+    # URL (set by the charm via ops network binding's ingress_address). However,
+    # ingress_address may initially resolve to the wrong IP and self-correct after
+    # a subsequent hook fires. So we poll the status message AND verify actual
+    # TCP reachability on each attempt, accepting the first IP that responds.
     if [[ -z "$IP" ]]; then
-        echo "Waiting for web unit to become active with URL in status message..."
+        echo "Waiting for web unit to be active and reachable..."
         local attempt=0
         while true; do
             local status_json
@@ -268,22 +268,26 @@ ensure_cli() {
                     | to_entries[] | select(.value.leader == true) \
                     | .value[\"workload-status\"].current" 2>/dev/null || echo "")
             if [[ "$unit_state" == "active" ]]; then
-                local status_msg
+                local status_msg candidate_ip
                 status_msg=$(echo "$status_json" \
                     | jq -r ".applications.\"${LEADER%%/*}\".units \
                         | to_entries[] | select(.value.leader == true) \
                         | .value[\"workload-status\"].message" 2>/dev/null || echo "")
-                # Extract IP from URL in the message: "... http://<IP>:<PORT>"
-                IP=$(echo "$status_msg" | grep -oP 'http://\K[^:/]+' || echo "")
-                if [[ -n "$IP" && "$IP" != "null" ]]; then
-                    echo "Web unit active, extracted IP from status message: $IP"
-                    echo "  Status message: $status_msg"
-                    break
+                candidate_ip=$(echo "$status_msg" | grep -oP 'http://\K[^:/]+' || echo "")
+                if [[ -n "$candidate_ip" && "$candidate_ip" != "null" ]]; then
+                    echo "Status message URL candidate IP: $candidate_ip (status: $status_msg)"
+                    if nc -z -w3 "$candidate_ip" 8080 2>/dev/null; then
+                        IP="$candidate_ip"
+                        echo "Confirmed reachable: $IP:8080"
+                        break
+                    else
+                        echo "  IP $candidate_ip:8080 not reachable yet, waiting..."
+                    fi
                 fi
             fi
             attempt=$((attempt + 1))
             if [[ $attempt -ge 90 ]]; then
-                echo "Error: Web unit did not become active with URL within timeout."
+                echo "Error: Web unit did not become reachable within timeout."
                 echo "Last workload state: ${unit_state:-unknown}"
                 exit 1
             fi
