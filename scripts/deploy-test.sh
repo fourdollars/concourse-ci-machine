@@ -675,6 +675,15 @@ step_verify_marker() {
     elif [[ "$DOWNLOAD_COUNT" -gt 1 ]]; then
         echo "✗ FAIL: Found $DOWNLOAD_COUNT shared-storage download events (expected 1)"
         echo "   Multiple downloads indicate units downloaded independently"
+        echo ""
+        echo "=== DEBUG: All shared-storage download events with context ==="
+        juju debug-log --replay --no-tail | grep -B2 -A5 "Downloading Concourse CI.*\[shared-storage\]" || true
+        echo ""
+        echo "=== DEBUG: All DEBUG call stack lines ==="
+        juju debug-log --replay --no-tail | grep "DEBUG.*Download call stack" || true
+        echo ""
+        echo "=== DEBUG: Full charm log around downloads ==="
+        juju debug-log --replay --no-tail | grep -E "Downloading|shared-storage|No binaries yet|Installation completed|Found existing|should_check_storage|update-status" | head -50 || true
         exit 1
     else
         echo "⚠ WARNING: No shared-storage download logs found (might have been pruned)"
