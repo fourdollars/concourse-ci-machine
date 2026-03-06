@@ -501,15 +501,24 @@ step_verify() {
     ensure_cli
 
     echo "=== Verifying System ==="
-    echo "Checking registered workers..."
-    ./fly -t test workers
-
-    WORKER_COUNT=$(./fly -t test workers | grep -c "running" || true)
-    echo "Active workers: $WORKER_COUNT"
-
-    if [[ "$WORKER_COUNT" -lt 1 ]]; then
-        echo "WARNING: No active workers found!"
-    fi
+    echo "Waiting for at least 1 active worker..."
+    WORKER_WAIT=0
+    WORKER_TIMEOUT=120
+    while true; do
+        WORKER_COUNT=$(./fly -t test workers 2>/dev/null | grep -c "running" || true)
+        if [[ "$WORKER_COUNT" -ge 1 ]]; then
+            echo "Active workers: $WORKER_COUNT"
+            break
+        fi
+        if [[ "$WORKER_WAIT" -ge "$WORKER_TIMEOUT" ]]; then
+            echo "WARNING: No active workers found after ${WORKER_TIMEOUT}s!"
+            ./fly -t test workers
+            break
+        fi
+        echo "No active workers yet (waited ${WORKER_WAIT}s)..."
+        sleep 10
+        WORKER_WAIT=$((WORKER_WAIT + 10))
+    done
 
     echo "=== Running Test Task ==="
     cat <<EOF > task.yml
