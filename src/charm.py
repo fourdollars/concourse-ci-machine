@@ -940,13 +940,6 @@ class ConcourseCharm(CharmBase):
                                 download_and_install_concourse_with_storage(
                                     self, version, storage_coordinator
                                 )
-                                from concourse_common import (
-                                    create_shared_storage_symlinks,
-                                )
-
-                                create_shared_storage_symlinks(
-                                    storage_coordinator.storage.bin_directory
-                                )
 
                                 Path("/etc/default/concourse").touch()
                                 import os
