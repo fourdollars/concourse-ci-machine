@@ -1224,10 +1224,22 @@ step_scale_out() {
     else
         sleep 60
     fi
-    
+
+    if [[ "$SHARED_STORAGE" == "lxc" ]]; then
+        echo "Waiting for all units to become active (shared storage detection may need update-status cycle)..."
+        timeout 180 bash -c "
+            while true; do
+                NON_ACTIVE=\$(juju status -m $MODEL_NAME $SCALE_APP --format=json | jq -r '[.applications.\"$SCALE_APP\".units[] | select(.\"workload-status\".current != \"active\")] | length')
+                if [ \"\$NON_ACTIVE\" = \"0\" ]; then break; fi
+                echo \"  Waiting: \$NON_ACTIVE unit(s) not yet active...\"
+                sleep 10
+            done
+        " || echo "  Warning: timed out waiting for all units to be active"
+    fi
+
     echo "Status after scaling:"
     juju status -m "$MODEL_NAME"
-    
+
     echo "Verifying worker registration..."
     # Retry worker check - registration can take time after unit is active in Juju
     for i in {1..36}; do
