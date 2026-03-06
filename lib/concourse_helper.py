@@ -205,11 +205,19 @@ class ConcourseHelper:
         if external_url:
             config["CONCOURSE_EXTERNAL_URL"] = external_url
         else:
-            # Construct default external URL
-            # For machine charms, get IP from hostname command as fallback
             import socket
 
-            unit_ip = socket.gethostbyname(socket.gethostname())
+            unit_ip = None
+            for binding_name in ["tsa", "peers", ""]:
+                try:
+                    binding = self.charm.model.get_binding(binding_name)
+                    if binding and binding.network and binding.network.ingress_address:
+                        unit_ip = str(binding.network.ingress_address)
+                        break
+                except Exception:
+                    continue
+            if not unit_ip:
+                unit_ip = socket.gethostbyname(socket.gethostname())
             web_port = self.config.get("web-port", 8080)
             config["CONCOURSE_EXTERNAL_URL"] = f"http://{unit_ip}:{web_port}"
 
