@@ -644,6 +644,20 @@ class ConcourseCharm(CharmBase):
                                 return
                     else:
                         # Simple upgrade (single unit or no shared storage)
+                        # But if shared storage is configured, we must wait for
+                        # the storage mount rather than downloading locally,
+                        # otherwise we'd get two "Downloading Concourse CI" events:
+                        # one here (plain download) and one later when update-status
+                        # fires after the storage is mounted.
+                        if self.config.get("shared-storage", "none") != "none":
+                            logger.info(
+                                "Shared storage configured but no peer relation yet. "
+                                "Waiting for storage mount before downloading."
+                            )
+                            self.unit.status = WaitingStatus(
+                                "Waiting for shared storage mount"
+                            )
+                            return
                         self._perform_simple_upgrade(event, desired_version)
 
             # Update configuration based on role
