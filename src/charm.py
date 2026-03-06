@@ -1147,17 +1147,15 @@ class ConcourseCharm(CharmBase):
             return
 
         try:
-            # Get IPv4 address
-            import subprocess
-
-            result = subprocess.run(["hostname", "-I"], capture_output=True, text=True)
-            ips = result.stdout.strip().split()
-            # Find first IPv4 address
             unit_ip = None
-            for ip in ips:
-                if "." in ip and not ip.startswith("127."):
-                    unit_ip = ip
-                    break
+            for binding_name in ["tsa", "peers", ""]:
+                try:
+                    binding = self.model.get_binding(binding_name)
+                    if binding and binding.network and binding.network.ingress_address:
+                        unit_ip = str(binding.network.ingress_address)
+                        break
+                except Exception:
+                    continue
 
             if not unit_ip:
                 unit_ip = socket.gethostbyname(socket.gethostname())
@@ -1366,9 +1364,17 @@ class ConcourseCharm(CharmBase):
             worker_dir = Path("/var/lib/concourse/worker")
             worker_dir.mkdir(exist_ok=True)
 
-        import socket
-
-        unit_ip = socket.gethostbyname(socket.gethostname())
+        unit_ip = None
+        for binding_name in ["tsa", "peers", ""]:
+            try:
+                _b = self.model.get_binding(binding_name)
+                if _b and _b.network and _b.network.ingress_address:
+                    unit_ip = str(_b.network.ingress_address)
+                    break
+            except Exception:
+                continue
+        if not unit_ip:
+            unit_ip = socket.gethostbyname(socket.gethostname())
         web_port = self.config.get("web-port", 8080)
 
         # Web server config
@@ -1833,16 +1839,20 @@ class ConcourseCharm(CharmBase):
             for binding_name in ["tsa", "peers", ""]:
                 try:
                     binding = self.model.get_binding(binding_name)
-                    if binding and binding.network and binding.network.bind_address:
+                    if binding and binding.network and binding.network.ingress_address:
                         break
                 except Exception:
                     continue
 
-            if not binding or not binding.network or not binding.network.bind_address:
+            if (
+                not binding
+                or not binding.network
+                or not binding.network.ingress_address
+            ):
                 logger.debug("Could not determine unit IP address for web URL")
                 return None
 
-            unit_ip = str(binding.network.bind_address)
+            unit_ip = str(binding.network.ingress_address)
             web_port = self.config.get("web-port", 8080)
 
             return f"http://{unit_ip}:{web_port}"
@@ -2143,8 +2153,8 @@ class ConcourseCharm(CharmBase):
             try:
                 # Get web IP from Juju network binding
                 binding = self.model.get_binding("tsa")
-                if binding and binding.network and binding.network.bind_address:
-                    web_ip = str(binding.network.bind_address)
+                if binding and binding.network and binding.network.ingress_address:
+                    web_ip = str(binding.network.ingress_address)
                 else:
                     logger.warning("Could not determine web IP from binding")
                     return

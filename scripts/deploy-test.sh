@@ -247,31 +247,42 @@ ensure_cli() {
         echo "$PASSWORD" > admin-password.txt
     fi
 
-    # Wait for web unit to become active (URL appears in status message).
-    # This handles both: (a) shared-storage mode where unit starts Blocked/Waiting
-    # until update-status fires, and (b) timing where juju-wait finishes before
-    # the charm has set its final Active status message containing the URL.
+    # Wait for the web unit to reach Active state. In shared-storage mode the
+    # unit starts Blocked/Waiting until update-status fires (~10s later), so
+    # juju-wait finishing does not guarantee the unit is Active yet.
+    # Once Active, read the IP from the machine's dns-name field rather than
+    # the workload-status message: binding.network.bind_address inside the LXD
+    # container can resolve to the host runner IP (10.47.x.x), not the
+    # container's routable address, producing an unreachable URL in the message.
     if [[ -z "$IP" ]]; then
-        echo "Waiting for web unit to become active (URL in status message)..."
+        echo "Waiting for web unit to become active..."
         local attempt=0
         while true; do
-            local web_status
-            web_status=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+            local unit_state
+            unit_state=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
                 | jq -r ".applications.\"${LEADER%%/*}\".units \
                     | to_entries[] | select(.value.leader == true) \
-                    | .value[\"workload-status\"].message" 2>/dev/null || echo "")
-            IP=$(echo "$web_status" | grep -oP 'http://\K[^:/]+' || echo "")
-            if [[ -n "$IP" && "$IP" != "null" ]]; then
-                echo "Web unit active, IP: $IP"
-                break
+                    | .value[\"workload-status\"].current" 2>/dev/null || echo "")
+            if [[ "$unit_state" == "active" ]]; then
+                local machine_id
+                machine_id=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+                    | jq -r ".applications.\"${LEADER%%/*}\".units \
+                        | to_entries[] | select(.value.leader == true) \
+                        | .value.machine" 2>/dev/null || echo "")
+                IP=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+                    | jq -r ".machines.\"${machine_id}\".\"dns-name\"" 2>/dev/null || echo "")
+                if [[ -n "$IP" && "$IP" != "null" ]]; then
+                    echo "Web unit active, IP (dns-name): $IP"
+                    break
+                fi
             fi
             attempt=$((attempt + 1))
             if [[ $attempt -ge 90 ]]; then
                 echo "Error: Web unit did not become active within timeout."
-                echo "Last status message: ${web_status:-unknown}"
+                echo "Last workload state: ${unit_state:-unknown}"
                 exit 1
             fi
-            echo "Waiting for web unit (attempt $attempt/90, status: ${web_status:-unknown})..."
+            echo "Waiting for web unit (attempt $attempt/90, state: ${unit_state:-unknown})..."
             sleep 10
         done
         echo "$IP" > concourse-ip.txt
