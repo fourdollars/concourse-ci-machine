@@ -797,7 +797,7 @@ class ConcourseCharm(CharmBase):
                             f"Found existing binaries v{installed_version} in shared storage"
                         )
 
-                        # For workers, generate keys and finish
+                        # For workers (and auto-mode leaders that run both), generate keys and finish
                         if self._should_run_worker():
                             logger.info("Worker: Setting up with existing binaries")
                             self.unit.status = MaintenanceStatus(
@@ -820,6 +820,8 @@ class ConcourseCharm(CharmBase):
                                     )
 
                                 self.worker_helper.setup_systemd_service()
+                                if self._should_run_web():
+                                    self.web_helper.setup_systemd_service()
                                 logger.info("Worker setup completed via update-status")
                                 self._update_status()
                                 return
