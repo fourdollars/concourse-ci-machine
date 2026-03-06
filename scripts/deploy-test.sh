@@ -231,31 +231,43 @@ ensure_cli() {
         echo "$PASSWORD" > admin-password.txt
     fi
 
-    # Get IP if missing
+    local web_status version
+    web_status=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value[\"workload-status\"].message")
+    version=$(echo "$web_status" | grep -oP '\(v\K[0-9]+\.[0-9]+\.[0-9]+(?=\))')
+
+    # Get IP if missing - extract from workload status message (the charm sets this to its actual bind URL)
     if [[ -z "$IP" ]]; then
-        # Use the machine's dns-name (LXD container IP) rather than public-address,
-        # which can return the host VM's physical IP in nested LXD environments.
-        MACHINE_ID=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.machine")
-        IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".machines.\"${MACHINE_ID}\".\"dns-name\"")
+        IP=$(echo "$web_status" | grep -oP 'http://\K[^:/]+')
         if [[ "$IP" == "null" || -z "$IP" ]]; then
-            echo "Error: Could not determine Concourse IP."
+            echo "Error: Could not determine Concourse IP from status message."
             exit 1
         fi
         echo "$IP" > concourse-ip.txt
     fi
 
-    # Download fly if missing
+    # Download fly if missing - try GitHub releases first (no Concourse connectivity needed)
     if [[ ! -f "fly" ]]; then
-        echo "Downloading fly CLI from http://$IP:8080..."
-        for i in {1..5}; do
-            if curl -Lo fly "http://${IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent; then
-                echo "Fly CLI downloaded."
+        if [[ -n "$version" ]]; then
+            echo "Downloading fly CLI v${version} from GitHub releases..."
+            if curl -fsSL "https://github.com/concourse/concourse/releases/download/v${version}/fly-${version}-linux-amd64.tgz" -o fly.tgz 2>/dev/null; then
+                tar -xzf fly.tgz
                 chmod +x ./fly
-                break
+                rm -f fly.tgz
+                echo "Fly CLI v${version} downloaded."
             fi
-            echo "Waiting for API to be ready (attempt $i/5)..."
-            sleep 10
-        done
+        fi
+        if [[ ! -f "fly" ]]; then
+            echo "Downloading fly CLI from Concourse web http://$IP:8080..."
+            for i in {1..5}; do
+                if curl -Lo fly "http://${IP}:8080/api/v1/cli?arch=amd64&platform=linux" --fail --silent; then
+                    echo "Fly CLI downloaded."
+                    chmod +x ./fly
+                    break
+                fi
+                echo "Waiting for API to be ready (attempt $i/5)..."
+                sleep 10
+            done
+        fi
         if [[ ! -f "fly" ]]; then
             echo "Error: Failed to download fly CLI."
             exit 1
@@ -1352,9 +1364,7 @@ step_pytorch() {
     WEB_LEADER=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[] | select(.value.leader == true) | .key')
     ADMIN_PASSWORD=$(juju run "$WEB_LEADER" get-admin-password --format=json | jq -r ".\"$WEB_LEADER\".results.password")
     
-    # Get web IP via machine dns-name (avoids host VM IP in nested LXD environments)
-    WEB_MACHINE_ID=$(juju status web/0 --format=json | jq -r '.applications.web.units."web/0".machine')
-    WEB_IP=$(juju status web/0 --format=json | jq -r ".machines.\"${WEB_MACHINE_ID}\".\"dns-name\"")
+    WEB_IP=$(juju status web/0 --format=json | jq -r '.applications.web.units."web/0"."workload-status".message' | grep -oP 'http://\K[^:/]+')
     
     if [[ ! -f "fly" ]]; then
         echo "Downloading fly CLI from http://$WEB_IP:8080..."
