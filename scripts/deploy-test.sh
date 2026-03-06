@@ -281,12 +281,13 @@ ensure_cli() {
                     # listening on port 8080 that is NOT Concourse.
                     local info_response
                     info_response=$(curl -sf --max-time 5 "http://$candidate_ip:8080/api/v1/info" 2>/dev/null || echo "")
-                    if echo "$info_response" | grep -q '"version"'; then
+                    echo "  /api/v1/info response from $candidate_ip: ${info_response:0:120}"
+                    if echo "$info_response" | grep -q '"worker_version"'; then
                         IP="$candidate_ip"
-                        echo "Confirmed Concourse API responding at $IP:8080 (version info: $info_response)"
+                        echo "Confirmed Concourse API responding at $IP:8080"
                         break
                     else
-                        echo "  IP $candidate_ip:8080 not responding as Concourse yet (response: ${info_response:0:80}), waiting..."
+                        echo "  $candidate_ip:8080 is not Concourse (no worker_version), waiting..."
                     fi
                 fi
             fi
