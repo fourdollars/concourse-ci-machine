@@ -762,7 +762,19 @@ class ConcourseCharm(CharmBase):
 
         # Check if unit is waiting for storage, leader, or installation
         should_check_storage = False
-        if isinstance(self.unit.status, WaitingStatus):
+        if self.config.get("shared-storage", "none") == "lxc" and not isinstance(
+            self.unit.status, ActiveStatus
+        ):
+            # When shared storage is configured, always re-check on update-status
+            # unless the unit is already active. This handles cases where storage
+            # becomes available after the DB relation fires (causing a blocked state
+            # with "Status check failed" or "Database config failed"), or any other
+            # transient blocked/waiting state.
+            logger.info(
+                f"Shared storage mode: checking storage availability (current status: {self.unit.status.message})"
+            )
+            should_check_storage = True
+        elif isinstance(self.unit.status, WaitingStatus):
             status_msg = self.unit.status.message.lower()
             if any(
                 keyword in status_msg
@@ -828,6 +840,36 @@ class ConcourseCharm(CharmBase):
                             except Exception as e:
                                 logger.error(f"Setup failed: {e}", exc_info=True)
                                 self.unit.status = BlockedStatus(f"Setup failed: {e}")
+                                return
+
+                        elif self._should_run_web():
+                            logger.info(
+                                "Web leader: Setting up systemd service with existing binaries"
+                            )
+                            self.unit.status = MaintenanceStatus(
+                                f"Setting up web service v{installed_version}..."
+                            )
+                            try:
+                                from concourse_common import generate_keys
+
+                                generate_keys()
+
+                                import os
+
+                                Path("/etc/default/concourse").touch()
+                                os.chmod("/etc/default/concourse", 0o644)
+
+                                self.web_helper.setup_systemd_service()
+                                logger.info(
+                                    "Web service setup completed via update-status"
+                                )
+                                self._update_status()
+                                return
+                            except Exception as e:
+                                logger.error(f"Web setup failed: {e}", exc_info=True)
+                                self.unit.status = BlockedStatus(
+                                    f"Web setup failed: {e}"
+                                )
                                 return
 
                     # No binaries yet, need to download (leader/web only)
