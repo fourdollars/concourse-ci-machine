@@ -233,6 +233,16 @@ for UNIT_INFO in "${ALL_UNITS[@]}"; do
     
     # Check if device already exists
     if lxc config device show "$CONTAINER" 2>/dev/null | grep -q "^${DEVICE_NAME}:"; then
+        # If the unit is already active and running, skip reconfiguration to avoid
+        # disrupting the running service (removing/re-adding the device unmounts
+        # /var/lib/concourse and breaks any running concourse worker process).
+        UNIT_WORKLOAD=$(echo "$APP_STATUS" | jq -r '.applications."'"$APP_NAME"'".units."'"$UNIT"'"."workload-status".current' 2>/dev/null)
+        if [ "$UNIT_WORKLOAD" = "active" ]; then
+            print_info "  ✓ Shared storage already configured and unit is active — skipping"
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            echo ""
+            continue
+        fi
         print_warn "  Shared storage device already exists. Removing old configuration..."
         lxc config device remove "$CONTAINER" "$DEVICE_NAME" 2>/dev/null || true
     fi

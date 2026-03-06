@@ -830,9 +830,44 @@ class ConcourseCharm(CharmBase):
                                 f"Setting up binaries v{installed_version}..."
                             )
                             try:
-                                from concourse_common import generate_keys
+                                from concourse_common import (
+                                    KEYS_DIR,
+                                    WORKER_KEYS_DIR,
+                                    generate_keys,
+                                )
 
-                                generate_keys()
+                                # Worker-only units must generate keys in WORKER_KEYS_DIR
+                                # (local per-unit), not KEYS_DIR (shared storage).
+                                # update_config() references WORKER_KEYS_DIR, so keys must
+                                # live there for the worker service to find them.
+                                worker_only = (
+                                    self._should_run_worker()
+                                    and not self._should_run_web()
+                                )
+                                keys_dir = WORKER_KEYS_DIR if worker_only else KEYS_DIR
+                                generate_keys(keys_dir)
+
+                                # For worker-only units: copy TSA host public key from
+                                # shared storage so the worker can verify the TSA server's
+                                # SSH identity during registration.
+                                if worker_only:
+                                    import shutil
+
+                                    shared_tsa_pub = Path(KEYS_DIR) / "tsa_host_key.pub"
+                                    local_tsa_pub = (
+                                        Path(WORKER_KEYS_DIR) / "tsa_host_key.pub"
+                                    )
+                                    if (
+                                        shared_tsa_pub.exists()
+                                        and not local_tsa_pub.exists()
+                                    ):
+                                        shutil.copy2(
+                                            str(shared_tsa_pub), str(local_tsa_pub)
+                                        )
+                                        logger.info(
+                                            "Copied TSA host public key from shared "
+                                            "storage to worker keys dir"
+                                        )
 
                                 # Initialize worker storage and create config file
                                 storage_coordinator = (
@@ -854,8 +889,6 @@ class ConcourseCharm(CharmBase):
                                 # the next peer_relation_changed event
                                 peer_relation = self.model.get_relation("peers")
                                 if peer_relation:
-                                    from concourse_common import WORKER_KEYS_DIR
-
                                     worker_pub_key_path = (
                                         Path(WORKER_KEYS_DIR) / "worker_key.pub"
                                     )
