@@ -1229,8 +1229,8 @@ step_scale_out() {
     juju status -m "$MODEL_NAME"
     
     echo "Verifying worker registration..."
-    # Retry worker check a few times as registration happens after unit is active
-    for i in {1..12}; do
+    # Retry worker check - registration can take time after unit is active in Juju
+    for i in {1..36}; do
         WORKER_COUNT=$(./fly -t test workers | grep -c "running" || true)
         echo "Active workers: $WORKER_COUNT (Target: >=$TARGET_COUNT)"
         
