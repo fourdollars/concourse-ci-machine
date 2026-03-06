@@ -1215,7 +1215,7 @@ class UpgradeCoordinator:
             self.relation.set_app_data(key, value)
 
         self.logger.info(
-            f"Upgrade to v{state.target_version} completed, " f"workers can now restart"
+            f"Upgrade to v{state.target_version} completed, workers can now restart"
         )
 
     def reset_upgrade_state(self) -> None:
@@ -1349,12 +1349,11 @@ class UpgradeCoordinator:
 
         self.logger.info("New binaries verified successfully")
 
-        # Start worker service
         try:
-            self.service_mgr.start()
-            self.logger.info("Worker service started successfully")
+            self.service_mgr.restart()
+            self.logger.info("Worker service restarted successfully")
         except ServiceManagementError as e:
-            self.logger.error(f"Failed to start worker service: {e}")
+            self.logger.error(f"Failed to restart worker service: {e}")
             raise
 
         # Clear unit flags
