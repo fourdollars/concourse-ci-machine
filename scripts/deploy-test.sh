@@ -376,6 +376,11 @@ get_container_for_unit() {
 
 # Step functions
 step_deploy() {
+    # Clean up any stale state from previous runs to prevent reuse of stale credentials/IPs
+    rm -f fly admin-password.txt concourse-ip.txt 2>/dev/null || true
+    IP=""
+    PASSWORD=""
+
     # Check/Create Model
     if juju models --format=json | jq -r '.models[]."short-name"' | grep -q "^${MODEL_NAME}$"; then
         echo "Cleaning up existing model $MODEL_NAME..."
