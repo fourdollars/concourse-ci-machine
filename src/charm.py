@@ -819,6 +819,7 @@ class ConcourseCharm(CharmBase):
                                         "Worker config created via update-status"
                                     )
 
+                                self.worker_helper.setup_systemd_service()
                                 logger.info("Worker setup completed via update-status")
                                 self._update_status()
                                 return
@@ -873,6 +874,9 @@ class ConcourseCharm(CharmBase):
                                 os.chmod("/etc/default/concourse", 0o644)
 
                                 self.web_helper.setup_systemd_service()
+                                # In auto mode, the leader also runs a worker
+                                if self._should_run_worker():
+                                    self.worker_helper.setup_systemd_service()
 
                                 if self.config.get("compute-runtime", "none") != "none":
                                     self.worker_helper.configure_containerd_for_gpu()
@@ -906,6 +910,7 @@ class ConcourseCharm(CharmBase):
                                 download_and_install_concourse_with_storage(
                                     self, version, storage_coordinator
                                 )
+                                self.worker_helper.setup_systemd_service()
                                 logger.info("Installation completed via update-status")
                         except Exception as e:
                             logger.error(f"Installation failed: {e}", exc_info=True)
