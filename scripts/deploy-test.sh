@@ -669,7 +669,7 @@ step_verify_marker() {
     echo "=== Test 4: Verify download happened only once ==="
     echo "Checking logs for single download by leader..."
     
-    DOWNLOAD_COUNT=$(juju debug-log --replay --no-tail | grep -c "Downloading Concourse CI.*from https://github.com.*\[shared-storage\]" || true)
+    DOWNLOAD_COUNT=$(juju debug-log --replay --no-tail | grep "INFO.*juju-log.*Downloading Concourse CI.*from https://github.com.*\[shared-storage\]" | grep -c . || true)
     if [[ "$DOWNLOAD_COUNT" -eq 1 ]]; then
         echo "✓ PASS: Found exactly 1 shared-storage download event (leader downloaded, workers reused)"
     elif [[ "$DOWNLOAD_COUNT" -gt 1 ]]; then
