@@ -866,6 +866,19 @@ class ConcourseCharm(CharmBase):
                                 create_shared_storage_symlinks(
                                     storage_coordinator.storage.bin_directory
                                 )
+
+                                Path("/etc/default/concourse").touch()
+                                import os
+
+                                os.chmod("/etc/default/concourse", 0o644)
+
+                                self.web_helper.setup_systemd_service()
+
+                                if self.config.get("compute-runtime", "none") != "none":
+                                    self.worker_helper.configure_containerd_for_gpu()
+                                else:
+                                    self.worker_helper.install_folder_mount_wrapper()
+
                                 logger.info("Installation completed via update-status")
                         except Exception as e:
                             logger.error(f"Installation failed: {e}", exc_info=True)
