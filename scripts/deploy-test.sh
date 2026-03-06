@@ -250,29 +250,27 @@ ensure_cli() {
     # Wait for the web unit to reach Active state. In shared-storage mode the
     # unit starts Blocked/Waiting until update-status fires (~10s later), so
     # juju-wait finishing does not guarantee the unit is Active yet.
-    # Once Active, read the IP from the machine's dns-name field rather than
-    # the workload-status message: binding.network.bind_address inside the LXD
-    # container can resolve to the host runner IP (10.47.x.x), not the
-    # container's routable address, producing an unreachable URL in the message.
+    # Once Active, read the IP from the unit's public-address field in the
+    # Juju JSON status. This is the same IP shown as "Public address" in
+    # `juju status` text output and is the LXD container's routable address.
     if [[ -z "$IP" ]]; then
         echo "Waiting for web unit to become active..."
         local attempt=0
         while true; do
+            local status_json
+            status_json=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null || echo "")
             local unit_state
-            unit_state=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+            unit_state=$(echo "$status_json" \
                 | jq -r ".applications.\"${LEADER%%/*}\".units \
                     | to_entries[] | select(.value.leader == true) \
                     | .value[\"workload-status\"].current" 2>/dev/null || echo "")
             if [[ "$unit_state" == "active" ]]; then
-                local machine_id
-                machine_id=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
+                IP=$(echo "$status_json" \
                     | jq -r ".applications.\"${LEADER%%/*}\".units \
                         | to_entries[] | select(.value.leader == true) \
-                        | .value.machine" 2>/dev/null || echo "")
-                IP=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null \
-                    | jq -r ".machines.\"${machine_id}\".\"dns-name\"" 2>/dev/null || echo "")
+                        | .value[\"public-address\"]" 2>/dev/null || echo "")
                 if [[ -n "$IP" && "$IP" != "null" ]]; then
-                    echo "Web unit active, IP (dns-name): $IP"
+                    echo "Web unit active, public-address: $IP"
                     break
                 fi
             fi
