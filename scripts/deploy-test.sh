@@ -233,7 +233,10 @@ ensure_cli() {
 
     # Get IP if missing
     if [[ -z "$IP" ]]; then
-        IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.\"public-address\"")
+        # Use the machine's dns-name (LXD container IP) rather than public-address,
+        # which can return the host VM's physical IP in nested LXD environments.
+        MACHINE_ID=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".applications.\"${LEADER%%/*}\".units | to_entries[] | select(.value.leader == true) | .value.machine")
+        IP=$(juju status -m "$MODEL_NAME" --format=json | jq -r ".machines.\"${MACHINE_ID}\".\"dns-name\"")
         if [[ "$IP" == "null" || -z "$IP" ]]; then
             echo "Error: Could not determine Concourse IP."
             exit 1
@@ -1349,8 +1352,9 @@ step_pytorch() {
     WEB_LEADER=$(juju status web --format=json | jq -r '.applications.web.units | to_entries[] | select(.value.leader == true) | .key')
     ADMIN_PASSWORD=$(juju run "$WEB_LEADER" get-admin-password --format=json | jq -r ".\"$WEB_LEADER\".results.password")
     
-    # Get web IP
-    WEB_IP=$(juju status web/0 --format=json | jq -r '.applications.web.units."web/0"."public-address"')
+    # Get web IP via machine dns-name (avoids host VM IP in nested LXD environments)
+    WEB_MACHINE_ID=$(juju status web/0 --format=json | jq -r '.applications.web.units."web/0".machine')
+    WEB_IP=$(juju status web/0 --format=json | jq -r ".machines.\"${WEB_MACHINE_ID}\".\"dns-name\"")
     
     if [[ ! -f "fly" ]]; then
         echo "Downloading fly CLI from http://$WEB_IP:8080..."
