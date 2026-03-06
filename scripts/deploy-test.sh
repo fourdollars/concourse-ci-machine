@@ -276,12 +276,17 @@ ensure_cli() {
                 candidate_ip=$(echo "$status_msg" | grep -oP 'http://\K[^:/]+' || echo "")
                 if [[ -n "$candidate_ip" && "$candidate_ip" != "null" ]]; then
                     echo "Status message URL candidate IP: $candidate_ip (status: $status_msg)"
-                    if nc -z -w3 "$candidate_ip" 8080 2>/dev/null; then
+                    # Use curl to hit /api/v1/info and verify a valid Concourse JSON response.
+                    # nc -z is insufficient: the GitHub runner host may have something
+                    # listening on port 8080 that is NOT Concourse.
+                    local info_response
+                    info_response=$(curl -sf --max-time 5 "http://$candidate_ip:8080/api/v1/info" 2>/dev/null || echo "")
+                    if echo "$info_response" | grep -q '"version"'; then
                         IP="$candidate_ip"
-                        echo "Confirmed reachable: $IP:8080"
+                        echo "Confirmed Concourse API responding at $IP:8080 (version info: $info_response)"
                         break
                     else
-                        echo "  IP $candidate_ip:8080 not reachable yet, waiting..."
+                        echo "  IP $candidate_ip:8080 not responding as Concourse yet (response: ${info_response:0:80}), waiting..."
                     fi
                 fi
             fi
