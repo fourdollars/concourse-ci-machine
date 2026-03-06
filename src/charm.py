@@ -1701,9 +1701,13 @@ class ConcourseCharm(CharmBase):
         try:
             mode = self._get_deployment_mode()
 
-            # Check if installation is complete
             if not verify_installation():
-                self.unit.status = BlockedStatus("Concourse CI is not installed yet.")
+                if self.config.get("shared-storage", "none") != "none":
+                    self.unit.status = WaitingStatus("Waiting for shared storage mount")
+                else:
+                    self.unit.status = BlockedStatus(
+                        "Concourse CI is not installed yet."
+                    )
                 return
 
             # Check database for web mode
