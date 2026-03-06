@@ -1159,6 +1159,8 @@ step_upgrade() {
             if [[ $i -eq $MAX_RETRIES ]]; then
                 echo "❌ Upgrade verification failed for $APP: not all units upgraded after $((MAX_RETRIES * 5))s"
                 juju status -m "$MODEL_NAME" "$APP"
+                echo "--- Charm debug logs (last 100 lines) ---"
+                juju debug-log -m "$MODEL_NAME" --include "$APP" --replay --no-tail 2>/dev/null | tail -100 || true
                 exit 1
             fi
             sleep 5
