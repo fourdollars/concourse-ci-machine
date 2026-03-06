@@ -294,7 +294,7 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
 
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
     sha1_url = f"{url}.sha1"
-    logger.info(f"Downloading Concourse CI {version} from {url}")
+    logger.info(f"Downloading Concourse CI {version} from {url} [shared-storage]")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tar_file = Path(tmpdir) / "concourse.tar.gz"
@@ -482,7 +482,7 @@ def download_and_install_concourse(charm, version: str):
             raise RuntimeError(error_msg)
 
     url = f"https://github.com/concourse/concourse/releases/download/v{version}/concourse-{version}-linux-amd64.tgz"
-    logger.info(f"Downloading Concourse CI {version} from {url}")
+    logger.info(f"Downloading Concourse CI {version} from {url} [local]")
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -669,15 +669,15 @@ step_verify_marker() {
     echo "=== Test 4: Verify download happened only once ==="
     echo "Checking logs for single download by leader..."
     
-    DOWNLOAD_COUNT=$(juju debug-log --replay --no-tail | grep -c "Downloading Concourse CI.*from https://github.com" || true)
+    DOWNLOAD_COUNT=$(juju debug-log --replay --no-tail | grep -c "Downloading Concourse CI.*from https://github.com.*\[shared-storage\]" || true)
     if [[ "$DOWNLOAD_COUNT" -eq 1 ]]; then
-        echo "✓ PASS: Found exactly 1 download event (leader downloaded, workers reused)"
+        echo "✓ PASS: Found exactly 1 shared-storage download event (leader downloaded, workers reused)"
     elif [[ "$DOWNLOAD_COUNT" -gt 1 ]]; then
-        echo "✗ FAIL: Found $DOWNLOAD_COUNT download events (expected 1)"
+        echo "✗ FAIL: Found $DOWNLOAD_COUNT shared-storage download events (expected 1)"
         echo "   Multiple downloads indicate units downloaded independently"
         exit 1
     else
-        echo "⚠ WARNING: No download logs found (might have been pruned)"
+        echo "⚠ WARNING: No shared-storage download logs found (might have been pruned)"
     fi
     
     # Check for worker reuse messages
