@@ -1830,6 +1830,18 @@ class ConcourseCharm(CharmBase):
             installed_version = self._get_installed_concourse_version()
             version_info = f" (v{installed_version})" if installed_version else ""
 
+            if self._should_run_worker() and installed_version:
+                peer_relation = self.model.get_relation("peers")
+                if peer_relation:
+                    recorded = peer_relation.data[self.unit].get("last-started-version")
+                    if recorded != installed_version:
+                        peer_relation.data[self.unit]["last-started-version"] = (
+                            installed_version
+                        )
+                        logger.info(
+                            f"Recorded last-started-version={installed_version} in peer data"
+                        )
+
             if mode == "web":
                 # Manage web port (close old, open new)
                 web_port = self.config.get("web-port", 8080)
@@ -2161,25 +2173,33 @@ class ConcourseCharm(CharmBase):
                 self._update_status()
 
             elif upgrade_state.state == "idle":
-                # T060: Missed signal fallback - if idle but version mismatch, check binaries
-                desired_version = get_concourse_version(self.config)
-                installed_version = self._get_installed_concourse_version()
-
-                if desired_version and installed_version != desired_version:
-                    logger.info(
-                        f"Detected idle state but version mismatch ({installed_version} != {desired_version})"
+                binary_version = self._get_installed_concourse_version()
+                peer_relation = self.model.get_relation("peers")
+                last_started = None
+                if peer_relation:
+                    last_started = peer_relation.data[self.unit].get(
+                        "last-started-version"
                     )
-                    if storage_coordinator.verify_binaries(desired_version):
-                        logger.info(
-                            f"Binaries v{desired_version} found in shared storage, upgrading immediately"
-                        )
-                        self.unit.status = MaintenanceStatus(
-                            f"Upgrading to v{desired_version} (missed signal)..."
-                        )
-                        upgrade_coordinator.handle_complete_signal()
-                        self._update_status()
-                elif desired_version and installed_version == desired_version:
-                    # Version already matches, ensure we're not stuck in WaitingStatus
+                if (
+                    binary_version
+                    and last_started
+                    and last_started != binary_version
+                    and storage_coordinator.verify_binaries(binary_version)
+                ):
+                    logger.info(
+                        f"Binary updated to v{binary_version} (was v{last_started}), restarting worker service"
+                    )
+                    self.unit.status = MaintenanceStatus(
+                        f"Upgrading to v{binary_version} (missed signal)..."
+                    )
+                    if self._should_run_worker():
+                        self.worker_helper.restart_service()
+                        if peer_relation:
+                            peer_relation.data[self.unit]["last-started-version"] = (
+                                binary_version
+                            )
+                    self._update_status()
+                elif isinstance(self.unit.status, WaitingStatus):
                     self._update_status()
 
         except Exception as e:
