@@ -553,9 +553,19 @@ class ConcourseCharm(CharmBase):
                 if installed_version != desired_version:
                     # Check if we should use coordinated upgrade (shared storage mode)
                     shared_storage_mode = self.config.get("shared-storage", "none")
+                    peer_relation = self.model.get_relation("peers")
                     use_coordinated_upgrade = (
-                        shared_storage_mode != "none"
-                        and self.model.get_relation("peers") is not None
+                        shared_storage_mode != "none" and peer_relation is not None
+                    )
+
+                    logger.info(
+                        f"Version mismatch: installed={installed_version!r}, "
+                        f"desired={desired_version!r}, "
+                        f"shared-storage={shared_storage_mode!r}, "
+                        f"peer-relation={peer_relation is not None}, "
+                        f"is-leader={self.unit.is_leader()}, "
+                        f"should-run-web={self._should_run_web()}, "
+                        f"use-coordinated-upgrade={use_coordinated_upgrade}"
                     )
 
                     if use_coordinated_upgrade:
