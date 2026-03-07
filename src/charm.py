@@ -857,6 +857,21 @@ class ConcourseCharm(CharmBase):
                                 keys_dir = WORKER_KEYS_DIR if worker_only else KEYS_DIR
                                 generate_keys(keys_dir)
 
+                                # Verify all required keys were generated
+                                worker_key_path = Path(keys_dir) / "worker_key"
+                                worker_key_pub_path = Path(keys_dir) / "worker_key.pub"
+                                if not worker_key_path.exists():
+                                    raise RuntimeError(
+                                        f"generate_keys() completed but worker_key not found in {keys_dir}"
+                                    )
+                                if not worker_key_pub_path.exists():
+                                    raise RuntimeError(
+                                        f"generate_keys() completed but worker_key.pub not found in {keys_dir}"
+                                    )
+                                logger.info(
+                                    f"Keys verified: worker_key and worker_key.pub exist in {keys_dir}"
+                                )
+
                                 # For worker-only units: copy TSA host public key from
                                 # shared storage so the worker can verify the TSA server's
                                 # SSH identity during registration. Must overwrite any key
@@ -878,16 +893,23 @@ class ConcourseCharm(CharmBase):
                                             "storage to worker keys dir"
                                         )
 
-                                # Initialize worker storage and create config file
+                                # Initialize worker storage and create config file.
+                                # update_config() handles missing worker_directory
+                                # gracefully (falls back to local work_dir), so always
+                                # call it regardless of whether storage_coordinator
+                                # succeeded — the config file MUST exist for the
+                                # worker service to start.
                                 storage_coordinator = (
                                     self.worker_helper.initialize_shared_storage()
                                 )
-                                if storage_coordinator:
-                                    tsa_host = self._get_tsa_host()
-                                    self.worker_helper.update_config(tsa_host=tsa_host)
-                                    logger.info(
-                                        "Worker config created via update-status"
+                                if not storage_coordinator:
+                                    logger.warning(
+                                        "initialize_shared_storage() returned None — "
+                                        "worker config will use local work_dir fallback"
                                     )
+                                tsa_host = self._get_tsa_host()
+                                self.worker_helper.update_config(tsa_host=tsa_host)
+                                logger.info("Worker config created via update-status")
 
                                 self.worker_helper.setup_systemd_service()
                                 if self._should_run_web():
