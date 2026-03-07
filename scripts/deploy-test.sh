@@ -1273,6 +1273,12 @@ step_scale_out() {
     
     echo "❌ Scale out verification failed: Expected $EXPECTED_WORKERS workers, found $WORKER_COUNT"
     ./fly -t test workers
+    echo ""
+    echo "=== Charm logs (last 200 lines) ==="
+    juju debug-log -m "$MODEL_NAME" --replay --no-tail -n 200 || true
+    echo ""
+    echo "=== New unit ($SCALE_APP/$(( TARGET_COUNT - 1 ))) worker service status ==="
+    juju ssh -m "$MODEL_NAME" "$SCALE_APP/$(( TARGET_COUNT - 1 ))" -- "systemctl status concourse-worker.service --no-pager; echo '---'; cat /var/lib/concourse-worker/worker-config.env 2>/dev/null || echo '(config not found)'; echo '---'; ls -la /var/lib/concourse-worker/keys/ 2>/dev/null || echo '(keys dir not found)'; echo '---'; cat /var/lib/concourse/keys/authorized_worker_keys 2>/dev/null || echo '(authorized_worker_keys not found)'" || true
     exit 1
 }
 

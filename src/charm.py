@@ -893,6 +893,15 @@ class ConcourseCharm(CharmBase):
                                 if self._should_run_web():
                                     self.web_helper.setup_systemd_service()
 
+                                # Install folder mount wrapper for the worker
+                                # (must be done before service starts so the
+                                # runc symlink is in place)
+                                if self.config.get("compute-runtime", "none") != "none":
+                                    self.worker_helper.configure_containerd_for_gpu()
+                                else:
+                                    self.worker_helper.install_folder_mount_wrapper()
+                                logger.info("Installed runc wrapper via update-status")
+
                                 # Publish worker public key to peer relation immediately
                                 # so the web leader can authorize it without waiting for
                                 # the next peer_relation_changed event
@@ -1326,6 +1335,23 @@ class ConcourseCharm(CharmBase):
                 if self.web_helper.is_running():
                     self.web_helper.restart_service()
                     logger.info("Restarted web server to apply new worker key")
+
+                # Notify workers that a new key was authorized so they
+                # receive a peers_relation_changed event and can restart
+                # their service to reconnect to TSA (the worker may have
+                # started before its key was authorized, and Concourse's
+                # internal reconnect backoff means systemd Restart=on-failure
+                # won't help if the process keeps running).
+                import time
+
+                peer_relation = self.model.get_relation("peers")
+                if peer_relation:
+                    peer_relation.data[self.unit]["worker-key-authorized-at"] = str(
+                        int(time.time())
+                    )
+                    logger.info(
+                        "Updated worker-key-authorized-at to trigger peer relation changed on workers"
+                    )
             else:
                 logger.debug("Worker key already authorized")
 
