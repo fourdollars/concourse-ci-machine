@@ -798,6 +798,24 @@ class ConcourseCharm(CharmBase):
                 f"Shared storage mode: checking storage availability (current status: {self.unit.status.message})"
             )
             should_check_storage = True
+        elif self.config.get("shared-storage", "none") == "lxc" and isinstance(
+            self.unit.status, ActiveStatus
+        ):
+            # Safety net: re-check storage setup even when Active if essential
+            # worker files are missing.  This catches the race where _update_status()
+            # briefly saw the worker process alive and set ActiveStatus before the
+            # service crashed due to missing config/keys.
+            from concourse_common import CONCOURSE_WORKER_CONFIG_FILE, WORKER_KEYS_DIR
+
+            if self._should_run_worker():
+                worker_config = Path(CONCOURSE_WORKER_CONFIG_FILE)
+                worker_key = Path(WORKER_KEYS_DIR) / "worker_key"
+                if not worker_config.exists() or not worker_key.exists():
+                    logger.warning(
+                        "Unit is Active but worker config/keys are missing — "
+                        "re-entering storage setup path"
+                    )
+                    should_check_storage = True
         elif isinstance(self.unit.status, WaitingStatus):
             status_msg = self.unit.status.message.lower()
             if any(
@@ -1903,6 +1921,34 @@ class ConcourseCharm(CharmBase):
 
             # Start worker service if needed
             if self._should_run_worker():
+                # Verify essential worker files exist before starting service.
+                # Without these, the worker process will crash immediately after
+                # fork — but _update_status() would still see is_running()=True
+                # (Type=simple race) and set ActiveStatus prematurely, blocking
+                # the update-status setup path from ever running.
+                from concourse_common import CONCOURSE_WORKER_CONFIG_FILE, WORKER_KEYS_DIR
+
+                worker_config = Path(CONCOURSE_WORKER_CONFIG_FILE)
+                worker_key = Path(WORKER_KEYS_DIR) / "worker_key"
+                if not worker_config.exists() or not worker_key.exists():
+                    missing = []
+                    if not worker_config.exists():
+                        missing.append("worker-config.env")
+                    if not worker_key.exists():
+                        missing.append("worker_key")
+                    logger.warning(
+                        f"Worker setup incomplete — missing: {', '.join(missing)}"
+                    )
+                    if self.config.get("shared-storage", "none") != "none":
+                        self.unit.status = WaitingStatus(
+                            "Worker setup incomplete - waiting for storage setup"
+                        )
+                    else:
+                        self.unit.status = BlockedStatus(
+                            f"Worker setup incomplete — missing: {', '.join(missing)}"
+                        )
+                    return
+
                 if not self.worker_helper.is_running():
                     self.worker_helper.start_service()
 
