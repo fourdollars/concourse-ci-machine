@@ -1493,23 +1493,41 @@ class ConcourseCharm(CharmBase):
                     )
 
             if tsa_pub_key and web_ip:
-                # Write TSA public key
+                # Only restart the worker when the TSA configuration has actually
+                # changed. Unconditional restarts on every peer_relation_changed
+                # event disrupt in-flight Concourse tasks (baggageclaim "future
+                # not found") because this event fires frequently — e.g., every
+                # time any unit writes to peer data, including the periodic
+                # last-started-version update from _update_status().
                 tsa_pub_key_path = keys_dir / "tsa_host_key.pub"
-                tsa_pub_key_path.write_text(tsa_pub_key + "\n")
-                logger.info("Wrote TSA public key from peer relation")
-
-                # Update worker config with TSA host
                 tsa_host = f"{web_ip}:2222"
-                self.worker_helper.update_config(tsa_host=tsa_host)
-                logger.info(f"Updated worker config with TSA host: {tsa_host}")
 
-                # Restart worker to apply config
-                if self.worker_helper.is_running():
-                    self.worker_helper.restart_service()
-                    logger.info("Restarted worker with new configuration")
+                current_tsa_pub_key = (
+                    tsa_pub_key_path.read_text().strip()
+                    if tsa_pub_key_path.exists()
+                    else None
+                )
+                tsa_config_changed = current_tsa_pub_key != tsa_pub_key.strip()
+
+                if tsa_config_changed:
+                    tsa_pub_key_path.write_text(tsa_pub_key + "\n")
+                    logger.info("Wrote TSA public key from peer relation (changed)")
+                    self.worker_helper.update_config(tsa_host=tsa_host)
+                    logger.info(f"Updated worker config with TSA host: {tsa_host}")
+                    # Restart to pick up new TSA configuration
+                    if self.worker_helper.is_running():
+                        self.worker_helper.restart_service()
+                        logger.info("Restarted worker with new TSA configuration")
+                    else:
+                        self.worker_helper.start_service()
+                        logger.info("Started worker with new TSA configuration")
                 else:
-                    self.worker_helper.start_service()
-                    logger.info("Started worker with new configuration")
+                    logger.info(
+                        "TSA configuration unchanged — skipping worker restart"
+                    )
+                    if not self.worker_helper.is_running():
+                        self.worker_helper.start_service()
+                        logger.info("Started worker (was not running)")
             else:
                 logger.info("TSA configuration not yet available in peer relation")
 
