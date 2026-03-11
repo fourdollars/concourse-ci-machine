@@ -571,6 +571,24 @@ class ConcourseCharm(CharmBase):
                     if use_coordinated_upgrade:
                         # Only web nodes should orchestrate downloads (T054)
                         if self.unit.is_leader() and self._should_run_web():
+                            if installed_version is None:
+                                # First install — binary doesn't exist yet and
+                                # .installed_version marker is absent.  The
+                                # coordinated upgrade path assumes an *existing*
+                                # running deployment; using it for the first
+                                # install can leave stale upgrade-state in the
+                                # peer relation if the download fails (e.g.
+                                # shared storage not yet mounted).  Let
+                                # update-status handle the initial installation
+                                # via the storage-check path instead.
+                                logger.info(
+                                    "Concourse not yet installed (version unknown). "
+                                    "Deferring to update-status storage-check path."
+                                )
+                                self.unit.status = WaitingStatus(
+                                    "Waiting for initial installation"
+                                )
+                                return
                             self._orchestrate_coordinated_upgrade(
                                 event, desired_version
                             )
@@ -2235,6 +2253,27 @@ class ConcourseCharm(CharmBase):
 
         except Exception as e:
             logger.error(f"Coordinated upgrade failed: {e}", exc_info=True)  # T052
+            # Reset upgrade state so a future retry (or the next
+            # config-changed) does not hit "Upgrade already in progress".
+            try:
+                peer_relation = self.model.get_relation("peers")
+                if peer_relation and self.unit.is_leader():
+                    from datetime import datetime, timezone
+                    from storage_coordinator import UpgradeState
+
+                    idle_state = UpgradeState(
+                        state="idle",
+                        target_version=None,
+                        initiated_by=None,
+                        timestamp=datetime.now(timezone.utc),
+                        worker_ready_count=0,
+                        expected_worker_count=0,
+                    )
+                    for key, value in idle_state.to_relation_data().items():
+                        peer_relation.data[self.app][key] = value
+                    logger.info("Upgrade state reset to idle after failure")
+            except Exception as reset_err:
+                logger.warning(f"Failed to reset upgrade state: {reset_err}")
             raise
 
     def _perform_simple_upgrade(self, event, version: str):
