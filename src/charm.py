@@ -960,20 +960,39 @@ class ConcourseCharm(CharmBase):
                                     self.worker_helper.install_folder_mount_wrapper()
                                 logger.info("Installed runc wrapper via update-status")
 
-                                # Publish worker public key to peer relation immediately
-                                # so the web leader can authorize it without waiting for
-                                # the next peer_relation_changed event
-                                peer_relation = self.model.get_relation("peers")
-                                if peer_relation:
-                                    worker_pub_key_path = (
-                                        Path(WORKER_KEYS_DIR) / "worker_key.pub"
+                                # Publish worker public key so the web leader
+                                # can authorize it without waiting for the next
+                                # relation-changed event.
+                                worker_pub_key_path = (
+                                    Path(WORKER_KEYS_DIR) / "worker_key.pub"
+                                )
+                                if worker_pub_key_path.exists():
+                                    worker_pub_key = (
+                                        worker_pub_key_path.read_text().strip()
                                     )
-                                    if worker_pub_key_path.exists():
+
+                                    # Peer relation (auto mode — web in same app)
+                                    peer_relation = self.model.get_relation("peers")
+                                    if peer_relation:
                                         peer_relation.data[self.unit][
                                             "worker-public-key"
-                                        ] = worker_pub_key_path.read_text().strip()
+                                        ] = worker_pub_key
                                         logger.info(
                                             "Published worker public key to peer relation from update-status"
+                                        )
+
+                                    # Flight relation (web+worker mode — web in
+                                    # separate app).  At relation-joined time the
+                                    # key didn't exist yet, so re-publish now.
+                                    flight_relation = self.model.get_relation(
+                                        "flight"
+                                    )
+                                    if flight_relation:
+                                        flight_relation.data[self.unit][
+                                            "worker-public-key"
+                                        ] = worker_pub_key
+                                        logger.info(
+                                            "Published worker public key to flight relation from update-status"
                                         )
 
                                 logger.info("Worker setup completed via update-status")

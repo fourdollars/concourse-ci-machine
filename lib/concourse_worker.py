@@ -750,8 +750,18 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
 
             # Set up the wrapper symlinks
             concourse_runc_source = Path("/var/lib/concourse/bin/runc")
+            shared_runc_backup = Path("/var/lib/concourse/bin/runc.real")
             if not concourse_runc_real.exists():
-                if concourse_runc_source.exists():
+                if shared_runc_backup.exists() and not shared_runc_backup.is_symlink():
+                    # Use the real binary saved by a previous worker
+                    logger.info(
+                        f"Copying runc from shared backup {shared_runc_backup} to {concourse_runc_real}"
+                    )
+                    subprocess.run(
+                        ["cp", str(shared_runc_backup), str(concourse_runc_real)],
+                        check=True,
+                    )
+                elif concourse_runc_source.exists() and not concourse_runc_source.is_symlink():
                     logger.info(
                         f"Copying runc from Concourse binaries to {concourse_runc_real}"
                     )
@@ -759,6 +769,11 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                         ["cp", str(concourse_runc_source), str(concourse_runc_real)],
                         check=True,
                     )
+                elif concourse_runc_source.is_symlink():
+                    logger.warning(
+                        f"{concourse_runc_source} is a symlink but no shared backup found"
+                    )
+                    return
                 else:
                     logger.warning(
                         "Concourse runc not available yet, skipping GPU wrapper setup"
@@ -1023,9 +1038,26 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                     logger.info(f"Backing up original runc to {runc_real}")
                     subprocess.run(["cp", "/usr/bin/runc", str(runc_real)], check=True)
                 else:
-                    # Use the runc from concourse binaries instead
+                    # Use the runc from concourse binaries instead.
+                    # In shared storage mode, a previous worker may have already
+                    # replaced /var/lib/concourse/bin/runc with a symlink to the
+                    # wrapper.  Blindly copying that symlink target would back up
+                    # the wrapper script — not the real binary — breaking runc on
+                    # this unit.  Check the shared backup first.
                     concourse_system_runc = Path("/var/lib/concourse/bin/runc")
-                    if concourse_system_runc.exists():
+                    shared_runc_backup = Path("/var/lib/concourse/bin/runc.real")
+
+                    if shared_runc_backup.exists() and not shared_runc_backup.is_symlink():
+                        # Another worker already saved the real binary on shared storage
+                        logger.info(
+                            f"Copying runc from shared backup {shared_runc_backup} to {runc_real}"
+                        )
+                        subprocess.run(
+                            ["cp", str(shared_runc_backup), str(runc_real)],
+                            check=True,
+                        )
+                    elif concourse_system_runc.exists() and not concourse_system_runc.is_symlink():
+                        # First worker: the runc on shared storage is still a real binary
                         logger.info(
                             f"Copying runc from Concourse binaries to {runc_real}"
                         )
@@ -1033,10 +1065,38 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                             ["cp", str(concourse_system_runc), str(runc_real)],
                             check=True,
                         )
-                        # Remove original runc to avoid conflict
+                        # Save a copy on shared storage so future workers can find
+                        # the real binary after we replace runc with a symlink.
+                        logger.info(
+                            f"Saving runc backup to shared storage at {shared_runc_backup}"
+                        )
+                        subprocess.run(
+                            ["cp", str(concourse_system_runc), str(shared_runc_backup)],
+                            check=True,
+                        )
+                        # Replace original with symlink to wrapper
                         concourse_system_runc.unlink()
-                        # Symlink runc in bin folder to wrapper
                         concourse_system_runc.symlink_to(wrapper_path)
+                    elif concourse_system_runc.is_symlink():
+                        # runc is already a symlink but no shared backup — shouldn't
+                        # happen, but recover by installing runc from apt.
+                        logger.warning(
+                            f"{concourse_system_runc} is a symlink but no shared "
+                            "backup found — installing runc from system packages"
+                        )
+                        subprocess.run(
+                            ["apt-get", "install", "-y", "runc"],
+                            check=True,
+                            capture_output=True,
+                            timeout=120,
+                        )
+                        if Path("/usr/bin/runc").exists():
+                            subprocess.run(
+                                ["cp", "/usr/bin/runc", str(runc_real)], check=True
+                            )
+                        else:
+                            logger.warning("Failed to obtain runc binary")
+                            return
                     else:
                         logger.warning(
                             "/usr/bin/runc not found and Concourse runc not available yet"
@@ -1065,11 +1125,20 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             concourse_bin_runc = Path("/var/lib/concourse/bin/runc")
             if concourse_bin_runc.exists() and not concourse_bin_runc.is_symlink():
                 logger.info(f"Replacing {concourse_bin_runc} with symlink to wrapper")
-                # Always backup to /opt/bin/runc.real if it exists as a regular file
-                # This ensures we capture the binary that Concourse actually downloaded
+                # Backup the real binary before replacing
                 subprocess.run(
                     ["cp", str(concourse_bin_runc), str(runc_real)], check=True
                 )
+                # Save a copy on shared storage for future scale-out workers
+                shared_runc_backup = Path("/var/lib/concourse/bin/runc.real")
+                if not shared_runc_backup.exists():
+                    subprocess.run(
+                        ["cp", str(concourse_bin_runc), str(shared_runc_backup)],
+                        check=True,
+                    )
+                    logger.info(
+                        f"Saved runc backup to shared storage at {shared_runc_backup}"
+                    )
 
                 concourse_bin_runc.unlink()
                 concourse_bin_runc.symlink_to(wrapper_path)
