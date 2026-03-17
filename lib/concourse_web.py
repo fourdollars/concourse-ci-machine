@@ -127,6 +127,11 @@ class ConcourseWebHelper:
 
     def setup_systemd_service(self):
         """Create systemd service file for Concourse web server"""
+        # Build ExecStart command with optional CLI flags
+        exec_start = f"{CONCOURSE_BIN} web"
+        if self.config.get("extra-web-flags"):
+            exec_start += f" {self.config['extra-web-flags']}"
+
         server_service = f"""[Unit]
 Description=Concourse CI Web Server
 After=network-online.target
@@ -139,7 +144,7 @@ Group=concourse
 WorkingDirectory={CONCOURSE_DATA_DIR}
 EnvironmentFile=-{CONCOURSE_CONFIG_FILE}
 EnvironmentFile=-/etc/default/concourse
-ExecStart={CONCOURSE_BIN} web
+ExecStart={exec_start}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -259,14 +264,85 @@ WantedBy=multi-user.target
             if self.config.get("vault-shared-path"):
                 config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
 
+        # Encryption key
+        if self.config.get("encryption-key"):
+            config["CONCOURSE_ENCRYPTION_KEY"] = self.config["encryption-key"]
+
+        # LDAP configuration
+        ldap_config_map = {
+            "ldap-display-name": "CONCOURSE_LDAP_DISPLAY_NAME",
+            "ldap-host": "CONCOURSE_LDAP_HOST",
+            "ldap-bind-dn": "CONCOURSE_LDAP_BIND_DN",
+            "ldap-bind-pw": "CONCOURSE_LDAP_BIND_PW",
+            "ldap-user-search-base-dn": "CONCOURSE_LDAP_USER_SEARCH_BASE_DN",
+            "ldap-user-search-username": "CONCOURSE_LDAP_USER_SEARCH_USERNAME",
+            "ldap-user-search-id-attr": "CONCOURSE_LDAP_USER_SEARCH_ID_ATTR",
+            "ldap-user-search-email-attr": "CONCOURSE_LDAP_USER_SEARCH_EMAIL_ATTR",
+            "ldap-user-search-name-attr": "CONCOURSE_LDAP_USER_SEARCH_NAME_ATTR",
+            "ldap-user-search-filter": "CONCOURSE_LDAP_USER_SEARCH_FILTER",
+            "ldap-group-search-base-dn": "CONCOURSE_LDAP_GROUP_SEARCH_BASE_DN",
+            "ldap-group-search-name-attr": "CONCOURSE_LDAP_GROUP_SEARCH_NAME_ATTR",
+            "ldap-group-search-user-attr": "CONCOURSE_LDAP_GROUP_SEARCH_USER_ATTR",
+            "ldap-group-search-group-attr": "CONCOURSE_LDAP_GROUP_SEARCH_GROUP_ATTR",
+            "ldap-group-search-filter": "CONCOURSE_LDAP_GROUP_SEARCH_FILTER",
+            "main-team-ldap-group": "CONCOURSE_MAIN_TEAM_LDAP_GROUP",
+        }
+        for charm_key, env_key in ldap_config_map.items():
+            value = self.config.get(charm_key)
+            if value:
+                config[env_key] = value
+
+        # Build log retention
+        retention_config_map = {
+            "default-build-logs-to-retain": "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN",
+            "default-days-to-retain-build-logs": "CONCOURSE_DEFAULT_DAYS_TO_RETAIN_BUILD_LOGS",
+            "max-build-logs-to-retain": "CONCOURSE_MAX_BUILD_LOGS_TO_RETAIN",
+            "max-days-to-retain-build-logs": "CONCOURSE_MAX_DAYS_TO_RETAIN_BUILD_LOGS",
+        }
+        for charm_key, env_key in retention_config_map.items():
+            value = self.config.get(charm_key, 0)
+            if value:
+                config[env_key] = str(value)
+
+        # GC grace period
+        if self.config.get("gc-failed-grace-period"):
+            config["CONCOURSE_GC_FAILED_GRACE_PERIOD"] = self.config[
+                "gc-failed-grace-period"
+            ]
+
+        # Extra local users — append to existing admin user
+        if self.config.get("extra-local-users"):
+            config["CONCOURSE_ADD_LOCAL_USER"] += (
+                "," + self.config["extra-local-users"]
+            )
+
         # Write config file
         self._write_config(config)
         logger.info("Web server configuration updated")
 
+    @staticmethod
+    def _read_config(config_file: str) -> dict:
+        """Read existing config file into a dict, preserving operator-added keys."""
+        config = {}
+        path = Path(config_file)
+        if path.exists():
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    config[key] = value
+        return config
+
     def _write_config(self, config: dict):
-        """Write configuration to file"""
+        """Merge charm-managed config with existing file, preserving operator-added keys.
+
+        Reads the current config.env, updates only the keys provided by the charm,
+        and writes the result back sorted alphabetically.
+        """
         try:
-            config_lines = [f"{k}={v}" for k, v in config.items()]
+            existing = self._read_config(CONCOURSE_CONFIG_FILE)
+            existing.update(config)
+            config_lines = [f"{k}={v}" for k, v in sorted(existing.items())]
             Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
             os.chmod(CONCOURSE_CONFIG_FILE, 0o640)
             subprocess.run(

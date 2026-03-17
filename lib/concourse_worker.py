@@ -966,11 +966,30 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
         except Exception as e:
             logger.warning(f"Failed to check dataset mount: {e}")
 
+    @staticmethod
+    def _read_config(config_file: str) -> dict:
+        """Read existing config file into a dict, preserving operator-added keys."""
+        config = {}
+        path = Path(config_file)
+        if path.exists():
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    config[key] = value
+        return config
+
     def _write_config(self, config: dict):
-        """Write configuration to file"""
+        """Merge charm-managed config with existing file, preserving operator-added keys.
+
+        Reads the current worker-config.env, updates only the keys provided by the charm,
+        and writes the result back sorted alphabetically.
+        """
         try:
             config_file_path = self._get_worker_config_path()
-            config_lines = [f"{k}={v}" for k, v in config.items()]
+            existing = self._read_config(config_file_path)
+            existing.update(config)
+            config_lines = [f"{k}={v}" for k, v in sorted(existing.items())]
             Path(config_file_path).write_text("\n".join(config_lines) + "\n")
             os.chmod(config_file_path, 0o640)
             subprocess.run(

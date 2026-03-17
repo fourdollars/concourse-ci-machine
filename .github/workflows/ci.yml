@@ -14,6 +14,25 @@ permissions:
   actions: write
 
 jobs:
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run unit tests
+        run: python -m pytest tests/ -v
+
   build-charm:
     name: Build charm
     runs-on: ubuntu-latest
@@ -105,6 +124,9 @@ jobs:
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=scale-out
 
+      - name: Test Config
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=config
+
       - name: Verify Tagged After Upgrade
         run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=tagged
 
@@ -175,6 +197,9 @@ jobs:
 
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=scale-out
+
+      - name: Test Config
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=config
 
       - name: Verify Tagged After Upgrade
         run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=tagged

@@ -205,3 +205,158 @@ options:
     description: "Shared path for Vault."
     default: ""
     type: string
+
+  # --- Encryption ---
+
+  encryption-key:
+    description: |
+      Encryption key for Concourse database at-rest encryption.
+      Required when migrating from an existing encrypted deployment.
+      Maps to CONCOURSE_ENCRYPTION_KEY.
+    default: ""
+    type: string
+
+  # --- LDAP / SSO ---
+
+  ldap-display-name:
+    description: "Display name for LDAP authentication provider. Maps to CONCOURSE_LDAP_DISPLAY_NAME."
+    default: ""
+    type: string
+
+  ldap-host:
+    description: "LDAP server hostname (e.g., ldap.example.com). Maps to CONCOURSE_LDAP_HOST."
+    default: ""
+    type: string
+
+  ldap-bind-dn:
+    description: "LDAP bind DN for authentication (e.g., cn=admin,dc=example,dc=com). Maps to CONCOURSE_LDAP_BIND_DN."
+    default: ""
+    type: string
+
+  ldap-bind-pw:
+    description: "LDAP bind password. Maps to CONCOURSE_LDAP_BIND_PW."
+    default: ""
+    type: string
+
+  ldap-user-search-base-dn:
+    description: "Base DN for LDAP user searches. Maps to CONCOURSE_LDAP_USER_SEARCH_BASE_DN."
+    default: ""
+    type: string
+
+  ldap-user-search-username:
+    description: "LDAP attribute to match against the username. Maps to CONCOURSE_LDAP_USER_SEARCH_USERNAME."
+    default: ""
+    type: string
+
+  ldap-user-search-id-attr:
+    description: "LDAP attribute used as the user ID. Maps to CONCOURSE_LDAP_USER_SEARCH_ID_ATTR."
+    default: ""
+    type: string
+
+  ldap-user-search-email-attr:
+    description: "LDAP attribute for user email. Maps to CONCOURSE_LDAP_USER_SEARCH_EMAIL_ATTR."
+    default: ""
+    type: string
+
+  ldap-user-search-name-attr:
+    description: "LDAP attribute for user display name. Maps to CONCOURSE_LDAP_USER_SEARCH_NAME_ATTR."
+    default: ""
+    type: string
+
+  ldap-user-search-filter:
+    description: "LDAP search filter for users (e.g., '(objectClass=person)'). Maps to CONCOURSE_LDAP_USER_SEARCH_FILTER."
+    default: ""
+    type: string
+
+  ldap-group-search-base-dn:
+    description: "Base DN for LDAP group searches. Maps to CONCOURSE_LDAP_GROUP_SEARCH_BASE_DN."
+    default: ""
+    type: string
+
+  ldap-group-search-name-attr:
+    description: "LDAP attribute for group name. Maps to CONCOURSE_LDAP_GROUP_SEARCH_NAME_ATTR."
+    default: ""
+    type: string
+
+  ldap-group-search-user-attr:
+    description: "LDAP attribute on user entries for group matching. Maps to CONCOURSE_LDAP_GROUP_SEARCH_USER_ATTR."
+    default: ""
+    type: string
+
+  ldap-group-search-group-attr:
+    description: "LDAP attribute on group entries for member matching. Maps to CONCOURSE_LDAP_GROUP_SEARCH_GROUP_ATTR."
+    default: ""
+    type: string
+
+  ldap-group-search-filter:
+    description: "LDAP search filter for groups (e.g., '(objectClass=group)'). Maps to CONCOURSE_LDAP_GROUP_SEARCH_FILTER."
+    default: ""
+    type: string
+
+  main-team-ldap-group:
+    description: |
+      Comma-separated list of LDAP groups for the main team.
+      Example: "ldap:group-a,ldap:group-b"
+      Maps to CONCOURSE_MAIN_TEAM_LDAP_GROUP.
+    default: ""
+    type: string
+
+  # --- Extra CLI flags ---
+
+  extra-web-flags:
+    description: |
+      Extra CLI flags for 'concourse web', space-separated.
+      Appended to the ExecStart command in the systemd service.
+      Example: "--enable-across-step --enable-resource-causality"
+    default: ""
+    type: string
+
+  # --- Build log retention ---
+
+  default-build-logs-to-retain:
+    description: |
+      Default number of build logs to retain per job. 0 means unlimited.
+      Maps to CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN.
+    default: 0
+    type: int
+
+  default-days-to-retain-build-logs:
+    description: |
+      Default number of days to retain build logs. 0 means unlimited.
+      Maps to CONCOURSE_DEFAULT_DAYS_TO_RETAIN_BUILD_LOGS.
+    default: 0
+    type: int
+
+  max-build-logs-to-retain:
+    description: |
+      Maximum number of build logs to retain per job (overrides pipeline settings). 0 means unlimited.
+      Maps to CONCOURSE_MAX_BUILD_LOGS_TO_RETAIN.
+    default: 0
+    type: int
+
+  max-days-to-retain-build-logs:
+    description: |
+      Maximum days to retain build logs (overrides pipeline settings). 0 means unlimited.
+      Maps to CONCOURSE_MAX_DAYS_TO_RETAIN_BUILD_LOGS.
+    default: 0
+    type: int
+
+  # --- Garbage collection ---
+
+  gc-failed-grace-period:
+    description: |
+      Grace period before cleaning up failed containers and volumes.
+      Example: "1h", "30m". Empty means Concourse default.
+      Maps to CONCOURSE_GC_FAILED_GRACE_PERIOD.
+    default: ""
+    type: string
+
+  # --- Additional local users ---
+
+  extra-local-users:
+    description: |
+      Additional local users beyond the admin user, as comma-separated user:password-hash pairs.
+      These are appended to CONCOURSE_ADD_LOCAL_USER alongside the admin user.
+      Example: "oem:{BCRYPT_HASH},ci-bot:{BCRYPT_HASH}"
+    default: ""
+    type: string

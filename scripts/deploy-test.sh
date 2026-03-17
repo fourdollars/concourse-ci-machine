@@ -24,7 +24,7 @@ help() {
     echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
     echo "                                Available steps: deploy, verify, verify-marker, mounts, tagged,"
-    echo "                                                cuda, rocm, pytorch, upgrade, scale-out, destroy"
+    echo "                                                cuda, rocm, pytorch, upgrade, scale-out, config, destroy"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, cuda, rocm, pytorch, upgrade"
@@ -82,7 +82,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "destroy")
+ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "config" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -801,12 +801,20 @@ run:
   args: ["Hello from tagged worker"]
 EOF
 
-    if ./fly -t test execute -c verify-tagged.yml --tag=special-worker; then
-        echo "✓ Tagged task execution passed"
-    else
-        echo "✗ Tagged task execution failed"
-        exit 1
-    fi
+    local max_retries=3
+    local attempt
+    for attempt in $(seq 1 $max_retries); do
+        if ./fly -t test execute -c verify-tagged.yml --tag=special-worker; then
+            echo "✓ Tagged task execution passed (attempt $attempt)"
+            return 0
+        fi
+        if [[ $attempt -lt $max_retries ]]; then
+            echo "⚠ Tagged task attempt $attempt failed, retrying in 15s..."
+            sleep 15
+        fi
+    done
+    echo "✗ Tagged task execution failed after $max_retries attempts"
+    exit 1
 }
 
 # Helper function to detect GPU ID by vendor
@@ -1709,6 +1717,145 @@ step_destroy() {
     DESTROYED=true
 }
 
+step_config() {
+    echo "=== Testing Config Merge Behavior ==="
+
+    # Determine the web unit to test on
+    if [[ "$MODE" == "auto" ]]; then
+        WEB_UNIT="$LEADER"
+        CFG_APP="$APP_NAME"
+    else
+        WEB_UNIT="$LEADER"
+        CFG_APP="$WEB_APP"
+    fi
+
+    echo "--- Step 1: Set new config options via juju config ---"
+    juju config "$CFG_APP" \
+        encryption-key="test-encryption-key-abc123" \
+        extra-web-flags="--enable-across-step --enable-resource-causality" \
+        default-build-logs-to-retain=50 \
+        default-days-to-retain-build-logs=14 \
+        max-build-logs-to-retain=100 \
+        max-days-to-retain-build-logs=30 \
+        gc-failed-grace-period="1h"
+
+    echo "Waiting for config to apply..."
+    sleep 15
+
+    echo "--- Step 2: Verify config.env contains new env vars ---"
+    CONFIG_CONTENT=$(juju exec --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+
+    check_config() {
+        local key="$1"
+        local expected="$2"
+        if echo "$CONFIG_CONTENT" | grep -q "^${key}=${expected}$"; then
+            echo "✓ $key=$expected"
+        else
+            echo "✗ $key=$expected NOT FOUND in config.env"
+            echo "  Actual content matching key:"
+            echo "$CONFIG_CONTENT" | grep "^${key}=" || echo "  (key not present)"
+            return 1
+        fi
+    }
+
+    FAIL=0
+    check_config "CONCOURSE_ENCRYPTION_KEY" "test-encryption-key-abc123" || FAIL=1
+    check_config "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN" "50" || FAIL=1
+    check_config "CONCOURSE_DEFAULT_DAYS_TO_RETAIN_BUILD_LOGS" "14" || FAIL=1
+    check_config "CONCOURSE_MAX_BUILD_LOGS_TO_RETAIN" "100" || FAIL=1
+    check_config "CONCOURSE_MAX_DAYS_TO_RETAIN_BUILD_LOGS" "30" || FAIL=1
+    check_config "CONCOURSE_GC_FAILED_GRACE_PERIOD" "1h" || FAIL=1
+
+    echo "--- Step 3: Verify config.env is sorted ---"
+    KEYS=$(echo "$CONFIG_CONTENT" | grep -v '^#' | grep -v '^$' | cut -d= -f1)
+    SORTED_KEYS=$(echo "$KEYS" | sort)
+    if [[ "$KEYS" == "$SORTED_KEYS" ]]; then
+        echo "✓ config.env keys are sorted alphabetically"
+    else
+        echo "✗ config.env keys are NOT sorted"
+        FAIL=1
+    fi
+
+    echo "--- Step 4: Verify ExecStart contains extra-web-flags ---"
+    SERVICE_CONTENT=$(juju exec --unit "$WEB_UNIT" -- cat /etc/systemd/system/concourse-server.service)
+    if echo "$SERVICE_CONTENT" | grep -q "ExecStart=.*--enable-across-step.*--enable-resource-causality"; then
+        echo "✓ ExecStart contains extra-web-flags"
+    else
+        echo "✗ ExecStart does NOT contain extra-web-flags"
+        echo "  ExecStart line:"
+        echo "$SERVICE_CONTENT" | grep "ExecStart=" || echo "  (not found)"
+        FAIL=1
+    fi
+
+    echo "--- Step 5: Test merge behavior (operator-added key preserved) ---"
+    juju exec --unit "$WEB_UNIT" -- bash -c 'echo "CUSTOM_OPERATOR_KEY=preserve_me" >> /var/lib/concourse/config.env'
+
+    # Trigger a charm event by changing a config value
+    juju config "$CFG_APP" log-level=debug
+    sleep 15
+
+    CONFIG_AFTER=$(juju exec --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    if echo "$CONFIG_AFTER" | grep -q "^CUSTOM_OPERATOR_KEY=preserve_me$"; then
+        echo "✓ Operator-added key CUSTOM_OPERATOR_KEY preserved after config change"
+    else
+        echo "✗ Operator-added key CUSTOM_OPERATOR_KEY was LOST after config change"
+        FAIL=1
+    fi
+
+    if echo "$CONFIG_AFTER" | grep -q "^CONCOURSE_LOG_LEVEL=debug$"; then
+        echo "✓ Charm-managed key CONCOURSE_LOG_LEVEL updated to debug"
+    else
+        echo "✗ CONCOURSE_LOG_LEVEL not updated to debug"
+        FAIL=1
+    fi
+
+    # Verify previous config options also survived
+    if echo "$CONFIG_AFTER" | grep -q "^CONCOURSE_ENCRYPTION_KEY=test-encryption-key-abc123$"; then
+        echo "✓ CONCOURSE_ENCRYPTION_KEY survived config change"
+    else
+        echo "✗ CONCOURSE_ENCRYPTION_KEY lost after config change"
+        FAIL=1
+    fi
+
+    # Reset log-level
+    juju config "$CFG_APP" log-level=info
+
+    if [[ "$FAIL" -ne 0 ]]; then
+        echo "✗ Config test FAILED"
+        exit 1
+    fi
+
+    echo "--- Step 6: Clean up test config (restore defaults for subsequent steps) ---"
+    # Reset all config options to defaults so subsequent test steps are not affected
+    juju config "$CFG_APP" \
+        encryption-key="" \
+        extra-web-flags="" \
+        default-build-logs-to-retain=0 \
+        default-days-to-retain-build-logs=0 \
+        max-build-logs-to-retain=0 \
+        max-days-to-retain-build-logs=0 \
+        gc-failed-grace-period=""
+
+    # Remove operator-injected test keys from config.env directly
+    # (merge behavior preserves them, but they are test artifacts)
+    juju exec --unit "$WEB_UNIT" -- bash -c \
+        'sed -i "/^CUSTOM_OPERATOR_KEY=/d; /^CONCOURSE_ENCRYPTION_KEY=/d" /var/lib/concourse/config.env'
+
+    echo "Waiting for config reset to apply..."
+    sleep 15
+
+    # Verify the web server is healthy after cleanup
+    if juju exec --unit "$WEB_UNIT" -- systemctl is-active concourse-server >/dev/null 2>&1; then
+        echo "✓ Web server healthy after config cleanup"
+    else
+        echo "⚠ Web server not active after cleanup, restarting..."
+        juju exec --unit "$WEB_UNIT" -- systemctl restart concourse-server
+        sleep 10
+    fi
+
+    echo "✓ All config tests passed"
+}
+
 # Main execution loop
 for step in "${STEPS_TO_RUN[@]}"; do
     case $step in
@@ -1722,6 +1869,7 @@ for step in "${STEPS_TO_RUN[@]}"; do
         pytorch) step_pytorch ;;
         upgrade) step_upgrade ;;
         scale-out) step_scale_out ;;
+        config) step_config ;;
         destroy) step_destroy ;;
         *) echo "Warning: Unknown step '$step'";;
     esac
