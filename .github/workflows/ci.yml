@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup LXD
         uses: canonical/setup-lxd@v1
@@ -52,7 +52,7 @@ jobs:
           charmcraft pack
 
       - name: Upload charm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: concourse-ci-machine-charm
           path: concourse-ci-machine_amd64.charm
@@ -74,10 +74,10 @@ jobs:
     needs: build-charm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download charm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: concourse-ci-machine-charm
 
@@ -148,10 +148,10 @@ jobs:
     needs: test-auto-mode
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download charm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: concourse-ci-machine-charm
 
@@ -223,10 +223,10 @@ jobs:
     needs: build-charm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download charm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: concourse-ci-machine-charm
 
@@ -305,10 +305,10 @@ jobs:
     needs: test-shared-storage-auto
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download charm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: concourse-ci-machine-charm
 
@@ -386,10 +386,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download charm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: concourse-ci-machine-charm
 
