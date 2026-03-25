@@ -2528,6 +2528,7 @@ class ConcourseCharm(CharmBase):
                     )
 
                 # Get worker keys from all related units
+                new_keys_added = False
                 for unit in event.relation.units:
                     worker_pub_key = event.relation.data[unit].get("worker-public-key")
                     if worker_pub_key and worker_pub_key not in existing_keys:
@@ -2536,9 +2537,11 @@ class ConcourseCharm(CharmBase):
                             f.write(worker_pub_key + "\n")
                         existing_keys.add(worker_pub_key)
                         logger.info(f"Authorized worker key from {unit.name}")
+                        new_keys_added = True
 
-                # Restart web server to pick up new keys
-                if self.web_helper.is_running():
+                # Only restart if new worker keys were added
+                if new_keys_added and self.web_helper.is_running():
+                    logger.info("Restarting web server to pick up new worker keys")
                     self.web_helper.restart_service()
 
             except Exception as e:
