@@ -9,5 +9,5 @@ parts:
     plugin: charm
     source: .
     charm-entrypoint: src/charm.py
-    charm-python-packages:
+    charm-binary-python-packages:
       - ops>=2.0.0
