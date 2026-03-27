@@ -48,7 +48,7 @@ jobs:
 
       - name: Build charm
         run: |
-          sudo snap install charmcraft --classic
+          sudo snap install charmcraft --classic --channel latest/edge
           charmcraft pack
 
       - name: Upload charm artifact
@@ -394,7 +394,7 @@ jobs:
           name: concourse-ci-machine-charm
 
       - name: Install Charmcraft
-        run: sudo snap install charmcraft --classic
+        run: sudo snap install charmcraft --classic --channel latest/edge
 
       - name: Upload charm to Charmhub
         env:
