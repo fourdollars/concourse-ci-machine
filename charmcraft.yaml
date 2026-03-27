@@ -11,3 +11,4 @@ parts:
     charm-entrypoint: src/charm.py
     charm-binary-python-packages:
       - ops>=2.0.0
+      - cosl>=0.0.53
