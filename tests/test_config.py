@@ -262,7 +262,7 @@ class TestUpdateConfigMapping:
             "ldap-group-search-user-attr": "uid",
             "ldap-group-search-group-attr": "member",
             "ldap-group-search-filter": "(objectClass=group)",
-            "main-team-ldap-group": "ldap:admins,ldap:devs",
+            "main-team-ldap-group": "admins,devs",
             "default-build-logs-to-retain": 0,
             "default-days-to-retain-build-logs": 0,
             "max-build-logs-to-retain": 0,
@@ -283,7 +283,7 @@ class TestUpdateConfigMapping:
         assert result["CONCOURSE_LDAP_USER_SEARCH_FILTER"] == "(objectClass=person)"
         assert result["CONCOURSE_LDAP_GROUP_SEARCH_BASE_DN"] == "ou=groups,dc=example"
         assert result["CONCOURSE_LDAP_GROUP_SEARCH_FILTER"] == "(objectClass=group)"
-        assert result["CONCOURSE_MAIN_TEAM_LDAP_GROUP"] == "ldap:admins,ldap:devs"
+        assert result["CONCOURSE_MAIN_TEAM_LDAP_GROUP"] == "admins,devs"
 
     @patch("concourse_web.subprocess.run")
     @patch("concourse_web.os.chmod")

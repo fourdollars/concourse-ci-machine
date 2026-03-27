@@ -296,7 +296,7 @@ options:
   main-team-ldap-group:
     description: |
       Comma-separated list of LDAP groups for the main team.
-      Example: "ldap:group-a,ldap:group-b"
+      Example: "group-a,group-b"
       Maps to CONCOURSE_MAIN_TEAM_LDAP_GROUP.
     default: ""
     type: string
