@@ -219,6 +219,34 @@ _fly_login_with_retry() {
     return 1
 }
 
+
+# Helper: juju-wait with retry (handles transient API connection drops in CI)
+_juju_wait_with_retry() {
+    local timeout_secs="${1:-900}"
+    local max_retries=3
+    local attempt
+    for attempt in $(seq 1 $max_retries); do
+        if command -v juju-wait >/dev/null 2>&1; then
+            if juju-wait -m "$MODEL_NAME" -t "$timeout_secs"; then
+                return 0
+            fi
+            local exit_code=$?
+            echo "juju-wait failed (attempt $attempt/$max_retries, exit code $exit_code)"
+            if [[ $attempt -lt $max_retries ]]; then
+                echo "Retrying juju-wait in 10s..."
+                sleep 10
+            fi
+        else
+            echo "juju-wait not found, sleeping 60s and hoping for the best..."
+            sleep 60
+            juju status -m "$MODEL_NAME"
+            return 0
+        fi
+    done
+    echo "Error: juju-wait failed after $max_retries attempts."
+    return 1
+}
+
 # Helper to ensure CLI is set up
 ensure_cli() {
     # Restore vars from files if present
@@ -472,13 +500,7 @@ step_deploy() {
 
     # Wait for deployment
     echo "Waiting for deployment to settle..."
-    if command -v juju-wait >/dev/null 2>&1; then
-        juju-wait -m "$MODEL_NAME" -t 900
-    else
-        echo "juju-wait not found, sleeping 60s and hoping for the best..."
-        sleep 60
-        juju status -m "$MODEL_NAME"
-    fi
+    _juju_wait_with_retry 900
 
     # Ensure CLI is ready (and cache credentials)
     ensure_cli
@@ -784,11 +806,7 @@ step_tagged() {
 
     echo "Waiting for configuration..."
     sleep 15
-    if command -v juju-wait >/dev/null 2>&1; then
-        juju-wait -m "$MODEL_NAME" -t 300
-    else
-        sleep 30
-    fi
+    _juju_wait_with_retry 300
 
     echo "Executing tagged task..."
     cat <<EOF > verify-tagged.yml
@@ -903,11 +921,7 @@ step_cuda() {
         # 3. Wait for configuration
         echo "Waiting for GPU configuration to apply..."
         sleep 15
-        if command -v juju-wait >/dev/null 2>&1; then
-            juju-wait -m "$MODEL_NAME" -t 600
-        else
-            sleep 60
-        fi
+        _juju_wait_with_retry 600
         
         # 4. Verify GPU status
         echo "Verifying GPU status..."
@@ -1020,11 +1034,7 @@ step_rocm() {
         # 3. Wait for configuration
         echo "Waiting for AMD GPU configuration to apply..."
         sleep 15
-        if command -v juju-wait >/dev/null 2>&1; then
-            juju-wait -m "$MODEL_NAME" -t 600
-        else
-            sleep 60
-        fi
+        _juju_wait_with_retry 600
         
         # 4. Verify GPU status
         echo "Verifying AMD GPU status..."
@@ -1135,11 +1145,7 @@ step_upgrade() {
 
     echo "Waiting for upgrade..."
     sleep 15
-    if command -v juju-wait >/dev/null 2>&1; then
-        juju-wait -m "$MODEL_NAME" -t 900
-    else
-        sleep 60
-    fi
+    _juju_wait_with_retry 900
 
     echo "Verifying version in status..."
     if [[ "$MODE" == "auto" ]]; then
@@ -1229,11 +1235,7 @@ step_scale_out() {
     fi
 
     echo "Waiting for new unit to settle..."
-    if command -v juju-wait >/dev/null 2>&1; then
-        juju-wait -m "$MODEL_NAME" -t 900
-    else
-        sleep 60
-    fi
+    _juju_wait_with_retry 900
 
     if [[ "$SHARED_STORAGE" == "lxc" ]]; then
         echo "Waiting for all units to become active (shared storage detection may need update-status cycle)..."
@@ -1466,11 +1468,7 @@ step_pytorch() {
     # Wait for all units to be ready
     echo "Waiting for deployment to settle..."
     sleep 30
-    if command -v juju-wait >/dev/null 2>&1; then
-        juju-wait -m "$MODEL_NAME" -t 900
-    else
-        sleep 120
-    fi
+    _juju_wait_with_retry 900
     
     juju status
     
