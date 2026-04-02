@@ -247,6 +247,25 @@ _juju_wait_with_retry() {
     return 1
 }
 
+# Helper: fly execute with retry (handles transient baggageclaim "future not found" errors)
+_fly_execute_with_retry() {
+    local max_retries=3
+    local attempt
+    for attempt in $(seq 1 $max_retries); do
+        if ./fly -t test execute "$@"; then
+            return 0
+        fi
+        local exit_code=$?
+        echo "fly execute failed (attempt $attempt/$max_retries, exit code $exit_code)"
+        if [[ $attempt -lt $max_retries ]]; then
+            echo "Retrying fly execute in 15s (may be transient baggageclaim race)..."
+            sleep 15
+        fi
+    done
+    echo "Error: fly execute failed after $max_retries attempts."
+    return 1
+}
+
 # Helper to ensure CLI is set up
 ensure_cli() {
     # Restore vars from files if present
@@ -553,7 +572,7 @@ run:
   args: ["Hello from Concourse ($MODE mode)!"]
 EOF
 
-    if ./fly -t test execute -c task.yml; then
+    if _fly_execute_with_retry -c task.yml; then
         echo "✓ Task executed successfully"
     else
         echo "✗ Task execution failed"
@@ -786,7 +805,7 @@ run:
     cat /srv/config_test_writable/write_test.txt
 EOF
 
-    if ./fly -t test execute -c verify-mounts.yml; then
+    if _fly_execute_with_retry -c verify-mounts.yml; then
         echo "✓ Mount verification passed"
     else
         echo "✗ Mount verification failed"
@@ -822,7 +841,7 @@ EOF
     local max_retries=3
     local attempt
     for attempt in $(seq 1 $max_retries); do
-        if ./fly -t test execute -c verify-tagged.yml --tag=special-worker; then
+        if _fly_execute_with_retry -c verify-tagged.yml --tag=special-worker; then
             echo "✓ Tagged task execution passed (attempt $attempt)"
             return 0
         fi
@@ -959,7 +978,7 @@ EOF
         echo "Checking if worker is tagged..."
         ./fly -t test workers
         
-        if ./fly -t test execute -c verify-gpu.yml --tag=cuda; then
+        if _fly_execute_with_retry -c verify-gpu.yml --tag=cuda; then
             echo "✓ GPU task execution passed"
         else
             echo "✗ GPU task execution failed"
@@ -1085,7 +1104,7 @@ run:
     echo "✓ AMD GPU devices are accessible in container"
 EOF
         
-        if ./fly -t test execute -c verify-gpu-amd.yml --tag=rocm; then
+        if _fly_execute_with_retry -c verify-gpu-amd.yml --tag=rocm; then
             echo "✓ AMD GPU task execution passed"
         else
             echo "✗ AMD GPU task execution failed"
@@ -1119,7 +1138,7 @@ run:
     ls -la /dev/dri/
 EOF
             
-            if ./fly -t test execute -c verify-gpu-amd-rocm.yml --tag=rocm; then
+            if _fly_execute_with_retry -c verify-gpu-amd-rocm.yml --tag=rocm; then
                 echo "✓ ROCm image task execution passed"
             else
                 echo "⚠ ROCm image task failed (might be version mismatch or image issue)"
