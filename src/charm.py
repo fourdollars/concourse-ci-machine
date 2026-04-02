@@ -1717,8 +1717,71 @@ class ConcourseCharm(CharmBase):
                     "vault-shared-path"
                 ]
 
-        # Write web config
-        web_config_lines = [f"{k}={v}" for k, v in web_config.items()]
+        # Encryption key
+        if self.config.get("encryption-key"):
+            web_config["CONCOURSE_ENCRYPTION_KEY"] = self.config["encryption-key"]
+        if self.config.get("old-encryption-key"):
+            web_config["CONCOURSE_OLD_ENCRYPTION_KEY"] = self.config["old-encryption-key"]
+
+        # LDAP configuration
+        ldap_config_map = {
+            "ldap-display-name": "CONCOURSE_LDAP_DISPLAY_NAME",
+            "ldap-host": "CONCOURSE_LDAP_HOST",
+            "ldap-bind-dn": "CONCOURSE_LDAP_BIND_DN",
+            "ldap-bind-pw": "CONCOURSE_LDAP_BIND_PW",
+            "ldap-user-search-base-dn": "CONCOURSE_LDAP_USER_SEARCH_BASE_DN",
+            "ldap-user-search-username": "CONCOURSE_LDAP_USER_SEARCH_USERNAME",
+            "ldap-user-search-id-attr": "CONCOURSE_LDAP_USER_SEARCH_ID_ATTR",
+            "ldap-user-search-email-attr": "CONCOURSE_LDAP_USER_SEARCH_EMAIL_ATTR",
+            "ldap-user-search-name-attr": "CONCOURSE_LDAP_USER_SEARCH_NAME_ATTR",
+            "ldap-user-search-filter": "CONCOURSE_LDAP_USER_SEARCH_FILTER",
+            "ldap-group-search-base-dn": "CONCOURSE_LDAP_GROUP_SEARCH_BASE_DN",
+            "ldap-group-search-name-attr": "CONCOURSE_LDAP_GROUP_SEARCH_NAME_ATTR",
+            "ldap-group-search-user-attr": "CONCOURSE_LDAP_GROUP_SEARCH_USER_ATTR",
+            "ldap-group-search-group-attr": "CONCOURSE_LDAP_GROUP_SEARCH_GROUP_ATTR",
+            "ldap-group-search-filter": "CONCOURSE_LDAP_GROUP_SEARCH_FILTER",
+            "main-team-ldap-group": "CONCOURSE_MAIN_TEAM_LDAP_GROUP",
+        }
+        for charm_key, env_key in ldap_config_map.items():
+            value = self.config.get(charm_key)
+            if value:
+                web_config[env_key] = value
+
+        # Build log retention configuration
+        retention_config_map = {
+            "default-build-logs-to-retain": "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN",
+            "default-days-to-retain-build-logs": "CONCOURSE_DEFAULT_DAYS_TO_RETAIN_BUILD_LOGS",
+            "max-build-logs-to-retain": "CONCOURSE_MAX_BUILD_LOGS_TO_RETAIN",
+            "max-days-to-retain-build-logs": "CONCOURSE_MAX_DAYS_TO_RETAIN_BUILD_LOGS",
+        }
+        for charm_key, env_key in retention_config_map.items():
+            value = self.config.get(charm_key, 0)
+            if value:
+                web_config[env_key] = str(value)
+
+        # GC failed grace period
+        if self.config.get("gc-failed-grace-period"):
+            web_config["CONCOURSE_GC_FAILED_GRACE_PERIOD"] = self.config[
+                "gc-failed-grace-period"
+            ]
+
+        # Extra local users — append to existing admin user
+        if self.config.get("extra-local-users"):
+            web_config["CONCOURSE_ADD_LOCAL_USER"] += (
+                "," + self.config["extra-local-users"]
+            )
+
+        # Write web config — merge with existing to preserve operator-added keys
+        existing_web_config = {}
+        _config_path = Path(CONCOURSE_CONFIG_FILE)
+        if _config_path.exists():
+            for line in _config_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    existing_web_config[k] = v
+        existing_web_config.update(web_config)
+        web_config_lines = [f"{k}={v}" for k, v in sorted(existing_web_config.items())]
         Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(web_config_lines) + "\n")
         os.chmod(CONCOURSE_CONFIG_FILE, 0o640)
         subprocess.run(
