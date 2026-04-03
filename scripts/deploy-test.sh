@@ -1299,9 +1299,10 @@ step_scale_out() {
                           or (.value["instance-status"].current // "") == "down")
                     | "machine \(.key)"' 2>/dev/null || true)
             if [[ -n "$down_before" ]]; then
-                echo "⚠ WARNING: Cannot find leader before scale-out — machine(s) already down: $down_before"
-                echo "  Skipping scale-out step — model is unhealthy (prior OOM/agent-lost), not a charm bug."
-                return 0
+                echo "❌ ERROR: Cannot find leader before scale-out — machine(s) already down: $down_before"
+                echo "  Model is unhealthy (prior OOM/agent-lost). Failing CI."
+                juju status -m "$MODEL_NAME" || true
+                exit 1
             fi
         fi
     fi
@@ -1371,12 +1372,13 @@ step_scale_out() {
                     | select(.value["machine-status"].current == "down"
                           or (.value["instance-status"].current // "") == "down")
                     | "machine \(.key)"' 2>/dev/null || true)
-            echo "⚠ WARNING: No leader elected after scale-out."
+            echo "❌ ERROR: No leader elected after scale-out."
             if [[ -n "$down_after" ]]; then
                 echo "  Machine(s) down: $down_after — likely OOM on CI runner."
             fi
-            echo "  Skipping worker registration check — model is unhealthy, not a charm bug."
-            return 0
+            echo "  Model is unhealthy. Failing CI."
+            juju status -m "$MODEL_NAME" || true
+            exit 1
         fi
     fi
 
