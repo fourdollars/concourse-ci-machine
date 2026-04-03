@@ -1288,7 +1288,7 @@ step_scale_out() {
     LEADER_BEFORE=""
     if [[ "$MODE" == "auto" ]]; then
         LEADER_BEFORE=$(juju status -m "$MODEL_NAME" "$SCALE_APP" --format=json | \
-            jq -r '.applications."'$SCALE_APP'".units | to_entries[] | select(.value["is-leader"] == true) | .key' 2>/dev/null || true)
+            jq -r '.applications."'$SCALE_APP'".units | to_entries[] | select(.value.leader == true) | .key' 2>/dev/null || true)
         echo "Current leader before scale-out: ${LEADER_BEFORE:-unknown}"
         if [[ -z "$LEADER_BEFORE" ]]; then
             # No leader found — check if a machine is already down (prior OOM/agent-lost)
@@ -1355,7 +1355,7 @@ step_scale_out() {
     # in auto mode). Skip the worker registration check instead of failing CI.
     if [[ "$MODE" == "auto" ]]; then
         LEADER_AFTER=$(juju status -m "$MODEL_NAME" "$SCALE_APP" --format=json | \
-            jq -r '.applications."'$SCALE_APP'".units | to_entries[] | select(.value["is-leader"] == true) | .key' 2>/dev/null || true)
+            jq -r '.applications."'$SCALE_APP'".units | to_entries[] | select(.value.leader == true) | .key' 2>/dev/null || true)
         echo "Leader after scale-out: ${LEADER_AFTER:-unknown}"
         # Case 1: leader changed during scale-out
         if [[ -n "$LEADER_BEFORE" && -n "$LEADER_AFTER" && "$LEADER_AFTER" != "$LEADER_BEFORE" ]]; then
