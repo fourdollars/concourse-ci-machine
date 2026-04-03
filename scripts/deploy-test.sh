@@ -271,10 +271,11 @@ _fly_execute_with_retry() {
     local max_retries=3
     local attempt
     for attempt in $(seq 1 $max_retries); do
-        if ./fly -t test execute "$@"; then
+        ./fly -t test execute "$@"
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
             return 0
         fi
-        local exit_code=$?
         echo "fly execute failed (attempt $attempt/$max_retries, exit code $exit_code)"
         if [[ $attempt -lt $max_retries ]]; then
             echo "Retrying fly execute in 15s (may be transient baggageclaim race)..."
@@ -620,7 +621,7 @@ step_verify() {
     echo "=== Verifying System ==="
     echo "Waiting for at least 1 active worker..."
     WORKER_WAIT=0
-    WORKER_TIMEOUT=120
+    WORKER_TIMEOUT=300
     while true; do
         WORKER_COUNT=$(./fly -t test workers 2>/dev/null | grep -c "running" || true)
         if [[ "$WORKER_COUNT" -ge 1 ]]; then
@@ -628,9 +629,20 @@ step_verify() {
             break
         fi
         if [[ "$WORKER_WAIT" -ge "$WORKER_TIMEOUT" ]]; then
-            echo "WARNING: No active workers found after ${WORKER_TIMEOUT}s!"
-            ./fly -t test workers
-            break
+            echo "❌ ERROR: No active workers registered after ${WORKER_TIMEOUT}s."
+            echo ""
+            echo "=== fly workers output ==="
+            ./fly -t test workers || true
+            echo ""
+            echo "=== Worker unit service status ==="
+            if [[ "$MODE" == "auto" ]]; then
+                juju exec --unit "$APP_NAME/1" -- systemctl status concourse-worker.service --no-pager || true
+                echo "--- worker config.env ---"
+                juju exec --unit "$APP_NAME/1" -- cat /var/lib/concourse-worker/worker-config.env 2>/dev/null                     || juju exec --unit "$APP_NAME/1" -- cat /var/lib/concourse/config.env 2>/dev/null || true
+            else
+                juju exec --unit "$WORKER_APP/0" -- systemctl status concourse-worker.service --no-pager || true
+            fi
+            exit 1
         fi
         echo "No active workers yet (waited ${WORKER_WAIT}s)..."
         sleep 10
