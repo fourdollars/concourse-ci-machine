@@ -283,6 +283,29 @@ _fly_execute_with_retry() {
     return 1
 }
 
+# Helper: verify no machines are in a 'down' state after juju-wait
+# On resource-constrained CI runners, LXC containers can crash (OOM) after
+# juju-wait reports "all idle". Detect this early so the error message is clear.
+_check_machines_healthy() {
+    local down_machines
+    down_machines=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null         | jq -r '.machines | to_entries[]
+            | select(.value["machine-status"].current == "down"
+                  or (.value["instance-status"].current // "") == "down")
+            | "  machine \(.key): \(.value["dns-name"] // "unknown IP")"' 2>/dev/null || true)
+    if [[ -n "$down_machines" ]]; then
+        echo "❌ One or more machines are DOWN after deployment — likely OOM on CI runner:"
+        echo "$down_machines"
+        echo ""
+        echo "Full status:"
+        juju status -m "$MODEL_NAME" || true
+        echo ""
+        echo "Hint: web+worker+lxc mode requires ~4 LXC containers simultaneously."
+        echo "      This runner may have run out of memory."
+        exit 1
+    fi
+}
+
+
 # Helper to ensure CLI is set up
 ensure_cli() {
     # Restore vars from files if present
@@ -546,6 +569,9 @@ step_deploy() {
     # Wait for deployment
     echo "Waiting for deployment to settle..."
     _juju_wait_with_retry 900
+
+    # Verify machines are healthy before proceeding (catches OOM crashes)
+    _check_machines_healthy
 
     # Ensure CLI is ready (and cache credentials)
     ensure_cli
