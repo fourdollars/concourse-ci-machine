@@ -301,6 +301,7 @@ ensure_cli() {
     echo "Waiting for web unit to be active and reachable..."
     IP=""
     local attempt=0
+    local no_leader_count=0
     while true; do
         local status_json
         status_json=$(juju status -m "$MODEL_NAME" --format=json 2>/dev/null || echo "")
@@ -309,6 +310,14 @@ ensure_cli() {
             | jq -r ".applications.\"${LEADER%%/*}\".units \
                 | to_entries[] | select(.value.leader == true) \
                 | .value[\"workload-status\"].current" 2>/dev/null || echo "")
+        if [[ -z "$unit_state" ]]; then
+            no_leader_count=$((no_leader_count + 1))
+            if (( no_leader_count % 3 == 1 )); then
+                echo "  (no Juju leader elected yet -- may be mid-election or leader re-initializing web server)"
+            fi
+        else
+            no_leader_count=0
+        fi
         if [[ "$unit_state" == "active" ]]; then
             local status_msg status_ip machine_id machine_ip
             status_msg=$(echo "$status_json" \
@@ -340,12 +349,12 @@ ensure_cli() {
             done
         fi
         attempt=$((attempt + 1))
-        if [[ $attempt -ge 90 ]]; then
+        if [[ $attempt -ge 150 ]]; then
             echo "Error: Web unit did not become reachable within timeout."
             echo "Last workload state: ${unit_state:-unknown}"
             exit 1
         fi
-        echo "Waiting for web unit (attempt $attempt/90, state: ${unit_state:-unknown})..."
+        echo "Waiting for web unit (attempt $attempt/150, state: ${unit_state:-unknown})..."
         sleep 10
     done
     echo "$IP" > concourse-ip.txt
