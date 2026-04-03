@@ -1246,8 +1246,9 @@ class ConcourseCharm(CharmBase):
             db_url = self._get_postgresql_url()
 
             if not db_url:
-                logger.warning("PostgreSQL URL not yet available")
+                logger.warning("PostgreSQL URL not yet available, deferring event")
                 self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                event.defer()
                 return
 
             logger.info("Database configuration updated")
@@ -1288,8 +1289,9 @@ class ConcourseCharm(CharmBase):
             logger.info("Database endpoints changed (PostgreSQL 16+)")
 
             if not self.database or not self.database.fetch_relation_data():
-                logger.warning("Database connection info not yet available")
+                logger.warning("Database connection info not yet available, deferring event")
                 self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                event.defer()
                 return
 
             # Get connection info directly from relation data
@@ -1323,8 +1325,9 @@ class ConcourseCharm(CharmBase):
                     break
 
             if not db_url:
-                logger.warning("No connection URI in database data yet")
+                logger.warning("No connection URI in database data yet, deferring event")
                 self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
+                event.defer()
                 return
 
             admin_password = self._get_or_create_admin_password()
