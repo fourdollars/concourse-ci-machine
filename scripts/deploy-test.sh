@@ -173,7 +173,9 @@ trap_cleanup() {
         echo "  Password: ${PASSWORD:-<unknown>}"
         echo ""
         # shellcheck disable=SC2015
-        ./fly -t test login -c "http://${IP:-<unknown>}:8080" -u admin -p "${PASSWORD:-<unknown>}" && ./fly -t test workers || true
+        if [[ -f "./fly" ]]; then
+            ./fly -t test login -c "http://${IP:-<unknown>}:8080" -u admin -p "${PASSWORD:-<unknown>}" && ./fly -t test workers || true
+        fi
     fi
 
     if [[ "$DESTROYED" == "true" ]]; then
@@ -351,6 +353,8 @@ ensure_cli() {
         echo "Fetching admin password via juju run..."
         PASSWORD=$(juju run "$LEADER" get-admin-password 2>/dev/null | grep "password:" | awk '{print $2}' | sed "s/^'//;s/'$//" || echo "")
         if [[ -z "$PASSWORD" ]]; then
+            # Check for machine OOM/down before reporting generic password error
+            _check_machines_healthy
             echo "Error: Failed to retrieve admin password."
             exit 1
         fi
