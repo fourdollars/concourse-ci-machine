@@ -379,16 +379,18 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
                             f"Checksum mismatch: expected {expected_sha1}, got {actual_sha1}"
                         )
                     logger.info("Checksum verified successfully")
-                except Exception as e:
-                    logger.warning(f"Checksum verification failed: {e}")
-                    # If we can't verify checksum, should we fail?
-                    # T058 implies we should detect corruption.
-                    # If fetching sha1 fails, maybe warn? But if mismatch, definitely fail.
-                    if "Checksum mismatch" in str(e):
-                        raise
-                    # For network errors fetching sha1, we might want to retry the whole loop?
-                    # Or just warn. Let's fail safe and retry.
+                except RuntimeError:
+                    # Re-raise actual checksum mismatches (binary corruption) — always fatal.
                     raise
+                except Exception as e:
+                    # SHA1 file unavailable (404, transient network error, etc.)
+                    # Only warn and continue — do NOT retry the entire 891MB tarball download
+                    # just because the tiny SHA1 sidecar file was unreachable.
+                    # A real corruption would manifest as a RuntimeError above.
+                    logger.warning(
+                        f"Could not fetch SHA1 for checksum verification ({e}). "
+                        f"Proceeding without checksum (binary integrity not confirmed)."
+                    )
 
                 break
 
