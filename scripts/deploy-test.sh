@@ -224,14 +224,31 @@ _fly_login_with_retry() {
 _juju_wait_with_retry() {
     local timeout_secs="${1:-900}"
     local max_retries=3
-    local attempt
+    local attempt rc
+
+    # Pre-flight: wait for "juju status" to work without errors.
+    # On GitHub Actions, LXD storage pool initialisation for PostgreSQL
+    # can make "juju status --format=json" fail with:
+    #   "cannot convert storage details for storage-archive-0: filesystem not found"
+    # This is transient; juju-wait would fail immediately if we don't wait it out.
+    local pf_attempt=0 pf_max=30  # up to 5 min (30 x 10 s)
+    while [[ $pf_attempt -lt $pf_max ]]; do
+        if juju status -m "$MODEL_NAME" --format=json >/dev/null 2>&1; then
+            break
+        fi
+        pf_attempt=$((pf_attempt + 1))
+        echo "  juju status not yet stable (pre-flight $pf_attempt/$pf_max — storage may still be initializing)..."
+        sleep 10
+    done
+
     for attempt in $(seq 1 $max_retries); do
         if command -v juju-wait >/dev/null 2>&1; then
-            if juju-wait -m "$MODEL_NAME" -t "$timeout_secs"; then
+            juju-wait -m "$MODEL_NAME" -t "$timeout_secs"
+            rc=$?  # capture BEFORE any other command resets $?
+            if [[ $rc -eq 0 ]]; then
                 return 0
             fi
-            local exit_code=$?
-            echo "juju-wait failed (attempt $attempt/$max_retries, exit code $exit_code)"
+            echo "juju-wait failed (attempt $attempt/$max_retries, exit code $rc)"
             if [[ $attempt -lt $max_retries ]]; then
                 echo "Retrying juju-wait in 10s..."
                 sleep 10
