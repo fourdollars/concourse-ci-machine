@@ -1549,6 +1549,35 @@ class ConcourseCharm(CharmBase):
                 )
                 tsa_config_changed = current_tsa_pub_key != tsa_pub_key.strip()
 
+                # Check if the web leader just authorized a new worker key.
+                # When a scale-out worker's key is added to authorized_worker_keys,
+                # the web unit writes worker-key-authorized-at to peer data.  We
+                # track the last value we acted on in a local state file so we only
+                # restart once per authorization event (not on every peer change).
+                key_authorized_at = None
+                for _unit in event.relation.units:
+                    _data = event.relation.data.get(_unit, {})
+                    if _data.get("worker-key-authorized-at"):
+                        key_authorized_at = _data["worker-key-authorized-at"]
+                        break
+
+                last_authorized_at_path = keys_dir / ".last_key_authorized_at"
+                last_authorized_at = (
+                    last_authorized_at_path.read_text().strip()
+                    if last_authorized_at_path.exists()
+                    else None
+                )
+                new_key_authorized = (
+                    key_authorized_at is not None
+                    and key_authorized_at != last_authorized_at
+                )
+                if new_key_authorized:
+                    last_authorized_at_path.write_text(key_authorized_at)
+                    logger.info(
+                        f"Web leader authorized new worker key at {key_authorized_at} — "
+                        "will restart worker to reconnect to TSA"
+                    )
+
                 if tsa_config_changed:
                     tsa_pub_key_path.write_text(tsa_pub_key + "\n")
                     logger.info("Wrote TSA public key from peer relation (changed)")
@@ -1561,6 +1590,20 @@ class ConcourseCharm(CharmBase):
                     else:
                         self.worker_helper.start_service()
                         logger.info("Started worker with new TSA configuration")
+                elif new_key_authorized:
+                    # TSA config unchanged but a new worker key was authorized.
+                    # Restart this worker so it retries the SSH handshake against
+                    # the updated authorized_worker_keys on the web unit.
+                    logger.info(
+                        "New worker key authorized on web unit — restarting worker "
+                        "to reconnect to TSA with freshly authorized key"
+                    )
+                    if self.worker_helper.is_running():
+                        self.worker_helper.restart_service()
+                        logger.info("Restarted worker after key authorization")
+                    else:
+                        self.worker_helper.start_service()
+                        logger.info("Started worker after key authorization")
                 else:
                     logger.info(
                         "TSA configuration unchanged — skipping worker restart"
