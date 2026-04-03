@@ -1891,7 +1891,7 @@ step_config() {
         gc-failed-grace-period="1h"
 
     echo "Waiting for config to apply..."
-    sleep 15
+    _juju_wait_with_retry 300
 
     echo "--- Step 2: Verify config.env contains new env vars ---"
     CONFIG_CONTENT=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
@@ -1943,7 +1943,7 @@ step_config() {
 
     # Trigger a charm event by changing a config value
     juju config "$CFG_APP" log-level=debug
-    sleep 15
+    _juju_wait_with_retry 300
 
     CONFIG_AFTER=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
     if echo "$CONFIG_AFTER" | grep -q "^CUSTOM_OPERATOR_KEY=preserve_me$"; then
@@ -1993,7 +1993,7 @@ step_config() {
         'sed -i "/^CUSTOM_OPERATOR_KEY=/d; /^CONCOURSE_ENCRYPTION_KEY=/d" /var/lib/concourse/config.env'
 
     echo "Waiting for config reset to apply..."
-    sleep 15
+    _juju_wait_with_retry 300
 
     # Verify the web server is healthy after cleanup
     if _juju_exec_with_retry --unit "$WEB_UNIT" -- systemctl is-active concourse-server >/dev/null 2>&1; then
