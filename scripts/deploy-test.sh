@@ -306,6 +306,26 @@ _check_machines_healthy() {
 }
 
 
+# Helper: run juju exec with retry (handles transient API connection drops in CI)
+_juju_exec_with_retry() {
+    local max_retries=3
+    local attempt rc
+    for attempt in $(seq 1 $max_retries); do
+        juju exec "$@"
+        rc=$?
+        if [[ $rc -eq 0 ]]; then
+            return 0
+        fi
+        echo "juju exec failed (attempt $attempt/$max_retries, exit code $rc)"
+        if [[ $attempt -lt $max_retries ]]; then
+            echo "Retrying juju exec in 10s (may be transient API connection drop)..."
+            sleep 10
+        fi
+    done
+    echo "Error: juju exec failed after $max_retries attempts."
+    return 1
+}
+
 # Helper to ensure CLI is set up
 ensure_cli() {
     # Restore vars from files if present
@@ -1848,6 +1868,9 @@ step_destroy() {
 step_config() {
     echo "=== Testing Config Merge Behavior ==="
 
+    # Verify model is healthy before running config tests
+    _check_machines_healthy
+
     # Determine the web unit to test on
     if [[ "$MODE" == "auto" ]]; then
         WEB_UNIT="$LEADER"
@@ -1871,7 +1894,7 @@ step_config() {
     sleep 15
 
     echo "--- Step 2: Verify config.env contains new env vars ---"
-    CONFIG_CONTENT=$(juju exec --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    CONFIG_CONTENT=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
 
     check_config() {
         local key="$1"
@@ -1905,7 +1928,7 @@ step_config() {
     fi
 
     echo "--- Step 4: Verify ExecStart contains extra-web-flags ---"
-    SERVICE_CONTENT=$(juju exec --unit "$WEB_UNIT" -- cat /etc/systemd/system/concourse-server.service)
+    SERVICE_CONTENT=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /etc/systemd/system/concourse-server.service)
     if echo "$SERVICE_CONTENT" | grep -q "ExecStart=.*--enable-across-step.*--enable-resource-causality"; then
         echo "✓ ExecStart contains extra-web-flags"
     else
@@ -1916,13 +1939,13 @@ step_config() {
     fi
 
     echo "--- Step 5: Test merge behavior (operator-added key preserved) ---"
-    juju exec --unit "$WEB_UNIT" -- bash -c 'echo "CUSTOM_OPERATOR_KEY=preserve_me" >> /var/lib/concourse/config.env'
+    _juju_exec_with_retry --unit "$WEB_UNIT" -- bash -c 'echo "CUSTOM_OPERATOR_KEY=preserve_me" >> /var/lib/concourse/config.env'
 
     # Trigger a charm event by changing a config value
     juju config "$CFG_APP" log-level=debug
     sleep 15
 
-    CONFIG_AFTER=$(juju exec --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    CONFIG_AFTER=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
     if echo "$CONFIG_AFTER" | grep -q "^CUSTOM_OPERATOR_KEY=preserve_me$"; then
         echo "✓ Operator-added key CUSTOM_OPERATOR_KEY preserved after config change"
     else
@@ -1966,18 +1989,18 @@ step_config() {
 
     # Remove operator-injected test keys from config.env directly
     # (merge behavior preserves them, but they are test artifacts)
-    juju exec --unit "$WEB_UNIT" -- bash -c \
+    _juju_exec_with_retry --unit "$WEB_UNIT" -- bash -c \
         'sed -i "/^CUSTOM_OPERATOR_KEY=/d; /^CONCOURSE_ENCRYPTION_KEY=/d" /var/lib/concourse/config.env'
 
     echo "Waiting for config reset to apply..."
     sleep 15
 
     # Verify the web server is healthy after cleanup
-    if juju exec --unit "$WEB_UNIT" -- systemctl is-active concourse-server >/dev/null 2>&1; then
+    if _juju_exec_with_retry --unit "$WEB_UNIT" -- systemctl is-active concourse-server >/dev/null 2>&1; then
         echo "✓ Web server healthy after config cleanup"
     else
         echo "⚠ Web server not active after cleanup, restarting..."
-        juju exec --unit "$WEB_UNIT" -- systemctl restart concourse-server
+        _juju_exec_with_retry --unit "$WEB_UNIT" -- systemctl restart concourse-server
         sleep 10
     fi
 
