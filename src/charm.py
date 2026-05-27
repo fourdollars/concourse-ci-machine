@@ -2490,6 +2490,13 @@ class ConcourseCharm(CharmBase):
                     f"Upgrading to v{upgrade_state.target_version}..."
                 )  # T053
                 upgrade_coordinator.handle_complete_signal()
+                # Re-install runc wrapper after coordinated upgrade so the
+                # tarball's runc binary does not permanently bypass the wrapper.
+                if self._should_run_worker():
+                    if self.config.get("compute-runtime", "none") != "none":
+                        self.worker_helper.configure_containerd_for_gpu()
+                    else:
+                        self.worker_helper.install_folder_mount_wrapper()
                 self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
                 self._update_status()
 

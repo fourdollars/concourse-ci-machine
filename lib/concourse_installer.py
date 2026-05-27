@@ -433,6 +433,18 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
         for item in src_dir.iterdir():
             dest = parent_dir / item.name
             if dest.exists():
+                # Protect runc wrapper symlink: do not let tarball binary overwrite it.
+                # The wrapper is installed separately by install_folder_mount_wrapper()
+                # and must survive binary upgrades.
+                if dest.is_symlink() and dest.name == "runc":
+                    # Save the new runc binary as runc.real (backup) but keep the symlink.
+                    runc_real = dest.parent / "runc.real"
+                    logger.info(
+                        f"Preserving runc wrapper symlink at {dest}; "
+                        f"saving new binary as {runc_real}"
+                    )
+                    shutil.move(str(item), str(runc_real))
+                    continue
                 if dest.is_dir() and not dest.is_symlink():
                     shutil.rmtree(dest)
                 else:

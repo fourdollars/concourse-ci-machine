@@ -1,0 +1,20 @@
+platform: linux
+image_resource:
+  type: registry-image
+  source: {repository: busybox}
+run:
+  path: sh
+  args:
+  - -c
+  - |
+    echo "Checking Read-Only Mount..."
+    cat /srv/config_test/test_ro.txt
+    if touch /srv/config_test/should_fail; then
+      echo "Error: Was able to write to read-only mount"
+      exit 1
+    fi
+    
+    echo "Checking Read-Write Mount..."
+    cat /srv/config_test_writable/test_rw.txt
+    echo "Writing test" > /srv/config_test_writable/write_test.txt
+    cat /srv/config_test_writable/write_test.txt

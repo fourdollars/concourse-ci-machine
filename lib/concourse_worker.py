@@ -1163,6 +1163,23 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                 concourse_bin_runc.symlink_to(wrapper_path)
                 logger.info(f"Symlinked {concourse_bin_runc} -> {wrapper_path}")
 
+            # Final verification: ensure /var/lib/concourse/bin/runc is a symlink.
+            # If it is still a plain binary, folder mounts will be silently bypassed.
+            concourse_bin_runc = Path("/var/lib/concourse/bin/runc")
+            if concourse_bin_runc.exists() and not concourse_bin_runc.is_symlink():
+                error_msg = (
+                    f"CRITICAL: {concourse_bin_runc} is still a real binary after "
+                    "wrapper installation. Folder mounts will NOT work. "
+                    "This usually means install_folder_mount_wrapper() ran before "
+                    "the Concourse binaries were extracted — re-run after binary install."
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            elif concourse_bin_runc.is_symlink():
+                logger.info(
+                    f"Verified: {concourse_bin_runc} -> {concourse_bin_runc.resolve()}"
+                )
+
         except subprocess.TimeoutExpired:
             logger.error("Timeout while installing dependencies")
             raise
