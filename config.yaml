@@ -3,7 +3,6 @@ options:
     description: |
       Deployment mode for this unit: 
       - 'auto': Leader runs web, non-leaders run workers (recommended for multi-unit)
-      - 'all': Run both web and worker on this unit (default for single-unit)
       - 'web': Only run web server
       - 'worker': Only run worker
       Default: auto

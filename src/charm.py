@@ -188,8 +188,6 @@ class ConcourseCharm(CharmBase):
             return "web"
         elif config_mode == "worker":
             return "worker"
-        elif config_mode == "all":
-            return "both"
         elif config_mode == "auto":
             # Auto mode: leader runs web, non-leaders run workers
             if self.unit.is_leader():
@@ -197,7 +195,7 @@ class ConcourseCharm(CharmBase):
             else:
                 return "worker"
         else:
-            logger.warning(f"Unknown mode: {config_mode}, defaulting to 'both'")
+            logger.warning(f"Unknown mode: {config_mode}, defaulting to 'auto' behavior")
             return "both"
 
     def _should_run_web(self) -> bool:
