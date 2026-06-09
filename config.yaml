@@ -300,6 +300,16 @@ options:
     default: ""
     type: string
 
+  main-team-local-user:
+    description: |
+      Comma-separated list of local users for main team authorization.
+      These users are granted owner-level access to the main team.
+      Example: "admin,oem"
+      Maps to CONCOURSE_MAIN_TEAM_LOCAL_USER.
+      Defaults to initial-admin-username when not set.
+    default: ""
+    type: string
+
   # --- Extra CLI flags ---
 
   extra-web-flags:

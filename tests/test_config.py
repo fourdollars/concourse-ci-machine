@@ -227,6 +227,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 0,
             "gc-failed-grace-period": "",
             "extra-local-users": "",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -269,6 +270,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 0,
             "gc-failed-grace-period": "",
             "extra-local-users": "",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -320,6 +322,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 0,
             "gc-failed-grace-period": "",
             "extra-local-users": "",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -355,6 +358,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 30,
             "gc-failed-grace-period": "1h",
             "extra-local-users": "",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -393,6 +397,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 0,
             "gc-failed-grace-period": "",
             "extra-local-users": "",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -428,6 +433,7 @@ class TestUpdateConfigMapping:
             "max-days-to-retain-build-logs": 0,
             "gc-failed-grace-period": "",
             "extra-local-users": "oem:hash1,bot:hash2",
+            "main-team-local-user": "",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
@@ -499,3 +505,124 @@ class TestSetupSystemdService:
             exec_start += f" {helper.config['extra-web-flags']}"
 
         assert exec_start == f"{CONCOURSE_BIN} web"
+
+
+# ---------------------------------------------------------------------------
+# main-team-local-user config option
+# ---------------------------------------------------------------------------
+
+
+class TestMainTeamLocalUser:
+    """Tests for the main-team-local-user config option."""
+
+    # Minimal config dict shared by all tests in this class.
+    BASE_CONFIG = {
+        "web-port": 8080,
+        "log-level": "info",
+        "initial-admin-username": "admin",
+        "enable-metrics": False,
+        "external-url": "http://test:8080",
+        "vault-url": "",
+        "encryption-key": "",
+        "ldap-display-name": "", "ldap-host": "", "ldap-bind-dn": "",
+        "ldap-bind-pw": "", "ldap-user-search-base-dn": "",
+        "ldap-user-search-username": "", "ldap-user-search-id-attr": "",
+        "ldap-user-search-email-attr": "", "ldap-user-search-name-attr": "",
+        "ldap-user-search-filter": "", "ldap-group-search-base-dn": "",
+        "ldap-group-search-name-attr": "", "ldap-group-search-user-attr": "",
+        "ldap-group-search-group-attr": "", "ldap-group-search-filter": "",
+        "main-team-ldap-group": "",
+        "default-build-logs-to-retain": 0,
+        "default-days-to-retain-build-logs": 0,
+        "max-build-logs-to-retain": 0,
+        "max-days-to-retain-build-logs": 0,
+        "gc-failed-grace-period": "",
+        "extra-local-users": "",
+    }
+
+    def _make_web_helper(self, overrides=None):
+        from concourse_web import ConcourseWebHelper
+
+        config = {**self.BASE_CONFIG, **(overrides or {})}
+        charm = MagicMock()
+        charm.model.config = config
+        charm.model.get_binding.side_effect = Exception("no binding")
+        return ConcourseWebHelper(charm)
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_defaults_to_initial_admin_username(self, mock_chmod, mock_run, tmp_path):
+        """When main-team-local-user is not set, falls back to initial-admin-username."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper({"main-team-local-user": ""})
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "admin"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_single_extra_user_in_main_team(self, mock_chmod, mock_run, tmp_path):
+        """A single extra user set via main-team-local-user appears in CONCOURSE_MAIN_TEAM_LOCAL_USER."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper({"main-team-local-user": "oem"})
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "oem"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_multiple_users_in_main_team(self, mock_chmod, mock_run, tmp_path):
+        """Multiple users set via main-team-local-user are all present in CONCOURSE_MAIN_TEAM_LOCAL_USER."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper({"main-team-local-user": "admin,oem"})
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "admin,oem"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_main_team_local_user_independent_of_extra_local_users(
+        self, mock_chmod, mock_run, tmp_path
+    ):
+        """main-team-local-user and extra-local-users are independent.
+
+        extra-local-users controls ADD_LOCAL_USER (credentials);
+        main-team-local-user controls MAIN_TEAM_LOCAL_USER (authorization).
+        Both can be set independently.
+        """
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper({
+            "main-team-local-user": "admin,oem",
+            "extra-local-users": "oem:hash1,bot:hash2",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        # main team authorization: explicit list
+        assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "admin,oem"
+        # credential list: admin + extra users
+        assert result["CONCOURSE_ADD_LOCAL_USER"] == "admin:pass123,oem:hash1,bot:hash2"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_custom_admin_username_as_default(
+        self, mock_chmod, mock_run, tmp_path
+    ):
+        """When main-team-local-user is unset, falls back to the custom initial-admin-username."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper({
+            "initial-admin-username": "ci-admin",
+            "main-team-local-user": "",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "ci-admin"
