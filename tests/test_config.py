@@ -538,6 +538,7 @@ class TestMainTeamLocalUser:
         "max-days-to-retain-build-logs": 0,
         "gc-failed-grace-period": "",
         "extra-local-users": "",
+        "main-team-local-user": "",
     }
 
     def _make_web_helper(self, overrides=None):

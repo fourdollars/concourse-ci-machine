@@ -307,6 +307,9 @@ options:
       Example: "admin,oem"
       Maps to CONCOURSE_MAIN_TEAM_LOCAL_USER.
       Defaults to initial-admin-username when not set.
+      Note: users listed here must also exist in extra-local-users (or via
+      LDAP) to be able to log in; granting team access to a non-existent
+      user has no effect but will not cause an error.
     default: ""
     type: string
 
