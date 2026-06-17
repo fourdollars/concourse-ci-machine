@@ -41,7 +41,9 @@ def get_latest_concourse_version(github_token: Optional[str] = None):
         req = urllib.request.Request(url)
         req.add_header("Accept", "application/vnd.github.v3+json")
         if github_token:
-            req.add_header("Authorization", f"Bearer {github_token}")
+            github_token = github_token.strip()
+            if github_token:
+                req.add_header("Authorization", f"Bearer {github_token}")
 
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode())

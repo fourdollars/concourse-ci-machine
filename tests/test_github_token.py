@@ -55,6 +55,23 @@ def test_get_latest_concourse_version_with_token(mock_urlopen):
 
 
 @patch("urllib.request.urlopen")
+def test_get_latest_concourse_version_with_whitespace_token(mock_urlopen):
+    mock_response = MagicMock()
+    mock_response.read.return_value = b'{"tag_name": "v7.14.3"}'
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    token = "  test-github-token-with-whitespace  "
+    version = get_latest_concourse_version(github_token=token)
+
+    assert version == "7.14.3"
+    
+    # Verify that the token was stripped before generating the header
+    args, _ = mock_urlopen.call_args
+    req = args[0]
+    assert req.headers["Authorization"] == "Bearer test-github-token-with-whitespace"
+
+
+@patch("urllib.request.urlopen")
 def test_get_latest_concourse_version_no_token(mock_urlopen):
     mock_response = MagicMock()
     mock_response.read.return_value = b'{"tag_name": "v7.14.3"}'
