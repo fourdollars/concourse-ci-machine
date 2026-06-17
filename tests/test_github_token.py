@@ -6,11 +6,31 @@ from unittest.mock import MagicMock, patch
 try:
     import ops
 except ImportError:
-    sys.modules["ops"] = MagicMock()
-    sys.modules["ops.model"] = MagicMock()
+    class DummyActiveStatus: pass
+    class DummyWaitingStatus:
+        def __init__(self, message): self.message = message
+    class DummyBlockedStatus:
+        def __init__(self, message): self.message = message
+    class DummyMaintenanceStatus:
+        def __init__(self, message): self.message = message
 
-# Add lib/ to path
+    ops_model = MagicMock()
+    ops_model.ActiveStatus = DummyActiveStatus
+    ops_model.WaitingStatus = DummyWaitingStatus
+    ops_model.BlockedStatus = DummyBlockedStatus
+    ops_model.MaintenanceStatus = DummyMaintenanceStatus
+    sys.modules["ops.model"] = ops_model
+
+    ops_charm = MagicMock()
+    ops_charm.CharmBase = type("CharmBase", (object,), {})
+    sys.modules["ops.charm"] = ops_charm
+
+    sys.modules["ops"] = MagicMock()
+    sys.modules["ops.main"] = MagicMock()
+
+# Add lib/ and src/ to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pytest
 from concourse_installer import get_latest_concourse_version
@@ -131,3 +151,105 @@ def test_concourse_helper_get_version_no_token(mock_urlopen):
     args, _ = mock_urlopen.call_args
     req = args[0]
     assert "Authorization" not in req.headers
+
+
+def test_charm_on_update_status_version_with_token():
+    from charm import ConcourseCharm
+
+    charm = object.__new__(ConcourseCharm)
+    charm.config = {"shared-storage": "lxc", "github-token": "test-github-token", "version": ""}
+    charm.unit = MagicMock()
+    charm.unit.status = DummyWaitingStatus("Waiting for shared storage mount")
+
+    charm._should_run_web = MagicMock(return_value=True)
+    charm._should_run_worker = MagicMock(return_value=False)
+    charm.web_helper = MagicMock()
+
+    # Mock Path.exists
+    original_exists = Path.exists
+    def mock_exists(path_obj):
+        p = str(path_obj)
+        if p == "/var/lib/concourse":
+            return True
+        if p == "/var/lib/concourse/.lxc_shared_storage":
+            return True
+        if p == "/var/lib/concourse/.installed_version":
+            return False
+        return original_exists(path_obj)
+
+    with patch.object(Path, "exists", mock_exists):
+        with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
+             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+            mock_get_latest.return_value = "7.14.3"
+            
+            charm._on_update_status(MagicMock())
+            
+            mock_get_latest.assert_called_once_with(github_token="test-github-token")
+
+
+def test_charm_on_update_status_version_no_token():
+    from charm import ConcourseCharm
+
+    charm = object.__new__(ConcourseCharm)
+    charm.config = {"shared-storage": "lxc", "version": ""}
+    charm.unit = MagicMock()
+    charm.unit.status = DummyWaitingStatus("Waiting for shared storage mount")
+
+    charm._should_run_web = MagicMock(return_value=True)
+    charm._should_run_worker = MagicMock(return_value=False)
+    charm.web_helper = MagicMock()
+
+    # Mock Path.exists
+    original_exists = Path.exists
+    def mock_exists(path_obj):
+        p = str(path_obj)
+        if p == "/var/lib/concourse":
+            return True
+        if p == "/var/lib/concourse/.lxc_shared_storage":
+            return True
+        if p == "/var/lib/concourse/.installed_version":
+            return False
+        return original_exists(path_obj)
+
+    with patch.object(Path, "exists", mock_exists):
+        with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
+             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+            mock_get_latest.return_value = "7.14.3"
+            
+            charm._on_update_status(MagicMock())
+            
+            mock_get_latest.assert_called_once_with(github_token=None)
+
+
+def test_charm_on_update_status_version_empty_token():
+    from charm import ConcourseCharm
+
+    charm = object.__new__(ConcourseCharm)
+    charm.config = {"shared-storage": "lxc", "github-token": "", "version": ""}
+    charm.unit = MagicMock()
+    charm.unit.status = DummyWaitingStatus("Waiting for shared storage mount")
+
+    charm._should_run_web = MagicMock(return_value=True)
+    charm._should_run_worker = MagicMock(return_value=False)
+    charm.web_helper = MagicMock()
+
+    # Mock Path.exists
+    original_exists = Path.exists
+    def mock_exists(path_obj):
+        p = str(path_obj)
+        if p == "/var/lib/concourse":
+            return True
+        if p == "/var/lib/concourse/.lxc_shared_storage":
+            return True
+        if p == "/var/lib/concourse/.installed_version":
+            return False
+        return original_exists(path_obj)
+
+    with patch.object(Path, "exists", mock_exists):
+        with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
+             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+            mock_get_latest.return_value = "7.14.3"
+            
+            charm._on_update_status(MagicMock())
+            
+            mock_get_latest.assert_called_once_with(github_token="")

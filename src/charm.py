@@ -1043,7 +1043,9 @@ class ConcourseCharm(CharmBase):
                     from concourse_installer import get_latest_concourse_version
 
                     version = (
-                        self.config.get("version") or get_latest_concourse_version()
+                        self.config.get("version") or get_latest_concourse_version(
+                            github_token=self.config.get("github-token")
+                        )
                     )
 
                     # Trigger installation based on role
