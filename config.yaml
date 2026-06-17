@@ -16,6 +16,13 @@ options:
     default: ""
     type: string
   
+  github-token:
+    description: |
+      GitHub API token used to authenticate requests to the GitHub API,
+      preventing rate limits when checking or downloading the latest version.
+    default: ""
+    type: string
+  
   shared-storage:
     description: |
       Shared storage mode for LXC testing:
