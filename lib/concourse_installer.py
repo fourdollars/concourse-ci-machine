@@ -32,7 +32,7 @@ except ImportError:
     logger.warning("storage_coordinator not available, shared storage disabled")
 
 
-def get_latest_concourse_version():
+def get_latest_concourse_version(github_token: Optional[str] = None):
     """Fetch the latest Concourse version from GitHub releases"""
     import urllib.request
 
@@ -40,6 +40,8 @@ def get_latest_concourse_version():
         url = "https://api.github.com/repos/concourse/concourse/releases/latest"
         req = urllib.request.Request(url)
         req.add_header("Accept", "application/vnd.github.v3+json")
+        if github_token:
+            req.add_header("Authorization", f"Bearer {github_token}")
 
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode())

@@ -188,7 +188,7 @@ def get_concourse_version(config) -> str:
     # Fetch latest version from GitHub
     from concourse_installer import get_latest_concourse_version
 
-    return get_latest_concourse_version()
+    return get_latest_concourse_version(github_token=config.get("github-token"))
 
 
 def detect_nvidia_gpus():

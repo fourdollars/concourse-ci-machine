@@ -90,19 +90,14 @@ class ConcourseHelper:
         if configured:
             return configured
 
-        # Fetch latest version from GitHub releases API
-        import urllib.request
-        import json
-
+        from concourse_installer import get_latest_concourse_version
         try:
-            url = "https://api.github.com/repos/concourse/concourse/releases/latest"
-            with urllib.request.urlopen(url, timeout=10) as response:
-                data = json.loads(response.read().decode())
-                version = data["tag_name"].lstrip("v")
-                self.charm.unit.status = MaintenanceStatus(
-                    f"Detected latest version: {version}"
-                )
-                return version
+            version = get_latest_concourse_version(github_token=self.config.get("github-token"))
+            from ops.model import MaintenanceStatus
+            self.charm.unit.status = MaintenanceStatus(
+                f"Detected latest version: {version}"
+            )
+            return version
         except Exception as e:
             raise Exception(f"Failed to fetch latest Concourse version: {e}")
 
