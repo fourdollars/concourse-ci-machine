@@ -23,14 +23,14 @@ LIBAPI = 0
 # to 0 if you are raising the major API version
 LIBPATCH = 1
 
-from pathlib import Path
-from typing import List, Optional
-import logging
+from pathlib import Path  # noqa: E402
+from typing import List  # noqa: E402
+import logging  # noqa: E402
 
 # Import from the main module
-import sys
+import sys  # noqa: E402
 sys.path.append('/var/lib/juju/agents/unit-concourse-ci-machine-0/charm/src')
-from folder_mount_manager import FolderDiscovery, DiscoveredFolder, MountDiscoveryResult
+from folder_mount_manager import FolderDiscovery, MountDiscoveryResult  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

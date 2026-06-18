@@ -224,7 +224,7 @@ def main():
     port = int(os.getenv("EXPORTER_PORT", "9358"))
     scrape_interval = int(os.getenv("SCRAPE_INTERVAL", "30"))
 
-    logger.info(f"Starting Concourse Exporter v1.1.0")
+    logger.info("Starting Concourse Exporter v1.1.0")
     logger.info(f"  Concourse URL: {concourse_url}")
     logger.info(f"  Team: {team}")
     logger.info(f"  Username: {username}")

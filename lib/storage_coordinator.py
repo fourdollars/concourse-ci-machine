@@ -1311,7 +1311,7 @@ class UpgradeCoordinator:
             "upgrade-ready-timestamp", datetime.now(timezone.utc).isoformat()
         )
 
-        self.logger.info(f"Acknowledged PREPARE signal (set upgrade-ready=true)")
+        self.logger.info("Acknowledged PREPARE signal (set upgrade-ready=true)")
 
     def handle_complete_signal(self) -> None:
         """Handle COMPLETE signal from web/leader (worker units only).

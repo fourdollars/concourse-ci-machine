@@ -146,7 +146,6 @@ class ConcourseHelper:
                     f"Extracting Concourse {version}..."
                 )
                 try:
-                    import shutil
 
                     with tarfile.open(tar_file, "r:gz") as tar:
                         # Extract each member, stripping the first path component

@@ -9,9 +9,8 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
-from concourse_common import CONCOURSE_DATA_DIR, SYSTEMD_SERVICE_DIR
+from concourse_common import SYSTEMD_SERVICE_DIR
 
 logger = logging.getLogger(__name__)
 

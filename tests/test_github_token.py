@@ -2,39 +2,39 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Conditionally mock ops
-try:
-    import ops
-except ImportError:
-    class DummyActiveStatus: pass
-    class DummyWaitingStatus:
-        def __init__(self, message): self.message = message
-    class DummyBlockedStatus:
-        def __init__(self, message): self.message = message
-    class DummyMaintenanceStatus:
-        def __init__(self, message): self.message = message
+# Mock ops unconditionally for unit testing ConcourseCharm
+class DummyActiveStatus:
+    pass
+class DummyWaitingStatus:
+    def __init__(self, message):
+        self.message = message
+class DummyBlockedStatus:
+    def __init__(self, message):
+        self.message = message
+class DummyMaintenanceStatus:
+    def __init__(self, message):
+        self.message = message
 
-    ops_model = MagicMock()
-    ops_model.ActiveStatus = DummyActiveStatus
-    ops_model.WaitingStatus = DummyWaitingStatus
-    ops_model.BlockedStatus = DummyBlockedStatus
-    ops_model.MaintenanceStatus = DummyMaintenanceStatus
-    sys.modules["ops.model"] = ops_model
+ops_model = MagicMock()
+ops_model.ActiveStatus = DummyActiveStatus
+ops_model.WaitingStatus = DummyWaitingStatus
+ops_model.BlockedStatus = DummyBlockedStatus
+ops_model.MaintenanceStatus = DummyMaintenanceStatus
+sys.modules["ops.model"] = ops_model
 
-    ops_charm = MagicMock()
-    ops_charm.CharmBase = type("CharmBase", (object,), {})
-    sys.modules["ops.charm"] = ops_charm
+ops_charm = MagicMock()
+ops_charm.CharmBase = type("CharmBase", (object,), {})
+sys.modules["ops.charm"] = ops_charm
 
-    sys.modules["ops"] = MagicMock()
-    sys.modules["ops.main"] = MagicMock()
+sys.modules["ops"] = MagicMock()
+sys.modules["ops.main"] = MagicMock()
 
 # Add lib/ and src/ to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import pytest
-from concourse_installer import get_latest_concourse_version
-from concourse_common import get_concourse_version
+from concourse_installer import get_latest_concourse_version  # noqa: E402
+from concourse_common import get_concourse_version  # noqa: E402
 
 
 @patch("urllib.request.urlopen")
@@ -196,7 +196,7 @@ def test_charm_on_update_status_version_with_token():
 
     with patch.object(Path, "exists", mock_exists):
         with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
-             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+             patch("concourse_installer.download_and_install_concourse_with_storage"):
             mock_get_latest.return_value = "7.14.3"
             
             charm._on_update_status(MagicMock())
@@ -230,7 +230,7 @@ def test_charm_on_update_status_version_no_token():
 
     with patch.object(Path, "exists", mock_exists):
         with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
-             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+             patch("concourse_installer.download_and_install_concourse_with_storage"):
             mock_get_latest.return_value = "7.14.3"
             
             charm._on_update_status(MagicMock())
@@ -264,7 +264,7 @@ def test_charm_on_update_status_version_empty_token():
 
     with patch.object(Path, "exists", mock_exists):
         with patch("concourse_installer.get_latest_concourse_version") as mock_get_latest, \
-             patch("concourse_installer.download_and_install_concourse_with_storage") as mock_install:
+             patch("concourse_installer.download_and_install_concourse_with_storage"):
             mock_get_latest.return_value = "7.14.3"
             
             charm._on_update_status(MagicMock())

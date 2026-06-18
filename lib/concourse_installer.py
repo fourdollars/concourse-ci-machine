@@ -274,6 +274,38 @@ def download_and_install_concourse_with_storage(
             raise RuntimeError(f"Download failed: {e}")
 
 
+def _move_directory_contents(src: Path, dest: Path):
+    """Recursively move files from src directory to dest directory, merging directories and protecting the runc wrapper symlink."""
+    import shutil
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dest / item.name
+        if item.is_dir():
+            _move_directory_contents(item, target)
+            try:
+                item.rmdir()
+            except Exception:
+                pass
+        else:
+            if target.exists() or target.is_symlink():
+                if target.is_symlink() and target.name == "runc":
+                    # Save the new runc binary as runc.real but preserve the symlink
+                    runc_real = target.parent / "runc.real"
+                    logger.info(
+                        f"Preserving runc wrapper symlink at {target}; saving new binary as {runc_real}"
+                    )
+                    if runc_real.exists() or runc_real.is_symlink():
+                        runc_real.unlink()
+                    shutil.move(str(item), str(runc_real))
+                    continue
+                else:
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
+            shutil.move(str(item), str(target))
+
+
 def _download_and_extract_binaries(charm, version: str, target_dir: Path):
     """Internal function to download and extract Concourse binaries.
 
@@ -285,7 +317,6 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
     import urllib.request
     import tarfile
     import time
-    import shutil
     import hashlib
 
     # Early exit: if binary already exists AND is the correct version, skip re-download
@@ -434,26 +465,7 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
 
         # Move files to parent directory
         logger.info(f"Installing binaries from {src_dir} to {parent_dir}")
-        for item in src_dir.iterdir():
-            dest = parent_dir / item.name
-            if dest.exists():
-                # Protect runc wrapper symlink: do not let tarball binary overwrite it.
-                # The wrapper is installed separately by install_folder_mount_wrapper()
-                # and must survive binary upgrades.
-                if dest.is_symlink() and dest.name == "runc":
-                    # Save the new runc binary as runc.real (backup) but keep the symlink.
-                    runc_real = dest.parent / "runc.real"
-                    logger.info(
-                        f"Preserving runc wrapper symlink at {dest}; "
-                        f"saving new binary as {runc_real}"
-                    )
-                    shutil.move(str(item), str(runc_real))
-                    continue
-                if dest.is_dir() and not dest.is_symlink():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            shutil.move(str(item), str(dest))
+        _move_directory_contents(src_dir, parent_dir)
 
         # Generate checksum for installed binary (T064)
         concourse_bin = parent_dir / "bin" / "concourse"
@@ -585,7 +597,6 @@ def download_and_install_concourse(charm, version: str):
             # Extract to a temporary directory first to avoid "text file busy" and symlink issues
             charm.unit.status = MaintenanceStatus(f"Extracting Concourse {version}...")
             try:
-                import shutil
 
                 extract_path = Path(tmpdir) / "extract"
                 extract_path.mkdir()
@@ -608,15 +619,7 @@ def download_and_install_concourse(charm, version: str):
                 target_base.mkdir(parents=True, exist_ok=True)
 
                 logger.info(f"Moving files from {src_dir} to {target_base}")
-                for item in src_dir.iterdir():
-                    dest = target_base / item.name
-                    # If destination exists, remove it first to avoid issues with symlinks or busy files
-                    if dest.exists():
-                        if dest.is_dir() and not dest.is_symlink():
-                            shutil.rmtree(dest)
-                        else:
-                            dest.unlink()
-                    shutil.move(str(item), str(dest))
+                _move_directory_contents(src_dir, target_base)
             except (tarfile.TarError, OSError) as e:
                 logger.error(f"Failed to extract or move files: {e}")
                 raise

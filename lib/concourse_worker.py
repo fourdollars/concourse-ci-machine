@@ -14,11 +14,8 @@ from concourse_common import (
     CONCOURSE_WORKER_CONFIG_FILE,
     CONCOURSE_DATA_DIR,
     SYSTEMD_SERVICE_DIR,
-    KEYS_DIR,
     detect_nvidia_gpus,
-    verify_nvidia_container_runtime,
     detect_amd_gpus,
-    verify_amd_container_runtime,
     get_filesystem_id,
 )
 

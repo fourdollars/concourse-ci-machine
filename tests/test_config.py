@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for config.env merge behavior and new config option mapping."""
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Add lib/ to path so we can import the helpers
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))

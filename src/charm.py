@@ -9,6 +9,7 @@ import os
 import secrets
 import string
 import sys
+import socket
 from pathlib import Path
 from typing import Optional
 
