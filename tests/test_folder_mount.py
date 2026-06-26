@@ -16,6 +16,7 @@ class TestInstallerProtectsRuncSymlink:
     def _run_move_loop(self, src_dir: Path, parent_dir: Path):
         """Run the installer's move loop logic directly."""
         from concourse_installer import _move_directory_contents
+
         _move_directory_contents(src_dir, parent_dir)
 
     def test_symlink_preserved_when_runc_is_symlink(self, tmp_path):
@@ -35,7 +36,9 @@ class TestInstallerProtectsRuncSymlink:
         self._run_move_loop(src_bin, bin_dir)
 
         assert runc_link.is_symlink(), "runc symlink should still be a symlink"
-        assert runc_link.resolve() == wrapper, "runc symlink should still point to wrapper"
+        assert (
+            runc_link.resolve() == wrapper
+        ), "runc symlink should still point to wrapper"
 
     def test_new_runc_saved_as_runc_real_when_symlink_exists(self, tmp_path):
         """If bin/runc is a symlink, the new runc binary from the tarball should be saved as runc.real."""
@@ -92,6 +95,7 @@ class TestInstallFolderMountWrapperVerification:
 
     def _make_worker_helper(self):
         from concourse_worker import ConcourseWorkerHelper
+
         charm = MagicMock()
         charm.model.config = {"compute-runtime": "none"}
         charm.charm_dir = Path("/nonexistent")

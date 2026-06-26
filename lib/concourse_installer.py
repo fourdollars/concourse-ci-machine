@@ -17,6 +17,7 @@ CONCOURSE_INSTALL_DIR = f"{CONCOURSE_DATA_DIR}/bin"
 
 logger = logging.getLogger(__name__)
 
+
 def setup_juju_proxy():
     """Map Juju-specific proxy settings (JUJU_CHARM_*) to standard HTTP(S)_PROXY variables.
 
@@ -296,6 +297,7 @@ def download_and_install_concourse_with_storage(
 def _move_directory_contents(src: Path, dest: Path):
     """Recursively move files from src directory to dest directory, merging directories and protecting the runc wrapper symlink."""
     import shutil
+
     dest.mkdir(parents=True, exist_ok=True)
     for item in src.iterdir():
         target = dest / item.name

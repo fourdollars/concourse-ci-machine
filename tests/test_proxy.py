@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # Mock ops unconditionally for unit testing
 
@@ -20,7 +19,14 @@ class TestSetupJujuProxy:
         os.environ.update(self.original_env)
 
     def test_proxy_variables_mapped_correctly(self):
-        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY"]:
+        for key in [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ]:
             os.environ.pop(key, None)
 
         os.environ["JUJU_CHARM_HTTP_PROXY"] = "http://127.0.0.1:18789"
@@ -37,7 +43,14 @@ class TestSetupJujuProxy:
         assert os.environ["NO_PROXY"] == "127.0.0.1,localhost"
 
     def test_preset_standard_proxy_is_not_overwritten(self):
-        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY"]:
+        for key in [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ]:
             os.environ.pop(key, None)
 
         os.environ["http_proxy"] = "http://already-set-proxy:3128"
@@ -51,11 +64,27 @@ class TestSetupJujuProxy:
         assert os.environ["HTTP_PROXY"] == "http://already-set-proxy:3128"
 
     def test_setup_juju_proxy_no_ops_when_no_juju_env(self):
-        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY",
-                    "JUJU_CHARM_HTTP_PROXY", "JUJU_CHARM_HTTPS_PROXY", "JUJU_CHARM_NO_PROXY"]:
+        for key in [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+            "JUJU_CHARM_HTTP_PROXY",
+            "JUJU_CHARM_HTTPS_PROXY",
+            "JUJU_CHARM_NO_PROXY",
+        ]:
             os.environ.pop(key, None)
 
         setup_juju_proxy()
 
-        for key in ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY"]:
+        for key in [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ]:
             assert key not in os.environ

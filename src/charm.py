@@ -196,7 +196,9 @@ class ConcourseCharm(CharmBase):
             else:
                 return "worker"
         else:
-            logger.warning(f"Unknown mode: {config_mode}, defaulting to 'auto' behavior")
+            logger.warning(
+                f"Unknown mode: {config_mode}, defaulting to 'auto' behavior"
+            )
             return "both"
 
     def _should_run_web(self) -> bool:
@@ -506,9 +508,9 @@ class ConcourseCharm(CharmBase):
                     worker_pub_key_path = Path(keys_dir_path) / "worker_key.pub"
                     if worker_pub_key_path.exists():
                         worker_pub_key = worker_pub_key_path.read_text().strip()
-                        tsa_relation.data[self.unit]["worker-public-key"] = (
-                            worker_pub_key
-                        )
+                        tsa_relation.data[self.unit][
+                            "worker-public-key"
+                        ] = worker_pub_key
                         logger.info("Republished worker public key to TSA relation")
 
             # Trigger config update
@@ -627,7 +629,9 @@ class ConcourseCharm(CharmBase):
                                     # Initialize storage if needed
                                     sc = self.worker_helper.storage_coordinator
                                     if not sc:
-                                        sc = self.worker_helper.initialize_shared_storage()
+                                        sc = (
+                                            self.worker_helper.initialize_shared_storage()
+                                        )
 
                                     if sc and sc.verify_binaries(desired_version):
                                         logger.info(
@@ -983,9 +987,7 @@ class ConcourseCharm(CharmBase):
                                     # Flight relation (web+worker mode — web in
                                     # separate app).  At relation-joined time the
                                     # key didn't exist yet, so re-publish now.
-                                    flight_relation = self.model.get_relation(
-                                        "flight"
-                                    )
+                                    flight_relation = self.model.get_relation("flight")
                                     if flight_relation:
                                         flight_relation.data[self.unit][
                                             "worker-public-key"
@@ -1043,10 +1045,10 @@ class ConcourseCharm(CharmBase):
                     # Get version to install
                     from concourse_installer import get_latest_concourse_version
 
-                    version = (
-                        self.config.get("version") or get_latest_concourse_version(
-                            github_token=self.config.get("github-token")
-                        )
+                    version = self.config.get(
+                        "version"
+                    ) or get_latest_concourse_version(
+                        github_token=self.config.get("github-token")
                     )
 
                     # Trigger installation based on role
@@ -1290,7 +1292,9 @@ class ConcourseCharm(CharmBase):
             logger.info("Database endpoints changed (PostgreSQL 16+)")
 
             if not self.database or not self.database.fetch_relation_data():
-                logger.warning("Database connection info not yet available, deferring event")
+                logger.warning(
+                    "Database connection info not yet available, deferring event"
+                )
                 self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
                 event.defer()
                 return
@@ -1326,7 +1330,9 @@ class ConcourseCharm(CharmBase):
                     break
 
             if not db_url:
-                logger.warning("No connection URI in database data yet, deferring event")
+                logger.warning(
+                    "No connection URI in database data yet, deferring event"
+                )
                 self.unit.status = WaitingStatus("Waiting for PostgreSQL database...")
                 event.defer()
                 return
@@ -1606,9 +1612,7 @@ class ConcourseCharm(CharmBase):
                         self.worker_helper.start_service()
                         logger.info("Started worker after key authorization")
                 else:
-                    logger.info(
-                        "TSA configuration unchanged — skipping worker restart"
-                    )
+                    logger.info("TSA configuration unchanged — skipping worker restart")
                     if not self.worker_helper.is_running():
                         self.worker_helper.start_service()
                         logger.info("Started worker (was not running)")
@@ -1768,7 +1772,9 @@ class ConcourseCharm(CharmBase):
         if self.config.get("encryption-key"):
             web_config["CONCOURSE_ENCRYPTION_KEY"] = self.config["encryption-key"]
         if self.config.get("old-encryption-key"):
-            web_config["CONCOURSE_OLD_ENCRYPTION_KEY"] = self.config["old-encryption-key"]
+            web_config["CONCOURSE_OLD_ENCRYPTION_KEY"] = self.config[
+                "old-encryption-key"
+            ]
 
         # LDAP configuration
         ldap_config_map = {
@@ -2091,7 +2097,10 @@ class ConcourseCharm(CharmBase):
                 # fork — but _update_status() would still see is_running()=True
                 # (Type=simple race) and set ActiveStatus prematurely, blocking
                 # the update-status setup path from ever running.
-                from concourse_common import CONCOURSE_WORKER_CONFIG_FILE, WORKER_KEYS_DIR
+                from concourse_common import (
+                    CONCOURSE_WORKER_CONFIG_FILE,
+                    WORKER_KEYS_DIR,
+                )
 
                 worker_config = Path(CONCOURSE_WORKER_CONFIG_FILE)
                 worker_key = Path(WORKER_KEYS_DIR) / "worker_key"
@@ -2136,9 +2145,9 @@ class ConcourseCharm(CharmBase):
                 if peer_relation:
                     recorded = peer_relation.data[self.unit].get("last-started-version")
                     if recorded != installed_version:
-                        peer_relation.data[self.unit]["last-started-version"] = (
-                            installed_version
-                        )
+                        peer_relation.data[self.unit][
+                            "last-started-version"
+                        ] = installed_version
                         logger.info(
                             f"Recorded last-started-version={installed_version} in peer data"
                         )
@@ -2524,9 +2533,9 @@ class ConcourseCharm(CharmBase):
                     if self._should_run_worker():
                         self.worker_helper.restart_service()
                         if peer_relation:
-                            peer_relation.data[self.unit]["last-started-version"] = (
-                                binary_version
-                            )
+                            peer_relation.data[self.unit][
+                                "last-started-version"
+                            ] = binary_version
                     self._update_status()
                 elif isinstance(self.unit.status, WaitingStatus):
                     self._update_status()
@@ -2601,9 +2610,9 @@ class ConcourseCharm(CharmBase):
                 # Publish version for upgrade coordination
                 installed_version = self._get_installed_concourse_version()
                 if installed_version:
-                    event.relation.data[self.unit]["concourse-version"] = (
-                        installed_version
-                    )
+                    event.relation.data[self.unit][
+                        "concourse-version"
+                    ] = installed_version
 
                 logger.info(f"Published TSA info: {web_ip}:2222")
 

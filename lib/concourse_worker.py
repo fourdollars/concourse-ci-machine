@@ -758,7 +758,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                         ["cp", str(shared_runc_backup), str(concourse_runc_real)],
                         check=True,
                     )
-                elif concourse_runc_source.exists() and not concourse_runc_source.is_symlink():
+                elif (
+                    concourse_runc_source.exists()
+                    and not concourse_runc_source.is_symlink()
+                ):
                     logger.info(
                         f"Copying runc from Concourse binaries to {concourse_runc_real}"
                     )
@@ -1063,7 +1066,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                     concourse_system_runc = Path("/var/lib/concourse/bin/runc")
                     shared_runc_backup = Path("/var/lib/concourse/bin/runc.real")
 
-                    if shared_runc_backup.exists() and not shared_runc_backup.is_symlink():
+                    if (
+                        shared_runc_backup.exists()
+                        and not shared_runc_backup.is_symlink()
+                    ):
                         # Another worker already saved the real binary on shared storage
                         logger.info(
                             f"Copying runc from shared backup {shared_runc_backup} to {runc_real}"
@@ -1072,7 +1078,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
                             ["cp", str(shared_runc_backup), str(runc_real)],
                             check=True,
                         )
-                    elif concourse_system_runc.exists() and not concourse_system_runc.is_symlink():
+                    elif (
+                        concourse_system_runc.exists()
+                        and not concourse_system_runc.is_symlink()
+                    ):
                         # First worker: the runc on shared storage is still a real binary
                         logger.info(
                             f"Copying runc from Concourse binaries to {runc_real}"

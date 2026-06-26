@@ -189,7 +189,8 @@ WantedBy=multi-user.target
             "CONCOURSE_SESSION_SIGNING_KEY": str(keys_dir / "session_signing_key"),
             "CONCOURSE_TSA_PUBLIC_KEY": str(keys_dir / "tsa_host_key.pub"),
             "CONCOURSE_ADD_LOCAL_USER": f"{username}:{admin_password}",
-            "CONCOURSE_MAIN_TEAM_LOCAL_USER": self.config.get("main-team-local-user") or username,
+            "CONCOURSE_MAIN_TEAM_LOCAL_USER": self.config.get("main-team-local-user")
+            or username,
         }
 
         # Configure Prometheus metrics endpoint (binds to 0.0.0.0:9391 when enabled)
@@ -312,9 +313,7 @@ WantedBy=multi-user.target
 
         # Extra local users — append to existing admin user
         if self.config.get("extra-local-users"):
-            config["CONCOURSE_ADD_LOCAL_USER"] += (
-                "," + self.config["extra-local-users"]
-            )
+            config["CONCOURSE_ADD_LOCAL_USER"] += "," + self.config["extra-local-users"]
 
         # Write config file
         self._write_config(config)

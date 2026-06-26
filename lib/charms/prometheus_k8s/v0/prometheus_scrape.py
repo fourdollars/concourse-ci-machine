@@ -984,7 +984,9 @@ class MetricsEndpointConsumer(Object):
             A dictionary mapping the Juju topology identifier of the source charm to
             its list of alert rule groups.
         """
-        alerts = {}  # type: Dict[str, dict] # mapping b/w juju identifiers and alert rule files
+        alerts = (
+            {}
+        )  # type: Dict[str, dict] # mapping b/w juju identifiers and alert rule files
         for relation in self._charm.model.relations[self._relation_name]:
             if not relation.units or not relation.app:
                 continue
@@ -1600,9 +1602,9 @@ class MetricsEndpointProvider(Object):
 
         # Write the same address to all relations
         for relation in self._charm.model.relations[self._relation_name]:
-            relation.data[self._charm.unit]["prometheus_scrape_unit_address"] = (
-                unit_address
-            )
+            relation.data[self._charm.unit][
+                "prometheus_scrape_unit_address"
+            ] = unit_address
             relation.data[self._charm.unit]["prometheus_scrape_unit_path"] = path
             relation.data[self._charm.unit]["prometheus_scrape_unit_name"] = str(
                 self._charm.model.unit.name

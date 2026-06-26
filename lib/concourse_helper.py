@@ -91,9 +91,13 @@ class ConcourseHelper:
             return configured
 
         from concourse_installer import get_latest_concourse_version
+
         try:
-            version = get_latest_concourse_version(github_token=self.config.get("github-token"))
+            version = get_latest_concourse_version(
+                github_token=self.config.get("github-token")
+            )
             from ops.model import MaintenanceStatus
+
             self.charm.unit.status = MaintenanceStatus(
                 f"Detected latest version: {version}"
             )

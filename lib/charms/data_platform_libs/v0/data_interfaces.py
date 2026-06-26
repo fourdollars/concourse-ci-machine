@@ -562,7 +562,9 @@ def set_encoded_field(
     relation.data[member].update({field: json.dumps(value)})
 
 
-def diff(event: RelationChangedEvent, bucket: Optional[Union[Unit, Application]]) -> Diff:
+def diff(
+    event: RelationChangedEvent, bucket: Optional[Union[Unit, Application]]
+) -> Diff:
     """Retrieves the diff of the data in the relation changed databag.
 
     Args:
@@ -584,7 +586,11 @@ def diff(event: RelationChangedEvent, bucket: Optional[Union[Unit, Application]]
 
     # Retrieve the new data from the event relation databag.
     new_data = (
-        {key: value for key, value in event.relation.data[event.app].items() if key != "data"}
+        {
+            key: value
+            for key, value in event.relation.data[event.app].items()
+            if key != "data"
+        }
         if event.app
         else {}
     )
@@ -592,12 +598,15 @@ def diff(event: RelationChangedEvent, bucket: Optional[Union[Unit, Application]]
     # These are the keys that were added to the databag and triggered this event.
     added = new_data.keys() - old_data.keys()  # pyright: ignore [reportAssignmentType]
     # These are the keys that were removed from the databag and triggered this event.
-    deleted = old_data.keys() - new_data.keys()  # pyright: ignore [reportAssignmentType]
+    deleted = (
+        old_data.keys() - new_data.keys()
+    )  # pyright: ignore [reportAssignmentType]
     # These are the keys that already existed in the databag,
     # but had their values changed.
     changed = {
         key
-        for key in old_data.keys() & new_data.keys()  # pyright: ignore [reportAssignmentType]
+        for key in old_data.keys()
+        & new_data.keys()  # pyright: ignore [reportAssignmentType]
         if old_data[key] != new_data[key]  # pyright: ignore [reportAssignmentType]
     }
     # Convert the new_data to a serializable format and save it for a next diff check.
@@ -618,7 +627,8 @@ def leader_only(f):
     def wrapper(self, *args, **kwargs):
         if self.component == self.local_app and not self.local_unit.is_leader():
             logger.error(
-                "This operation (%s()) can only be performed by the leader unit", f.__name__
+                "This operation (%s()) can only be performed by the leader unit",
+                f.__name__,
             )
             return
         return f(self, *args, **kwargs)
@@ -774,7 +784,10 @@ class CachedSecret:
     The data structure is precisely reusing/simulating as in the actual Secret Storage
     """
 
-    KNOWN_MODEL_ERRORS = [MODEL_ERRORS["no_label_and_uri"], MODEL_ERRORS["owner_no_refresh"]]
+    KNOWN_MODEL_ERRORS = [
+        MODEL_ERRORS["no_label_and_uri"],
+        MODEL_ERRORS["owner_no_refresh"],
+    ]
 
     def __init__(
         self,
@@ -808,7 +821,9 @@ class CachedSecret:
 
             # If still not found, to be checked by URI, to be labelled with the proposed label
             if not self._secret_meta and self._secret_uri:
-                self._secret_meta = self._model.get_secret(id=self._secret_uri, label=self.label)
+                self._secret_meta = self._model.get_secret(
+                    id=self._secret_uri, label=self.label
+                )
         return self._secret_meta
 
     ##########################################################################
@@ -945,7 +960,9 @@ class CachedSecret:
     def remove(self) -> None:
         """Remove secret."""
         if not self.meta:
-            raise SecretsUnavailableError("Non-existent secret was attempted to be removed.")
+            raise SecretsUnavailableError(
+                "Non-existent secret was attempted to be removed."
+            )
         try:
             self.meta.remove_all_revisions()
         except SecretNotFoundError:
@@ -975,7 +992,9 @@ class SecretCache:
                 self._secrets[label] = secret
         return self._secrets.get(label)
 
-    def add(self, label: str, content: Dict[str, str], relation: Relation) -> CachedSecret:
+    def add(
+        self, label: str, content: Dict[str, str], relation: Relation
+    ) -> CachedSecret:
         """Adding a secret to Juju Secret."""
         if self._secrets.get(label):
             raise SecretAlreadyExistsError(f"Secret {label} already exists")
@@ -1191,7 +1210,10 @@ class Data(ABC):
 
     @juju_secrets_only
     def _get_relation_secret(
-        self, relation_id: int, group_mapping: SecretGroup, relation_name: Optional[str] = None
+        self,
+        relation_id: int,
+        group_mapping: SecretGroup,
+        relation_name: Optional[str] = None,
     ) -> Optional[CachedSecret]:
         """Retrieve a Juju Secret that's been stored in the relation databag."""
         if not relation_name:
@@ -1257,7 +1279,9 @@ class Data(ABC):
         )
 
         normal_content = {k: v for k, v in data.items() if k in normal_fields}
-        self._update_relation_data_without_secrets(self.local_app, relation, normal_content)
+        self._update_relation_data_without_secrets(
+            self.local_app, relation, normal_content
+        )
 
     def _add_or_update_relation_secrets(
         self,
@@ -1271,7 +1295,9 @@ class Data(ABC):
         if self._get_relation_secret(relation.id, group):
             return self._update_relation_secret(relation, group, secret_fields, data)
 
-        return self._add_relation_secret(relation, group, secret_fields, data, uri_to_databag)
+        return self._add_relation_secret(
+            relation, group, secret_fields, data, uri_to_databag
+        )
 
     @juju_secrets_only
     def _add_relation_secret(
@@ -1284,12 +1310,16 @@ class Data(ABC):
     ) -> bool:
         """Add a new Juju Secret that will be registered in the relation databag."""
         if uri_to_databag and self.get_secret_uri(relation, group_mapping):
-            logging.error("Secret for relation %s already exists, not adding again", relation.id)
+            logging.error(
+                "Secret for relation %s already exists, not adding again", relation.id
+            )
             return False
 
         content = self._content_for_secret_group(data, secret_fields, group_mapping)
 
-        label = self._generate_secret_label(self.relation_name, relation.id, group_mapping)
+        label = self._generate_secret_label(
+            self.relation_name, relation.id, group_mapping
+        )
         secret = self.secrets.add(label, content, relation)
 
         if uri_to_databag:
@@ -1330,7 +1360,11 @@ class Data(ABC):
 
     @juju_secrets_only
     def _delete_relation_secret(
-        self, relation: Relation, group: SecretGroup, secret_fields: List[str], fields: List[str]
+        self,
+        relation: Relation,
+        group: SecretGroup,
+        secret_fields: List[str],
+        fields: List[str],
     ) -> bool:
         """Update the contents of an existing Juju Secret, referred in the relation databag."""
         secret = self._get_relation_secret(relation.id, group)
@@ -1373,9 +1407,15 @@ class Data(ABC):
             self._load_secrets_from_databag(relation)
 
         _, normal_fields = self._process_secret_fields(
-            relation, self.local_secret_fields, fields, self._delete_relation_secret, fields=fields
+            relation,
+            self.local_secret_fields,
+            fields,
+            self._delete_relation_secret,
+            fields=fields,
         )
-        self._delete_relation_data_without_secrets(self.local_app, relation, list(normal_fields))
+        self._delete_relation_data_without_secrets(
+            self.local_app, relation, list(normal_fields)
+        )
 
     def _register_secret_to_relation(
         self, relation_name: str, relation_id: int, secret_id: str, group: SecretGroup
@@ -1395,7 +1435,9 @@ class Data(ABC):
         # Fetching the Secret's meta information ensuring that it's locally getting registered with
         CachedSecret(self._model, self.component, label, secret_id).meta
 
-    def _register_secrets_to_relation(self, relation: Relation, params_name_list: List[str]):
+    def _register_secrets_to_relation(
+        self, relation: Relation, params_name_list: List[str]
+    ):
         """Make sure that secrets of the provided list are locally 'registered' from the databag.
 
         More on 'locally registered' magic is described in _register_secret_to_relation() method
@@ -1408,7 +1450,9 @@ class Data(ABC):
             if secret_field in params_name_list and (
                 secret_uri := self.get_secret_uri(relation, group)
             ):
-                self._register_secret_to_relation(relation.name, relation.id, secret_uri, group)
+                self._register_secret_to_relation(
+                    relation.name, relation.id, secret_uri, group
+                )
 
     # Optional overrides
 
@@ -1468,7 +1512,9 @@ class Data(ABC):
         except ModelError:
             return
 
-    def _group_secret_fields(self, secret_fields: List[str]) -> Dict[SecretGroup, List[str]]:
+    def _group_secret_fields(
+        self, secret_fields: List[str]
+    ) -> Dict[SecretGroup, List[str]]:
         """Helper function to arrange secret mappings under their group.
 
         NOTE: All unrecognized items end up in the 'extra' secret bucket.
@@ -1479,7 +1525,9 @@ class Data(ABC):
             if group := self.secret_label_map.get(key):
                 secret_fieldnames_grouped.setdefault(group, []).append(key)
             else:
-                secret_fieldnames_grouped.setdefault(SECRET_GROUPS.EXTRA, []).append(key)
+                secret_fieldnames_grouped.setdefault(SECRET_GROUPS.EXTRA, []).append(
+                    key
+                )
         return secret_fieldnames_grouped
 
     def _get_group_secret_contents(
@@ -1493,12 +1541,17 @@ class Data(ABC):
             secret_data := secret.get_content()
         ):
             return {
-                k: v for k, v in secret_data.items() if not secret_fields or k in secret_fields
+                k: v
+                for k, v in secret_data.items()
+                if not secret_fields or k in secret_fields
             }
         return {}
 
     def _content_for_secret_group(
-        self, content: Dict[str, str], secret_fields: Set[str], group_mapping: SecretGroup
+        self,
+        content: Dict[str, str],
+        secret_fields: Set[str],
+        group_mapping: SecretGroup,
     ) -> Dict[str, str]:
         """Select <field>: <value> pairs from input, that belong to this particular Secret group."""
         if group_mapping == SECRET_GROUPS.EXTRA:
@@ -1516,7 +1569,10 @@ class Data(ABC):
 
     @juju_secrets_only
     def _get_relation_secret_data(
-        self, relation_id: int, group_mapping: SecretGroup, relation_name: Optional[str] = None
+        self,
+        relation_id: int,
+        group_mapping: SecretGroup,
+        relation_name: Optional[str] = None,
     ) -> Optional[Dict[str, str]]:
         """Retrieve contents of a Juju Secret that's been stored in the relation databag."""
         secret = self._get_relation_secret(relation_id, group_mapping, relation_name)
@@ -1555,7 +1611,9 @@ class Data(ABC):
 
             for group in secret_fieldnames_grouped:
                 # operation() should return nothing when all goes well
-                if group_result := operation(relation, group, secret_fields, *args, **kwargs):
+                if group_result := operation(
+                    relation, group, secret_fields, *args, **kwargs
+                ):
                     # If "meaningful" data was returned, we take it. (Some 'operation'-s only return success/failure.)
                     if isinstance(group_result, dict):
                         result.update(group_result)
@@ -1566,7 +1624,10 @@ class Data(ABC):
         return (result, normal_fields)
 
     def _fetch_relation_data_without_secrets(
-        self, component: Union[Application, Unit], relation: Relation, fields: Optional[List[str]]
+        self,
+        component: Union[Application, Unit],
+        relation: Relation,
+        fields: Optional[List[str]],
     ) -> Dict[str, str]:
         """Fetching databag contents when no secrets are involved.
 
@@ -1580,7 +1641,9 @@ class Data(ABC):
 
         if fields:
             return {
-                k: relation.data[component][k] for k in fields if k in relation.data[component]
+                k: relation.data[component][k]
+                for k in fields
+                if k in relation.data[component]
             }
         else:
             return dict(relation.data[component])
@@ -1607,8 +1670,14 @@ class Data(ABC):
                 return {}
 
             all_fields = list(relation.data[component].keys())
-            normal_fields = [field for field in all_fields if not self._is_secret_field(field)]
-            fields = normal_fields + req_secret_fields if req_secret_fields else normal_fields
+            normal_fields = [
+                field for field in all_fields if not self._is_secret_field(field)
+            ]
+            fields = (
+                normal_fields + req_secret_fields
+                if req_secret_fields
+                else normal_fields
+            )
 
         if fields:
             result, normal_fields = self._process_secret_fields(
@@ -1619,12 +1688,17 @@ class Data(ABC):
         # (Typically when Juju3 Requires meets Juju2 Provider)
         if normal_fields:
             result.update(
-                self._fetch_relation_data_without_secrets(component, relation, list(normal_fields))
+                self._fetch_relation_data_without_secrets(
+                    component, relation, list(normal_fields)
+                )
             )
         return result
 
     def _update_relation_data_without_secrets(
-        self, component: Union[Application, Unit], relation: Relation, data: Dict[str, str]
+        self,
+        component: Union[Application, Unit],
+        relation: Relation,
+        data: Dict[str, str],
     ) -> None:
         """Updating databag contents when no secrets are involved."""
         if component not in relation.data or relation.data[component] is None:
@@ -1681,7 +1755,9 @@ class Data(ABC):
         component = self.component if group in self.my_secret_groups else relation.app
         return relation.data[component].get(secret_field)
 
-    def set_secret_uri(self, relation: Relation, group: SecretGroup, secret_uri: str) -> None:
+    def set_secret_uri(
+        self, relation: Relation, group: SecretGroup, secret_uri: str
+    ) -> None:
         """Set the secret URI for the corresponding group."""
         secret_field = self._generate_secret_field_name(group)
         relation.data[self.component][secret_field] = secret_uri
@@ -1710,7 +1786,8 @@ class Data(ABC):
         relations = []
         if relation_ids:
             relations = [
-                self.get_relation(relation_name, relation_id) for relation_id in relation_ids
+                self.get_relation(relation_name, relation_id)
+                for relation_id in relation_ids
             ]
         else:
             relations = self.relations
@@ -1750,7 +1827,8 @@ class Data(ABC):
         relations = []
         if relation_ids:
             relations = [
-                self.get_relation(relation_name, relation_id) for relation_id in relation_ids
+                self.get_relation(relation_name, relation_id)
+                for relation_id in relation_ids
             ]
         else:
             relations = self.relations
@@ -1758,7 +1836,9 @@ class Data(ABC):
         data = {}
         for relation in relations:
             if not relation_ids or relation.id in relation_ids:
-                data[relation.id] = self._fetch_my_specific_relation_data(relation, fields)
+                data[relation.id] = self._fetch_my_specific_relation_data(
+                    relation, fields
+                )
         return data
 
     def fetch_my_relation_field(
@@ -1769,7 +1849,9 @@ class Data(ABC):
         NOTE: Since only the leader can read the relation's 'this_app'-side
         Application databag, the functionality is limited to leaders
         """
-        if relation_data := self.fetch_my_relation_data([relation_id], [field], relation_name):
+        if relation_data := self.fetch_my_relation_data(
+            [relation_id], [field], relation_name
+        ):
             return relation_data.get(relation_id, {}).get(field)
 
     @leader_only
@@ -1866,7 +1948,9 @@ class ProviderData(Data):
         self._local_secret_fields = []
         self._remote_secret_fields = list(self.SECRET_FIELDS)
         self._status_schema = (
-            {} if not status_schema_path else self._load_status_schema(Path(status_schema_path))
+            {}
+            if not status_schema_path
+            else self._load_status_schema(Path(status_schema_path))
         )
 
     def _load_status_schema(self, schema_path: Path) -> Dict[int, RelationStatus]:
@@ -1912,7 +1996,9 @@ class ProviderData(Data):
             username: user that was created.
             password: password of the created user.
         """
-        self.update_relation_data(relation_id, {"username": username, "password": password})
+        self.update_relation_data(
+            relation_id, {"username": username, "password": password}
+        )
 
     def set_entity_credentials(
         self, relation_id: int, entity_name: str, entity_password: Optional[str] = None
@@ -2092,10 +2178,14 @@ class RequirerData(Data):
         if self.requested_entity_secret and (
             self.requested_entity_name or self.requested_entity_password
         ):
-            raise IllegalOperationError("Unable to use provided and automated entity name secret")
+            raise IllegalOperationError(
+                "Unable to use provided and automated entity name secret"
+            )
 
         if self.requested_entity_password and not self.requested_entity_name:
-            raise IllegalOperationError("Unable to set entity password without an entity name")
+            raise IllegalOperationError(
+                "Unable to set entity password without an entity name"
+            )
 
         self._validate_entity_type()
         self._validate_entity_permissions()
@@ -2134,10 +2224,14 @@ class RequirerData(Data):
             raise ValueError("Invalid entity-type. Possible values are USER and GROUP")
 
         if self.entity_type == ENTITY_USER and self.extra_group_roles:
-            raise ValueError("Inconsistent entity information. Use extra_user_roles instead")
+            raise ValueError(
+                "Inconsistent entity information. Use extra_user_roles instead"
+            )
 
         if self.entity_type == ENTITY_GROUP and self.extra_user_roles:
-            raise ValueError("Inconsistent entity information. Use extra_group_roles instead")
+            raise ValueError(
+                "Inconsistent entity information. Use extra_group_roles instead"
+            )
 
     def _validate_entity_permissions(self) -> None:
         """Validates whether the provided entity permissions follow the right JSON format."""
@@ -2150,9 +2244,13 @@ class RequirerData(Data):
             permissions = json.loads(self.entity_permissions)
             for permission in permissions:
                 if permission.keys() != accepted_keys:
-                    raise ValueError("Invalid entity permissions format. See accepted keys")
+                    raise ValueError(
+                        "Invalid entity permissions format. See accepted keys"
+                    )
         except json.decoder.JSONDecodeError:
-            raise ValueError("Invalid entity permissions format. It must be JSON format")
+            raise ValueError(
+                "Invalid entity permissions format. It must be JSON format"
+            )
 
     # Public functions
 
@@ -2174,16 +2272,19 @@ class RequirerData(Data):
         """
         if relation_id is not None:
             try:
-                relation = [relation for relation in self.relations if relation.id == relation_id][
-                    0
-                ]
+                relation = [
+                    relation
+                    for relation in self.relations
+                    if relation.id == relation_id
+                ][0]
                 return self._is_resource_created_for_relation(relation)
             except IndexError:
                 raise IndexError(f"relation id {relation_id} cannot be accessed")
         else:
             return (
                 all(
-                    self._is_resource_created_for_relation(relation) for relation in self.relations
+                    self._is_resource_created_for_relation(relation)
+                    for relation in self.relations
                 )
                 if self.relations
                 else False
@@ -2196,8 +2297,12 @@ class RequirerData(Data):
 
     def _load_secrets_from_databag(self, relation: Relation) -> None:
         """Load secrets from the databag."""
-        requested_secrets = get_encoded_list(relation, self.local_unit, REQ_SECRET_FIELDS)
-        provided_secrets = get_encoded_list(relation, self.local_unit, PROV_SECRET_FIELDS)
+        requested_secrets = get_encoded_list(
+            relation, self.local_unit, REQ_SECRET_FIELDS
+        )
+        provided_secrets = get_encoded_list(
+            relation, self.local_unit, PROV_SECRET_FIELDS
+        )
         if requested_secrets:
             self._remote_secret_fields = requested_secrets
 
@@ -2257,7 +2362,9 @@ class RequirerCharmEvents(CharmEvents):
 class RequirerEventHandlers(EventHandlers):
     """Requires-side of the relation."""
 
-    def __init__(self, charm: CharmBase, relation_data: RequirerData, unique_key: str = ""):
+    def __init__(
+        self, charm: CharmBase, relation_data: RequirerData, unique_key: str = ""
+    ):
         """Manager of base client relations."""
         super().__init__(charm, relation_data, unique_key)
 
@@ -2273,7 +2380,9 @@ class RequirerEventHandlers(EventHandlers):
 
     def _entity_credentials_shared(self, diff: Diff) -> bool:
         """Whether the relation data-bag contains rolename / password keys."""
-        entity_secret = self.relation_data._generate_secret_field_name(SECRET_GROUPS.ENTITY)
+        entity_secret = self.relation_data._generate_secret_field_name(
+            SECRET_GROUPS.ENTITY
+        )
         return any(
             [
                 entity_secret in diff.added,
@@ -2322,13 +2431,17 @@ class RequirerEventHandlers(EventHandlers):
     def _on_relation_changed_event(self, event: RelationChangedEvent) -> None:
         """Event emitted when the relation has changed."""
         # Retrieve old statuses from "data"
-        old_data = get_encoded_dict(event.relation, self.relation_data.local_unit, "data") or {}
+        old_data = (
+            get_encoded_dict(event.relation, self.relation_data.local_unit, "data")
+            or {}
+        )
         old_statuses = json.loads(old_data.get(STATUS_FIELD, "[]"))
         previous_codes = {status.get("code") for status in old_statuses}
 
         # Compute current statuses
         current_statuses = json.loads(
-            self.relation_data.fetch_relation_field(event.relation.id, STATUS_FIELD) or "[]"
+            self.relation_data.fetch_relation_field(event.relation.id, STATUS_FIELD)
+            or "[]"
         )
         current_codes = {status.get("code") for status in current_statuses}
 
@@ -2362,7 +2475,9 @@ class RequirerEventHandlers(EventHandlers):
 class ProviderEventHandlers(EventHandlers):
     """Provider-side of the relation."""
 
-    def __init__(self, charm: CharmBase, relation_data: ProviderData, unique_key: str = ""):
+    def __init__(
+        self, charm: CharmBase, relation_data: ProviderData, unique_key: str = ""
+    ):
         """Manager of base client relations."""
         super().__init__(charm, relation_data, unique_key)
 
@@ -2379,14 +2494,20 @@ class ProviderEventHandlers(EventHandlers):
 
         for key in ["entity-type", "extra-user-roles", "extra-group-roles"]:
             if key in diff.changed:
-                raise ValueError(f"Cannot change {key} after relation has already been created")
+                raise ValueError(
+                    f"Cannot change {key} after relation has already been created"
+                )
 
     # Event handlers
 
     def _on_relation_changed_event(self, event: RelationChangedEvent) -> None:
         """Event emitted when the relation data has changed."""
-        requested_secrets = get_encoded_list(event.relation, event.relation.app, REQ_SECRET_FIELDS)
-        provided_secrets = get_encoded_list(event.relation, event.relation.app, PROV_SECRET_FIELDS)
+        requested_secrets = get_encoded_list(
+            event.relation, event.relation.app, REQ_SECRET_FIELDS
+        )
+        provided_secrets = get_encoded_list(
+            event.relation, event.relation.app, PROV_SECRET_FIELDS
+        )
         if requested_secrets is not None:
             self.relation_data._local_secret_fields = requested_secrets
 
@@ -2421,7 +2542,9 @@ class DataPeerData(RequirerData, ProviderData):
             relation_name=relation_name,
             additional_secret_fields=additional_secret_fields,
         )
-        self.secret_field_name = secret_field_name if secret_field_name else self.SECRET_FIELD_NAME
+        self.secret_field_name = (
+            secret_field_name if secret_field_name else self.SECRET_FIELD_NAME
+        )
         self.deleted_label = deleted_label
         self._secret_label_map = {}
 
@@ -2464,7 +2587,9 @@ class DataPeerData(RequirerData, ProviderData):
     def local_secret_fields(self) -> List[str]:
         """Re-definition of the property in a way that dynamically extended list is retrieved."""
         return (
-            self.static_secret_fields if self.static_secret_fields else self.current_secret_fields
+            self.static_secret_fields
+            if self.static_secret_fields
+            else self.current_secret_fields
         )
 
     @property
@@ -2576,7 +2701,9 @@ class DataPeerData(RequirerData, ProviderData):
             raise ValueError(f"Invalid secret field {name}")
         return (parts[0], secret_group)
 
-    def _group_secret_fields(self, secret_fields: List[str]) -> Dict[SecretGroup, List[str]]:
+    def _group_secret_fields(
+        self, secret_fields: List[str]
+    ) -> Dict[SecretGroup, List[str]]:
         """Helper function to arrange secret mappings under their group.
 
         NOTE: All unrecognized items end up in the 'extra' secret bucket.
@@ -2589,7 +2716,10 @@ class DataPeerData(RequirerData, ProviderData):
         return secret_fieldnames_grouped
 
     def _content_for_secret_group(
-        self, content: Dict[str, str], secret_fields: Set[str], group_mapping: SecretGroup
+        self,
+        content: Dict[str, str],
+        secret_fields: Set[str],
+        group_mapping: SecretGroup,
     ) -> Dict[str, str]:
         """Select <field>: <value> pairs from input, that belong to this particular Secret group."""
         if group_mapping == SECRET_GROUPS.EXTRA:
@@ -2614,8 +2744,12 @@ class DataPeerData(RequirerData, ProviderData):
 
     def _load_secrets_from_databag(self, relation: Relation) -> None:
         """Load secrets from the databag."""
-        requested_secrets = get_encoded_list(relation, self.component, REQ_SECRET_FIELDS)
-        provided_secrets = get_encoded_list(relation, self.component, PROV_SECRET_FIELDS)
+        requested_secrets = get_encoded_list(
+            relation, self.component, REQ_SECRET_FIELDS
+        )
+        provided_secrets = get_encoded_list(
+            relation, self.component, PROV_SECRET_FIELDS
+        )
         if requested_secrets:
             self._remote_secret_fields = requested_secrets
 
@@ -2721,7 +2855,9 @@ class DataPeerData(RequirerData, ProviderData):
     # Migration
 
     @legacy_apply_from_version(18)
-    def _legacy_migration_remove_secret_from_databag(self, relation, fields: List[str]) -> None:
+    def _legacy_migration_remove_secret_from_databag(
+        self, relation, fields: List[str]
+    ) -> None:
         """For Rolling Upgrades -- when moving from databag to secrets usage.
 
         Practically what happens here is to remove stuff from the databag that is
@@ -2732,8 +2868,12 @@ class DataPeerData(RequirerData, ProviderData):
 
         secret_fields_passed = set(self.local_secret_fields) & set(fields)
         for field in secret_fields_passed:
-            if self._fetch_relation_data_without_secrets(self.component, relation, [field]):
-                self._delete_relation_data_without_secrets(self.component, relation, [field])
+            if self._fetch_relation_data_without_secrets(
+                self.component, relation, [field]
+            ):
+                self._delete_relation_data_without_secrets(
+                    self.component, relation, [field]
+                )
 
     @legacy_apply_from_version(18)
     def _legacy_migration_remove_secret_field_name_from_databag(self, relation) -> None:
@@ -2755,7 +2895,9 @@ class DataPeerData(RequirerData, ProviderData):
         secret = self._get_relation_secret(relation.id)
 
         # Either app scope secret with leader executing, or unit scope secret
-        leader_or_unit_scope = self.component != self.local_app or self.local_unit.is_leader()
+        leader_or_unit_scope = (
+            self.component != self.local_app or self.local_unit.is_leader()
+        )
         if secret and leader_or_unit_scope:
             # Databag reference to the secret URI can be removed, now that it's labelled
             relation.data[self.component].pop(self._generate_secret_field_name(), None)
@@ -2786,7 +2928,9 @@ class DataPeerData(RequirerData, ProviderData):
             members.append(group_mapping)
         return f"{'.'.join(members)}"
 
-    def _generate_secret_field_name(self, group_mapping: SecretGroup = SECRET_GROUPS.EXTRA) -> str:
+    def _generate_secret_field_name(
+        self, group_mapping: SecretGroup = SECRET_GROUPS.EXTRA
+    ) -> str:
         """Generate unique group_mappings for secrets within a relation context."""
         return f"{self.secret_field_name}"
 
@@ -2831,9 +2975,13 @@ class DataPeerData(RequirerData, ProviderData):
         secret_fields = [self._internal_name_to_field(k)[0] for k in secret_fields]
         result = super()._get_group_secret_contents(relation, group, secret_fields)
         if self.deleted_label:
-            result = {key: result[key] for key in result if result[key] != self.deleted_label}
+            result = {
+                key: result[key] for key in result if result[key] != self.deleted_label
+            }
         if self._additional_secret_group_mapping:
-            return {self._field_to_internal_name(key, group): result[key] for key in result}
+            return {
+                self._field_to_internal_name(key, group): result[key] for key in result
+            }
         return result
 
     @either_static_or_dynamic_secrets
@@ -2860,7 +3008,9 @@ class DataPeerData(RequirerData, ProviderData):
         )
 
         normal_content = {k: v for k, v in data.items() if k in normal_fields}
-        self._update_relation_data_without_secrets(self.component, relation, normal_content)
+        self._update_relation_data_without_secrets(
+            self.component, relation, normal_content
+        )
 
     @either_static_or_dynamic_secrets
     def _delete_relation_data(self, relation: Relation, fields: List[str]) -> None:
@@ -2882,7 +3032,9 @@ class DataPeerData(RequirerData, ProviderData):
                 self._delete_relation_secret,
                 fields=fields,
             )
-        self._delete_relation_data_without_secrets(self.component, relation, list(normal_fields))
+        self._delete_relation_data_without_secrets(
+            self.component, relation, list(normal_fields)
+        )
 
     def fetch_relation_data(
         self,
@@ -2916,7 +3068,9 @@ class DataPeerData(RequirerData, ProviderData):
 class DataPeerEventHandlers(RequirerEventHandlers):
     """Requires-side of the relation."""
 
-    def __init__(self, charm: CharmBase, relation_data: RequirerData, unique_key: str = ""):
+    def __init__(
+        self, charm: CharmBase, relation_data: RequirerData, unique_key: str = ""
+    ):
         """Manager of base client relations."""
         super().__init__(charm, relation_data, unique_key)
 
@@ -3241,7 +3395,9 @@ class DatabaseRequestedEvent(DatabaseProvidesEvent):
             return False
 
         return (
-            self.relation.data[self.relation.app].get("external-node-connectivity", "false")
+            self.relation.data[self.relation.app].get(
+                "external-node-connectivity", "false"
+            )
             == "true"
         )
 
@@ -3285,7 +3441,9 @@ class DatabaseProvidesEvents(CharmEvents):
 
     database_requested = EventSource(DatabaseRequestedEvent)
     database_entity_requested = EventSource(DatabaseEntityRequestedEvent)
-    database_entity_permissions_changed = EventSource(DatabaseEntityPermissionsChangedEvent)
+    database_entity_permissions_changed = EventSource(
+        DatabaseEntityPermissionsChangedEvent
+    )
 
 
 class DatabaseRequiresEvent(RelationEventWithSecret):
@@ -3380,7 +3538,9 @@ class DatabaseRequiresEvent(RelationEventWithSecret):
         if not self.relation.app:
             return None
 
-        if prefixed_databases := self.relation.data[self.relation.app].get("prefix-databases"):
+        if prefixed_databases := self.relation.data[self.relation.app].get(
+            "prefix-databases"
+        ):
             return prefixed_databases.split(",")
         return []
 
@@ -3425,7 +3585,10 @@ class DatabaseProviderData(ProviderData):
     """Provider-side data of the database relations."""
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -3451,7 +3614,9 @@ class DatabaseProviderData(ProviderData):
             relation_id: the identifier for a particular relation.
             databases: list of database names matching the requested prefix.
         """
-        self.update_relation_data(relation_id, {"prefix-databases": ",".join(sorted(databases))})
+        self.update_relation_data(
+            relation_id, {"prefix-databases": ",".join(sorted(databases))}
+        )
 
     def set_endpoints(self, relation_id: int, connection_strings: str) -> None:
         """Set database primary connections.
@@ -3469,7 +3634,9 @@ class DatabaseProviderData(ProviderData):
         """
         self.update_relation_data(relation_id, {"endpoints": connection_strings})
 
-    def set_read_only_endpoints(self, relation_id: int, connection_strings: str) -> None:
+    def set_read_only_endpoints(
+        self, relation_id: int, connection_strings: str
+    ) -> None:
         """Set database replicas connection strings.
 
         This function writes in the application data bag, therefore,
@@ -3479,7 +3646,9 @@ class DatabaseProviderData(ProviderData):
             relation_id: the identifier for a particular relation.
             connection_strings: database hosts and ports comma separated list.
         """
-        self.update_relation_data(relation_id, {"read-only-endpoints": connection_strings})
+        self.update_relation_data(
+            relation_id, {"read-only-endpoints": connection_strings}
+        )
 
     def set_replset(self, relation_id: int, replset: str) -> None:
         """Set replica set name in the application relation databag.
@@ -3536,7 +3705,10 @@ class DatabaseProviderEventHandlers(ProviderEventHandlers):
     on = DatabaseProvidesEvents()  # pyright: ignore [reportAssignmentType]
 
     def __init__(
-        self, charm: CharmBase, relation_data: DatabaseProviderData, unique_key: str = ""
+        self,
+        charm: CharmBase,
+        relation_data: DatabaseProviderData,
+        unique_key: str = "",
     ):
         """Manager of base client relations."""
         super().__init__(charm, relation_data, unique_key)
@@ -3581,7 +3753,10 @@ class DatabaseProviderEventHandlers(ProviderEventHandlers):
         if (
             "database" not in diff.added
             and "entity-type" not in diff.added
-            and ("entity-permissions" in diff.added or "entity-permissions" in diff.changed)
+            and (
+                "entity-permissions" in diff.added
+                or "entity-permissions" in diff.changed
+            )
         ):
             getattr(self.on, "database_entity_permissions_changed").emit(
                 event.relation, app=event.app, unit=event.unit
@@ -3599,7 +3774,10 @@ class DatabaseProvides(DatabaseProviderData, DatabaseProviderEventHandlers):
     """Provider-side of the database relations."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         DatabaseProviderData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -3645,7 +3823,9 @@ class DatabaseRequirerData(RequirerData):
         self.relations_aliases = relations_aliases
         self.external_node_connectivity = external_node_connectivity
 
-    def is_postgresql_plugin_enabled(self, plugin: str, relation_index: int = 0) -> bool:
+    def is_postgresql_plugin_enabled(
+        self, plugin: str, relation_index: int = 0
+    ) -> bool:
         """Returns whether a plugin is enabled in the database.
 
         Args:
@@ -3678,19 +3858,19 @@ class DatabaseRequirerData(RequirerData):
         user = content.get("username")
         password = content.get("password")
 
-        connection_string = (
-            f"host='{host}' dbname='{self.database}' user='{user}' password='{password}'"
-        )
+        connection_string = f"host='{host}' dbname='{self.database}' user='{user}' password='{password}'"
         try:
             with psycopg.connect(connection_string) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT TRUE FROM pg_extension WHERE extname=%s::text;", (plugin,)
+                        "SELECT TRUE FROM pg_extension WHERE extname=%s::text;",
+                        (plugin,),
                     )
                     return cursor.fetchone() is not None
         except psycopg.Error as e:
             logger.exception(
-                f"failed to check whether {plugin} plugin is enabled in the database: %s", str(e)
+                f"failed to check whether {plugin} plugin is enabled in the database: %s",
+                str(e),
             )
             return False
 
@@ -3701,7 +3881,10 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
     on = DatabaseRequiresEvents()  # pyright: ignore [reportAssignmentType]
 
     def __init__(
-        self, charm: CharmBase, relation_data: DatabaseRequirerData, unique_key: str = ""
+        self,
+        charm: CharmBase,
+        relation_data: DatabaseRequirerData,
+        unique_key: str = "",
     ):
         """Manager of base client relations."""
         super().__init__(charm, relation_data, unique_key)
@@ -3762,7 +3945,9 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
 
         # Return if an alias was already assigned to this relation
         # (like when there are more than one unit joining the relation).
-        relation = self.charm.model.get_relation(self.relation_data.relation_name, relation_id)
+        relation = self.charm.model.get_relation(
+            self.relation_data.relation_name, relation_id
+        )
         if relation and relation.data[self.relation_data.local_unit].get("alias"):
             return
 
@@ -3771,18 +3956,26 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
         for relation in self.charm.model.relations[self.relation_data.relation_name]:
             alias = relation.data[self.relation_data.local_unit].get("alias")
             if alias:
-                logger.debug("Alias %s was already assigned to relation %d", alias, relation.id)
+                logger.debug(
+                    "Alias %s was already assigned to relation %d", alias, relation.id
+                )
                 available_aliases.remove(alias)
 
         # Set the alias in the unit relation databag of the specific relation.
-        relation = self.charm.model.get_relation(self.relation_data.relation_name, relation_id)
+        relation = self.charm.model.get_relation(
+            self.relation_data.relation_name, relation_id
+        )
         if relation:
-            relation.data[self.relation_data.local_unit].update({"alias": available_aliases[0]})
+            relation.data[self.relation_data.local_unit].update(
+                {"alias": available_aliases[0]}
+            )
 
         # We need to set relation alias also on the application level so,
         # it will be accessible in show-unit juju command, executed for a consumer application unit
         if self.relation_data.local_unit.is_leader():
-            self.relation_data.update_relation_data(relation_id, {"alias": available_aliases[0]})
+            self.relation_data.update_relation_data(
+                relation_id, {"alias": available_aliases[0]}
+            )
 
     def _emit_aliased_event(self, event: RelationChangedEvent, event_name: str) -> None:
         """Emit an aliased event to a particular relation if it has an alias.
@@ -3834,7 +4027,9 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
         if self.relation_data.entity_permissions:
             event_data["entity-permissions"] = self.relation_data.entity_permissions
         if self.relation_data.requested_entity_secret:
-            event_data["requested-entity-secret"] = self.relation_data.requested_entity_secret
+            event_data["requested-entity-secret"] = (
+                self.relation_data.requested_entity_secret
+            )
         if self.relation_data.prefix_matching:
             event_data["prefix-matching"] = self.relation_data.prefix_matching
 
@@ -3860,7 +4055,9 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
 
         self.relation_data.update_relation_data(event.relation.id, event_data)
 
-    def _clear_helper_secret(self, event: RelationChangedEvent, app_databag: Dict) -> None:
+    def _clear_helper_secret(
+        self, event: RelationChangedEvent, app_databag: Dict
+    ) -> None:
         """Remove helper secret if set."""
         if (
             self.relation_data.local_unit.is_leader()
@@ -3892,7 +4089,11 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
         diff = self._diff(event)
 
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
         app_databag = get_encoded_dict(event.relation, event.app, "data")
@@ -3938,7 +4139,9 @@ class DatabaseRequirerEventHandlers(RequirerEventHandlers):
             if key in diff.added or key in diff.changed:
                 # Emit the default event (the one without an alias).
                 logger.info("%s changed on %s", key, datetime.now())
-                getattr(self.on, event_name).emit(event.relation, app=event.app, unit=event.unit)
+                getattr(self.on, event_name).emit(
+                    event.relation, app=event.app, unit=event.unit
+                )
 
                 # Emit the aliased event (if any).
                 self._emit_aliased_event(event, event_name)
@@ -4033,7 +4236,9 @@ class KafkaProvidesEvent(RelationEventWithSecret):
 class KafkaClientMtlsCertUpdatedEvent(KafkaProvidesEvent):
     """Event emitted when the mtls relation is updated."""
 
-    def __init__(self, handle, relation, old_mtls_cert: Optional[str] = None, app=None, unit=None):
+    def __init__(
+        self, handle, relation, old_mtls_cert: Optional[str] = None, app=None, unit=None
+    ):
         super().__init__(handle, relation, app, unit)
 
         self.old_mtls_cert = old_mtls_cert
@@ -4148,7 +4353,10 @@ class KafkaProviderData(ProviderData):
     RESOURCE_FIELD = "topic"
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -4170,14 +4378,18 @@ class KafkaProviderData(ProviderData):
         """
         self.update_relation_data(relation_id, {"endpoints": bootstrap_server})
 
-    def set_consumer_group_prefix(self, relation_id: int, consumer_group_prefix: str) -> None:
+    def set_consumer_group_prefix(
+        self, relation_id: int, consumer_group_prefix: str
+    ) -> None:
         """Set the consumer group prefix in the application relation databag.
 
         Args:
             relation_id: the identifier for a particular relation.
             consumer_group_prefix: the consumer group prefix string.
         """
-        self.update_relation_data(relation_id, {"consumer-group-prefix": consumer_group_prefix})
+        self.update_relation_data(
+            relation_id, {"consumer-group-prefix": consumer_group_prefix}
+        )
 
     def set_zookeeper_uris(self, relation_id: int, zookeeper_uris: str) -> None:
         """Set the zookeeper uris in the application relation databag.
@@ -4204,10 +4416,18 @@ class KafkaProviderEventHandlers(ProviderEventHandlers):
         super()._on_relation_changed_event(event)
 
         new_data_keys = list(event.relation.data[event.app].keys())
-        if any(newval for newval in new_data_keys if self.relation_data._is_secret_field(newval)):
-            self.relation_data._register_secrets_to_relation(event.relation, new_data_keys)
+        if any(
+            newval
+            for newval in new_data_keys
+            if self.relation_data._is_secret_field(newval)
+        ):
+            self.relation_data._register_secrets_to_relation(
+                event.relation, new_data_keys
+            )
 
-        getattr(self.on, "mtls_cert_updated").emit(event.relation, app=event.app, unit=event.unit)
+        getattr(self.on, "mtls_cert_updated").emit(
+            event.relation, app=event.app, unit=event.unit
+        )
 
         # Leader only
         if not self.relation_data.local_unit.is_leader():
@@ -4244,7 +4464,10 @@ class KafkaProviderEventHandlers(ProviderEventHandlers):
         if (
             "topic" not in diff.added
             and "entity-type" not in diff.added
-            and ("entity-permissions" in diff.added or "entity-permissions" in diff.changed)
+            and (
+                "entity-permissions" in diff.added
+                or "entity-permissions" in diff.changed
+            )
         ):
             getattr(self.on, "topic_entity_permissions_changed").emit(
                 event.relation, app=event.app, unit=event.unit
@@ -4285,7 +4508,10 @@ class KafkaProvides(KafkaProviderData, KafkaProviderEventHandlers):
     """Provider-side of the Kafka relation."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         KafkaProviderData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -4373,7 +4599,9 @@ class KafkaRequirerEventHandlers(RequirerEventHandlers):
             relation_data["mtls-cert"] = self.relation_data.mtls_cert
 
         if self.relation_data.consumer_group_prefix:
-            relation_data["consumer-group-prefix"] = self.relation_data.consumer_group_prefix
+            relation_data["consumer-group-prefix"] = (
+                self.relation_data.consumer_group_prefix
+            )
 
         if self.relation_data.extra_user_roles:
             relation_data["extra-user-roles"] = self.relation_data.extra_user_roles
@@ -4401,7 +4629,11 @@ class KafkaRequirerEventHandlers(RequirerEventHandlers):
         # (the Kafka charm shared the credentials).
 
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
         app_databag = get_encoded_dict(event.relation, event.app, "data")
@@ -4411,7 +4643,9 @@ class KafkaRequirerEventHandlers(RequirerEventHandlers):
         if self._main_credentials_shared(diff) and "entity-type" not in app_databag:
             # Emit the default event (the one without an alias).
             logger.info("topic created at %s", datetime.now())
-            getattr(self.on, "topic_created").emit(event.relation, app=event.app, unit=event.unit)
+            getattr(self.on, "topic_created").emit(
+                event.relation, app=event.app, unit=event.unit
+            )
 
             # To avoid unnecessary application restarts do not trigger other events.
             return
@@ -4514,7 +4748,9 @@ class KarapaceProvidesEvents(CharmEvents):
 
     subject_requested = EventSource(SubjectRequestedEvent)
     subject_entity_requested = EventSource(SubjectEntityRequestedEvent)
-    subject_entity_permissions_changed = EventSource(SubjectEntityPermissionsChangedEvent)
+    subject_entity_permissions_changed = EventSource(
+        SubjectEntityPermissionsChangedEvent
+    )
 
 
 class KarapaceRequiresEvent(RelationEvent):
@@ -4569,7 +4805,10 @@ class KarapaceProviderData(ProviderData):
     RESOURCE_FIELD = "subject"
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -4641,7 +4880,10 @@ class KarapaceProviderEventHandlers(ProviderEventHandlers):
         if (
             "subject" not in diff.added
             and "entity-type" not in diff.added
-            and ("entity-permissions" in diff.added or "entity-permissions" in diff.changed)
+            and (
+                "entity-permissions" in diff.added
+                or "entity-permissions" in diff.changed
+            )
         ):
             getattr(self.on, "subject_entity_permissions_changed").emit(
                 event.relation, app=event.app, unit=event.unit
@@ -4659,7 +4901,10 @@ class KarapaceProvides(KarapaceProviderData, KarapaceProviderEventHandlers):
     """Provider-side of the Karapace relation."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         KarapaceProviderData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -4752,7 +4997,11 @@ class KarapaceRequirerEventHandlers(RequirerEventHandlers):
         # (the Karapace charm shared the credentials).
 
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
         app_databag = get_encoded_dict(event.relation, event.app, "data")
@@ -4878,7 +5127,10 @@ class KafkaConnectProviderData(ProviderData):
     RESOURCE_FIELD = "plugin-url"
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -4892,7 +5144,9 @@ class KafkaConnectProviderEventHandlers(EventHandlers):
 
     on = KafkaConnectProvidesEvents()  # pyright: ignore [reportAssignmentType]
 
-    def __init__(self, charm: CharmBase, relation_data: KafkaConnectProviderData) -> None:
+    def __init__(
+        self, charm: CharmBase, relation_data: KafkaConnectProviderData
+    ) -> None:
         super().__init__(charm, relation_data)
         self.relation_data = relation_data
 
@@ -4919,7 +5173,10 @@ class KafkaConnectProvides(KafkaConnectProviderData, KafkaConnectProviderEventHa
     """Provider-side implementation of the Kafka Connect relation."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         KafkaConnectProviderData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -4966,7 +5223,9 @@ class KafkaConnectRequirerEventHandlers(RequirerEventHandlers):
 
     on = KafkaConnectRequiresEvents()  # pyright: ignore [reportAssignmentType]
 
-    def __init__(self, charm: CharmBase, relation_data: KafkaConnectRequirerData) -> None:
+    def __init__(
+        self, charm: CharmBase, relation_data: KafkaConnectRequirerData
+    ) -> None:
         super().__init__(charm, relation_data)
         self.relation_data = relation_data
 
@@ -4992,7 +5251,11 @@ class KafkaConnectRequirerEventHandlers(RequirerEventHandlers):
         diff = self._diff(event)
 
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
         if self._main_credentials_shared(diff):
@@ -5114,7 +5377,10 @@ class OpenSearchProvidesData(ProviderData):
     RESOURCE_FIELD = "index"
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -5197,7 +5463,10 @@ class OpenSearchProvidesEventHandlers(ProviderEventHandlers):
         if (
             "index" not in diff.added
             and "entity-type" not in diff.added
-            and ("entity-permissions" in diff.added or "entity-permissions" in diff.changed)
+            and (
+                "entity-permissions" in diff.added
+                or "entity-permissions" in diff.changed
+            )
         ):
             getattr(self.on, "index_entity_permissions_changed").emit(
                 event.relation, app=event.app, unit=event.unit
@@ -5215,7 +5484,10 @@ class OpenSearchProvides(OpenSearchProvidesData, OpenSearchProvidesEventHandlers
     """Provider-side of the OpenSearch relation."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         OpenSearchProvidesData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -5318,12 +5590,27 @@ class OpenSearchRequiresEventHandlers(RequirerEventHandlers):
         diff = self._diff(event)
 
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
-        secret_field_user = self.relation_data._generate_secret_field_name(SECRET_GROUPS.USER)
-        secret_field_tls = self.relation_data._generate_secret_field_name(SECRET_GROUPS.TLS)
-        updates = {"username", "password", "tls", "tls-ca", secret_field_user, secret_field_tls}
+        secret_field_user = self.relation_data._generate_secret_field_name(
+            SECRET_GROUPS.USER
+        )
+        secret_field_tls = self.relation_data._generate_secret_field_name(
+            SECRET_GROUPS.TLS
+        )
+        updates = {
+            "username",
+            "password",
+            "tls",
+            "tls-ca",
+            secret_field_user,
+            secret_field_tls,
+        }
         if len(set(diff._asdict().keys()) - updates) < len(diff):
             logger.info("authentication updated at: %s", datetime.now())
             getattr(self.on, "authentication_updated").emit(
@@ -5339,7 +5626,9 @@ class OpenSearchRequiresEventHandlers(RequirerEventHandlers):
         if self._main_credentials_shared(diff) and "entity-type" not in app_databag:
             # Emit the default event (the one without an alias).
             logger.info("index created at: %s", datetime.now())
-            getattr(self.on, "index_created").emit(event.relation, app=event.app, unit=event.unit)
+            getattr(self.on, "index_created").emit(
+                event.relation, app=event.app, unit=event.unit
+            )
 
             # To avoid unnecessary application restarts do not trigger other events.
             return
@@ -5429,7 +5718,9 @@ class EtcdProviderEvent(RelationEventWithSecret):
 class MTLSCertUpdatedEvent(EtcdProviderEvent):
     """Event emitted when the mtls relation is updated."""
 
-    def __init__(self, handle, relation, old_mtls_cert: Optional[str] = None, app=None, unit=None):
+    def __init__(
+        self, handle, relation, old_mtls_cert: Optional[str] = None, app=None, unit=None
+    ):
         super().__init__(handle, relation, app, unit)
 
         self.old_mtls_cert = old_mtls_cert
@@ -5476,7 +5767,10 @@ class EtcdProviderData(ProviderData):
     RESOURCE_FIELD = "prefix"
 
     def __init__(
-        self, model: Model, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        model: Model,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         super().__init__(model, relation_name, status_schema_path=status_schema_path)
 
@@ -5532,8 +5826,14 @@ class EtcdProviderEventHandlers(ProviderEventHandlers):
         super()._on_relation_changed_event(event)
         # register all new secrets with their labels
         new_data_keys = list(event.relation.data[event.app].keys())
-        if any(newval for newval in new_data_keys if self.relation_data._is_secret_field(newval)):
-            self.relation_data._register_secrets_to_relation(event.relation, new_data_keys)
+        if any(
+            newval
+            for newval in new_data_keys
+            if self.relation_data._is_secret_field(newval)
+        ):
+            self.relation_data._register_secrets_to_relation(
+                event.relation, new_data_keys
+            )
 
         # Check which data has changed to emit customs events.
         diff = self._diff(event)
@@ -5541,7 +5841,9 @@ class EtcdProviderEventHandlers(ProviderEventHandlers):
         # Validate entity information is not dynamically changed
         self._validate_entity_consistency(event, diff)
 
-        getattr(self.on, "mtls_cert_updated").emit(event.relation, app=event.app, unit=event.unit)
+        getattr(self.on, "mtls_cert_updated").emit(
+            event.relation, app=event.app, unit=event.unit
+        )
         return
 
     def _on_secret_changed_event(self, event: SecretChangedEvent):
@@ -5576,7 +5878,10 @@ class EtcdProvides(EtcdProviderData, EtcdProviderEventHandlers):
     """Provider-side of the Etcd relation."""
 
     def __init__(
-        self, charm: CharmBase, relation_name: str, status_schema_path: OptionalPathLike = None
+        self,
+        charm: CharmBase,
+        relation_name: str,
+        status_schema_path: OptionalPathLike = None,
     ) -> None:
         EtcdProviderData.__init__(
             self, charm.model, relation_name, status_schema_path=status_schema_path
@@ -5659,11 +5964,19 @@ class EtcdRequirerEventHandlers(RequirerEventHandlers):
         # Check which data has changed to emit customs events.
         diff = self._diff(event)
         # Register all new secrets with their labels
-        if any(newval for newval in diff.added if self.relation_data._is_secret_field(newval)):
+        if any(
+            newval
+            for newval in diff.added
+            if self.relation_data._is_secret_field(newval)
+        ):
             self.relation_data._register_secrets_to_relation(event.relation, diff.added)
 
-        secret_field_user = self.relation_data._generate_secret_field_name(SECRET_GROUPS.USER)
-        secret_field_tls = self.relation_data._generate_secret_field_name(SECRET_GROUPS.TLS)
+        secret_field_user = self.relation_data._generate_secret_field_name(
+            SECRET_GROUPS.USER
+        )
+        secret_field_tls = self.relation_data._generate_secret_field_name(
+            SECRET_GROUPS.TLS
+        )
 
         # Emit a endpoints changed event if the etcd application added or changed this info
         # in the relation databag.
@@ -5684,7 +5997,9 @@ class EtcdRequirerEventHandlers(RequirerEventHandlers):
         ):
             # Emit the default event (the one without an alias).
             logger.info("etcd ready on %s", datetime.now())
-            getattr(self.on, "etcd_ready").emit(event.relation, app=event.app, unit=event.unit)
+            getattr(self.on, "etcd_ready").emit(
+                event.relation, app=event.app, unit=event.unit
+            )
 
     def _on_secret_changed_event(self, event: SecretChangedEvent):
         """Event notifying about a new value of a secret."""
@@ -5708,7 +6023,9 @@ class EtcdRequirerEventHandlers(RequirerEventHandlers):
 
         # secret-user or secret-tls updated
         logger.info("etcd_ready updated")
-        getattr(self.on, "etcd_ready").emit(relation, app=relation.app, unit=remote_unit)
+        getattr(self.on, "etcd_ready").emit(
+            relation, app=relation.app, unit=remote_unit
+        )
 
 
 class EtcdRequires(EtcdRequirerData, EtcdRequirerEventHandlers):
