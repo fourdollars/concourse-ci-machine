@@ -17,6 +17,24 @@ CONCOURSE_INSTALL_DIR = f"{CONCOURSE_DATA_DIR}/bin"
 
 logger = logging.getLogger(__name__)
 
+def setup_juju_proxy():
+    """Map Juju-specific proxy settings (JUJU_CHARM_*) to standard HTTP(S)_PROXY variables.
+
+    This ensures urllib and other native HTTP clients respect Juju agent-level proxies.
+    """
+    for key, standard_key in [
+        ("JUJU_CHARM_HTTP_PROXY", "http_proxy"),
+        ("JUJU_CHARM_HTTPS_PROXY", "https_proxy"),
+        ("JUJU_CHARM_NO_PROXY", "no_proxy"),
+    ]:
+        val = os.environ.get(key)
+        if val:
+            if not os.environ.get(standard_key):
+                os.environ[standard_key] = val
+            if not os.environ.get(standard_key.upper()):
+                os.environ[standard_key.upper()] = val
+
+
 # Import storage coordinator (may not be available in all contexts)
 try:
     from storage_coordinator import LockAcquireError
@@ -34,6 +52,7 @@ except ImportError:
 
 def get_latest_concourse_version(github_token: Optional[str] = None):
     """Fetch the latest Concourse version from GitHub releases"""
+    setup_juju_proxy()
     import urllib.request
 
     try:
@@ -314,6 +333,7 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
         version: Version to download
         target_dir: Directory to extract binaries to
     """
+    setup_juju_proxy()
     import urllib.request
     import tarfile
     import time
@@ -486,6 +506,7 @@ def _download_and_extract_binaries(charm, version: str, target_dir: Path):
 
 def download_and_install_concourse(charm, version: str):
     """Download and install Concourse binaries"""
+    setup_juju_proxy()
     import urllib.request
     import tarfile
     import time
