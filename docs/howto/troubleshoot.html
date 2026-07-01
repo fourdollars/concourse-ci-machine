@@ -386,6 +386,33 @@ cat /etc/resolv.conf
 juju config &lt;app&gt; containerd-dns-proxy-enable=true
 juju config &lt;app&gt; containerd-dns-server="8.8.8.8,1.1.1.1"</code></pre>
 
+        <table>
+            <thead>
+                <tr>
+                    <th>Symptom</th>
+                    <th>Likely cause</th>
+                    <th>Fix</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>check-resource</code> fails with <code>lookup ... dial udp ... socket: permission denied</code></td>
+                    <td>Nested worker machine container is AppArmor-confined for this runtime path</td>
+                    <td>
+                        Verify host-side AppArmor label and relax LXC config for worker machine containers:
+                        <pre><code class="language-bash"># On the LXD host
+pid=$(lxc info &lt;machine-container&gt; | awk '/^PID:/{print $2}')
+cat /proc/$pid/attr/current
+
+# If not effectively unconfined for this path:
+lxc config set &lt;machine-container&gt; security.nesting true
+lxc config set &lt;machine-container&gt; raw.lxc $'lxc.apparmor.profile=unconfined\nlxc.cap.drop='
+lxc restart &lt;machine-container&gt;</code></pre>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
         <h2>Folder Mounts Not Working</h2>
 
         <h3>Folders Not Visible in Tasks</h3>
