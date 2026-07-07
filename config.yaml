@@ -379,3 +379,30 @@ options:
       Example: "oem:{BCRYPT_HASH},ci-bot:{BCRYPT_HASH}"
     default: ""
     type: string
+
+  # --- Worker proxy settings ---
+
+  worker-http-proxy:
+    description: |
+      HTTP proxy for Concourse worker containers (written as http_proxy to worker-config.env).
+      Only applies to the worker process; does not fall back to Juju model proxy settings.
+      Example: "http://proxy.example.com:3128"
+    default: ""
+    type: string
+
+  worker-https-proxy:
+    description: |
+      HTTPS proxy for Concourse worker containers (written as https_proxy to worker-config.env).
+      Only applies to the worker process; does not fall back to Juju model proxy settings.
+      Example: "http://proxy.example.com:3128"
+    default: ""
+    type: string
+
+  worker-no-proxy:
+    description: |
+      Comma-separated list of hosts to bypass the proxy for the Concourse worker
+      (written as no_proxy to worker-config.env).
+      Only applies to the worker process; does not fall back to Juju model proxy settings.
+      Example: "localhost,127.0.0.1,10.0.0.0/8"
+    default: ""
+    type: string

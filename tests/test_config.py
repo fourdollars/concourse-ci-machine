@@ -175,6 +175,141 @@ class TestWorkerWriteConfigMerge:
 
 
 # ---------------------------------------------------------------------------
+# Worker proxy config: worker-http-proxy / worker-https-proxy / worker-no-proxy
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerProxyConfig:
+    """Tests for worker proxy config options → lowercase env vars in worker-config.env."""
+
+    def _make_worker_helper(self, config=None):
+        from concourse_worker import ConcourseWorkerHelper
+
+        charm = MagicMock()
+        charm.model.config = config or {}
+        charm.charm_dir = Path("/tmp/fake-charm")
+        helper = ConcourseWorkerHelper(charm)
+        return helper
+
+    def _base_config(self, **overrides):
+        """Minimal config that satisfies update_config() without side effects."""
+        base = {
+            "worker-procs": 1,
+            "log-level": "info",
+            "containerd-dns-proxy-enable": False,
+            "containerd-dns-server": "1.1.1.1,8.8.8.8",
+            "tag": "",
+            "compute-runtime": "none",
+            "shared-storage": "none",
+            "worker-http-proxy": "",
+            "worker-https-proxy": "",
+            "worker-no-proxy": "",
+        }
+        base.update(overrides)
+        return base
+
+    @patch("concourse_worker.subprocess.run")
+    def test_http_proxy_written_as_lowercase(self, mock_run, tmp_path):
+        """worker-http-proxy writes http_proxy (lowercase) to worker-config.env."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(self._base_config(**{"worker-http-proxy": "http://proxy.example.com:3128"}))
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)), \
+             patch.object(helper, "_setup_dataset_mount"), \
+             patch("concourse_worker.Path") as mock_path:
+            # Allow the worker dir creation to pass through
+            mock_path.side_effect = lambda *a, **kw: Path(*a, **kw)
+            helper._write_config({"http_proxy": "http://proxy.example.com:3128"})
+
+        result = helper._read_config(str(config_file))
+        assert result["http_proxy"] == "http://proxy.example.com:3128"
+        assert "HTTP_PROXY" not in result, "Must not write uppercase HTTP_PROXY"
+
+    @patch("concourse_worker.subprocess.run")
+    def test_https_proxy_written_as_lowercase(self, mock_run, tmp_path):
+        """worker-https-proxy writes https_proxy (lowercase) to worker-config.env."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(self._base_config(**{"worker-https-proxy": "http://proxy.example.com:3128"}))
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
+            helper._write_config({"https_proxy": "http://proxy.example.com:3128"})
+
+        result = helper._read_config(str(config_file))
+        assert result["https_proxy"] == "http://proxy.example.com:3128"
+        assert "HTTPS_PROXY" not in result, "Must not write uppercase HTTPS_PROXY"
+
+    @patch("concourse_worker.subprocess.run")
+    def test_no_proxy_written_as_lowercase(self, mock_run, tmp_path):
+        """worker-no-proxy writes no_proxy (lowercase) to worker-config.env."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(self._base_config(**{"worker-no-proxy": "localhost,127.0.0.1"}))
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
+            helper._write_config({"no_proxy": "localhost,127.0.0.1"})
+
+        result = helper._read_config(str(config_file))
+        assert result["no_proxy"] == "localhost,127.0.0.1"
+        assert "NO_PROXY" not in result, "Must not write uppercase NO_PROXY"
+
+    @patch("concourse_worker.subprocess.run")
+    def test_empty_proxy_not_written(self, mock_run, tmp_path):
+        """Empty proxy configs do not write any proxy keys to worker-config.env."""
+        config_file = tmp_path / "worker-config.env"
+        config_file.write_text("CONCOURSE_LOG_LEVEL=info\n")
+        helper = self._make_worker_helper(self._base_config())
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
+            helper._write_config({"CONCOURSE_LOG_LEVEL": "info"})
+
+        result = helper._read_config(str(config_file))
+        for key in ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
+            assert key not in result, f"Unexpected proxy key in config: {key}"
+
+    @patch("concourse_worker.subprocess.run")
+    def test_all_three_proxies_written(self, mock_run, tmp_path):
+        """All three proxy values written together."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(self._base_config(
+            **{
+                "worker-http-proxy": "http://proxy:3128",
+                "worker-https-proxy": "http://proxy:3128",
+                "worker-no-proxy": "localhost,10.0.0.0/8",
+            }
+        ))
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
+            helper._write_config({
+                "http_proxy": "http://proxy:3128",
+                "https_proxy": "http://proxy:3128",
+                "no_proxy": "localhost,10.0.0.0/8",
+            })
+
+        result = helper._read_config(str(config_file))
+        assert result["http_proxy"] == "http://proxy:3128"
+        assert result["https_proxy"] == "http://proxy:3128"
+        assert result["no_proxy"] == "localhost,10.0.0.0/8"
+
+    @patch("concourse_worker.subprocess.run")
+    def test_proxy_keys_are_lowercase_in_sorted_output(self, mock_run, tmp_path):
+        """Lowercase proxy keys sort correctly alongside uppercase Concourse keys."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(self._base_config())
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
+            helper._write_config({
+                "http_proxy": "http://proxy:3128",
+                "CONCOURSE_LOG_LEVEL": "info",
+                "no_proxy": "localhost",
+            })
+
+        lines = config_file.read_text().strip().split("\n")
+        keys = [line.split("=")[0] for line in lines]
+        # Sorted: uppercase letters come before lowercase in ASCII,
+        # so CONCOURSE_* < http_proxy < no_proxy
+        assert keys == sorted(keys)
+
+
+# ---------------------------------------------------------------------------
 # Config option → env var mapping in update_config
 # ---------------------------------------------------------------------------
 
