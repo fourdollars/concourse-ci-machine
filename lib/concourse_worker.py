@@ -896,7 +896,7 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             "CONCOURSE_RESOURCE_TYPES": str(
                 Path(CONCOURSE_DATA_DIR) / "resource-types"
             ),
-            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin",
+            "PATH": "/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin",
         }
 
         # Add GPU configuration if enabled
