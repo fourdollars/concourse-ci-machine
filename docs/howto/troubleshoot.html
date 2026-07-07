@@ -428,6 +428,15 @@ path=/mnt/datasets
 lxc config device show &lt;container-name&gt;
 lxc exec &lt;container-name&gt; -- ls -la /srv/</code></pre>
 
+        <h3>Tasks Cannot See Files in Mounted Folder</h3>
+
+        <p>Concourse worker ships its own containerd. If the system also has <code>containerd</code> or <code>runc</code> installed via apt, they will conflict and folder mounts will not be visible inside task containers.</p>
+
+        <p><strong>Fix:</strong> Remove the system packages from every worker machine container:</p>
+
+        <pre><code class="language-bash"># On each worker machine container (juju ssh &lt;worker-unit&gt;)
+sudo apt-get autopurge containerd runc --yes</code></pre>
+
         <h3>Cannot Write to Writable Folder</h3>
 
         <pre><code class="language-bash"># Folder name MUST end with _writable or _rw
