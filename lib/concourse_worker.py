@@ -893,13 +893,10 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             "CONCOURSE_CONTAINERD_DNS_SERVER": self.config.get(
                 "containerd-dns-server", "1.1.1.1,8.8.8.8"
             ),
-            # Use custom runc wrapper from /opt/bin
-            "CONCOURSE_CONTAINERD_RUNTIME": "/opt/bin/runc",
             "CONCOURSE_RESOURCE_TYPES": str(
                 Path(CONCOURSE_DATA_DIR) / "resource-types"
             ),
-            # Ensure /opt/bin is in PATH for runc wrapper
-            "PATH": "/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin",
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin",
         }
 
         # Add GPU configuration if enabled
