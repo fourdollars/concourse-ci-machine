@@ -327,14 +327,6 @@ class ConcourseCharm(CharmBase):
                 logger.info("Setting up worker service (early setup)")
                 self.worker_helper.setup_systemd_service()
 
-                # Install containerd for worker
-                import subprocess
-
-                subprocess.run(["apt-get", "update", "-qq"], capture_output=True)
-                subprocess.run(
-                    ["apt-get", "install", "-y", "containerd"], capture_output=True
-                )
-
                 # Only initialize worker storage if web didn't already do it
                 if not storage_coordinator:
                     storage_coordinator = self.worker_helper.initialize_shared_storage()
