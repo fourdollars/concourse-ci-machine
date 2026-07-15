@@ -934,21 +934,21 @@ disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.snapshotter.v1.a
             config["CONCOURSE_TAG"] = ",".join(dedup_tags)
             logger.info(f"Adding CONCOURSE_TAG: {dedup_tags}")
 
-        # Worker proxy settings (lowercase env vars for worker process)
-        worker_http_proxy = self.config.get("worker-http-proxy", "")
-        if worker_http_proxy:
-            config["http_proxy"] = worker_http_proxy
-            logger.info(f"Setting http_proxy={worker_http_proxy}")
+        # Proxy settings (lowercase env vars for worker process)
+        http_proxy = self.config.get("http-proxy", "")
+        if http_proxy:
+            config["http_proxy"] = http_proxy
+            logger.info(f"Setting http_proxy={http_proxy}")
 
-        worker_https_proxy = self.config.get("worker-https-proxy", "")
-        if worker_https_proxy:
-            config["https_proxy"] = worker_https_proxy
-            logger.info(f"Setting https_proxy={worker_https_proxy}")
+        https_proxy = self.config.get("https-proxy", "")
+        if https_proxy:
+            config["https_proxy"] = https_proxy
+            logger.info(f"Setting https_proxy={https_proxy}")
 
-        worker_no_proxy = self.config.get("worker-no-proxy", "")
-        if worker_no_proxy:
-            config["no_proxy"] = worker_no_proxy
-            logger.info(f"Setting no_proxy={worker_no_proxy}")
+        no_proxy = self.config.get("no-proxy", "")
+        if no_proxy:
+            config["no_proxy"] = no_proxy
+            logger.info(f"Setting no_proxy={no_proxy}")
 
         # Ensure dataset mount is available via symlink in worker directory
         self._setup_dataset_mount()

@@ -315,6 +315,22 @@ WantedBy=multi-user.target
         if self.config.get("extra-local-users"):
             config["CONCOURSE_ADD_LOCAL_USER"] += "," + self.config["extra-local-users"]
 
+        # Proxy settings (lowercase env vars for web/ATC process)
+        http_proxy = self.config.get("http-proxy", "")
+        if http_proxy:
+            config["http_proxy"] = http_proxy
+            logger.info(f"Setting http_proxy={http_proxy}")
+
+        https_proxy = self.config.get("https-proxy", "")
+        if https_proxy:
+            config["https_proxy"] = https_proxy
+            logger.info(f"Setting https_proxy={https_proxy}")
+
+        no_proxy = self.config.get("no-proxy", "")
+        if no_proxy:
+            config["no_proxy"] = no_proxy
+            logger.info(f"Setting no_proxy={no_proxy}")
+
         # Write config file
         self._write_config(config)
         logger.info("Web server configuration updated")

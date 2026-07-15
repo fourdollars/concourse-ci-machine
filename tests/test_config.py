@@ -175,7 +175,7 @@ class TestWorkerWriteConfigMerge:
 
 
 # ---------------------------------------------------------------------------
-# Worker proxy config: worker-http-proxy / worker-https-proxy / worker-no-proxy
+# Worker proxy config: http-proxy / https-proxy / no-proxy
 # ---------------------------------------------------------------------------
 
 
@@ -201,18 +201,20 @@ class TestWorkerProxyConfig:
             "tag": "",
             "compute-runtime": "none",
             "shared-storage": "none",
-            "worker-http-proxy": "",
-            "worker-https-proxy": "",
-            "worker-no-proxy": "",
+            "http-proxy": "",
+            "https-proxy": "",
+            "no-proxy": "",
         }
         base.update(overrides)
         return base
 
     @patch("concourse_worker.subprocess.run")
     def test_http_proxy_written_as_lowercase(self, mock_run, tmp_path):
-        """worker-http-proxy writes http_proxy (lowercase) to worker-config.env."""
+        """http-proxy writes http_proxy (lowercase) to worker-config.env."""
         config_file = tmp_path / "worker-config.env"
-        helper = self._make_worker_helper(self._base_config(**{"worker-http-proxy": "http://proxy.example.com:3128"}))
+        helper = self._make_worker_helper(
+            self._base_config(**{"http-proxy": "http://proxy.example.com:3128"})
+        )
 
         with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)), \
              patch.object(helper, "_setup_dataset_mount"), \
@@ -227,9 +229,11 @@ class TestWorkerProxyConfig:
 
     @patch("concourse_worker.subprocess.run")
     def test_https_proxy_written_as_lowercase(self, mock_run, tmp_path):
-        """worker-https-proxy writes https_proxy (lowercase) to worker-config.env."""
+        """https-proxy writes https_proxy (lowercase) to worker-config.env."""
         config_file = tmp_path / "worker-config.env"
-        helper = self._make_worker_helper(self._base_config(**{"worker-https-proxy": "http://proxy.example.com:3128"}))
+        helper = self._make_worker_helper(
+            self._base_config(**{"https-proxy": "http://proxy.example.com:3128"})
+        )
 
         with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
             helper._write_config({"https_proxy": "http://proxy.example.com:3128"})
@@ -240,9 +244,11 @@ class TestWorkerProxyConfig:
 
     @patch("concourse_worker.subprocess.run")
     def test_no_proxy_written_as_lowercase(self, mock_run, tmp_path):
-        """worker-no-proxy writes no_proxy (lowercase) to worker-config.env."""
+        """no-proxy writes no_proxy (lowercase) to worker-config.env."""
         config_file = tmp_path / "worker-config.env"
-        helper = self._make_worker_helper(self._base_config(**{"worker-no-proxy": "localhost,127.0.0.1"}))
+        helper = self._make_worker_helper(
+            self._base_config(**{"no-proxy": "localhost,127.0.0.1"})
+        )
 
         with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)):
             helper._write_config({"no_proxy": "localhost,127.0.0.1"})
@@ -271,9 +277,9 @@ class TestWorkerProxyConfig:
         config_file = tmp_path / "worker-config.env"
         helper = self._make_worker_helper(self._base_config(
             **{
-                "worker-http-proxy": "http://proxy:3128",
-                "worker-https-proxy": "http://proxy:3128",
-                "worker-no-proxy": "localhost,10.0.0.0/8",
+                "http-proxy": "http://proxy:3128",
+                "https-proxy": "http://proxy:3128",
+                "no-proxy": "localhost,10.0.0.0/8",
             }
         ))
 
@@ -308,6 +314,30 @@ class TestWorkerProxyConfig:
         # so CONCOURSE_* < http_proxy < no_proxy
         assert keys == sorted(keys)
 
+    @patch("concourse_worker.subprocess.run")
+    def test_update_config_reads_global_proxy_keys(self, mock_run, tmp_path):
+        """update_config reads http-proxy/https-proxy/no-proxy and writes lowercase env keys."""
+        config_file = tmp_path / "worker-config.env"
+        helper = self._make_worker_helper(
+            self._base_config(
+                **{
+                    "http-proxy": "http://proxy:3128",
+                    "https-proxy": "http://proxy:3128",
+                    "no-proxy": "localhost,10.0.0.0/8",
+                }
+            )
+        )
+        helper.worker_directory = MagicMock(work_dir=tmp_path / "worker-dir")
+
+        with patch.object(helper, "_get_worker_config_path", return_value=str(config_file)), \
+             patch.object(helper, "_setup_dataset_mount"):
+            helper.update_config()
+
+        result = helper._read_config(str(config_file))
+        assert result["http_proxy"] == "http://proxy:3128"
+        assert result["https_proxy"] == "http://proxy:3128"
+        assert result["no_proxy"] == "localhost,10.0.0.0/8"
+
 
 # ---------------------------------------------------------------------------
 # Config option → env var mapping in update_config
@@ -326,6 +356,56 @@ class TestUpdateConfigMapping:
         charm.model.get_binding.side_effect = Exception("no binding")
         helper = ConcourseWebHelper(charm)
         return helper
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_proxy_mapping(self, mock_chmod, mock_run, tmp_path):
+        """http-proxy/https-proxy/no-proxy map to lowercase env vars in web config."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper(
+            {
+                "web-port": 8080,
+                "log-level": "info",
+                "initial-admin-username": "admin",
+                "enable-metrics": False,
+                "external-url": "http://test:8080",
+                "vault-url": "",
+                "encryption-key": "",
+                "ldap-display-name": "",
+                "ldap-host": "",
+                "ldap-bind-dn": "",
+                "ldap-bind-pw": "",
+                "ldap-user-search-base-dn": "",
+                "ldap-user-search-username": "",
+                "ldap-user-search-id-attr": "",
+                "ldap-user-search-email-attr": "",
+                "ldap-user-search-name-attr": "",
+                "ldap-user-search-filter": "",
+                "ldap-group-search-base-dn": "",
+                "ldap-group-search-name-attr": "",
+                "ldap-group-search-user-attr": "",
+                "ldap-group-search-group-attr": "",
+                "ldap-group-search-filter": "",
+                "main-team-ldap-group": "",
+                "default-build-logs-to-retain": 0,
+                "default-days-to-retain-build-logs": 0,
+                "max-build-logs-to-retain": 0,
+                "max-days-to-retain-build-logs": 0,
+                "gc-failed-grace-period": "",
+                "extra-local-users": "",
+                "main-team-local-user": "",
+                "http-proxy": "http://proxy:3128",
+                "https-proxy": "http://proxy:3128",
+                "no-proxy": "localhost,10.0.0.0/8",
+            }
+        )
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["http_proxy"] == "http://proxy:3128"
+        assert result["https_proxy"] == "http://proxy:3128"
+        assert result["no_proxy"] == "localhost,10.0.0.0/8"
 
     @patch("concourse_web.subprocess.run")
     @patch("concourse_web.os.chmod")
