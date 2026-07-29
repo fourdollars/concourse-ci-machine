@@ -1250,6 +1250,9 @@ class ConcourseCharm(CharmBase):
             admin_password = self._get_or_create_admin_password()
             self.web_helper.update_config(db_url=db_url, admin_password=admin_password)
 
+            # Ensure DB user has DML privileges (fixes charmed-postgresql role gap)
+            self.web_helper.ensure_db_privileges(db_url)
+
             # Restart web service
             if self.web_helper.is_running():
                 self.web_helper.restart_service()
@@ -1331,6 +1334,9 @@ class ConcourseCharm(CharmBase):
 
             admin_password = self._get_or_create_admin_password()
             self.web_helper.update_config(db_url=db_url, admin_password=admin_password)
+
+            # Ensure DB user has DML privileges (fixes charmed-postgresql role gap)
+            self.web_helper.ensure_db_privileges(db_url)
 
             # Restart web service
             if self.web_helper.is_running():
@@ -2110,6 +2116,14 @@ class ConcourseCharm(CharmBase):
                 if not self.web_helper.is_running():
                     self.unit.status = MaintenanceStatus("Services starting...")
                     return
+
+                # Ensure DB user has DML privileges on migration-created tables.
+                # Concourse runs its own schema migrations on first start, creating
+                # tables owned by 'charmed_<db>_owner'.  If that role's DML grants
+                # were not propagated, login will fail with "permission denied for
+                # table auth_request".  This call is idempotent and cheap (one
+                # SELECT check before any GRANTs are issued).
+                self.web_helper.ensure_db_privileges(db_url)
 
             # Start worker service if needed
             if self._should_run_worker():

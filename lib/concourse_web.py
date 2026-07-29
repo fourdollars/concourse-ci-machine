@@ -518,6 +518,177 @@ WantedBy=multi-user.target
         except Exception:
             return False
 
+    def ensure_db_privileges(self, db_url: str) -> bool:
+        """Ensure the DB user has DML privileges on all Concourse tables.
+
+        The charmed-postgresql charm may not grant INSERT/UPDATE/DELETE to the
+        DML role on tables created by Concourse's own migrations (which run
+        under the 'charmed_<db>_owner' role).  This method detects and repairs
+        that condition by switching to the table-owner role via SET ROLE and
+        issuing explicit GRANTs plus ALTER DEFAULT PRIVILEGES so that future
+        migration tables are also covered.
+
+        Args:
+            db_url: PostgreSQL connection URI (postgres://user:pass@host/db).
+
+        Returns:
+            True if privileges are already correct or were successfully fixed.
+            False if the fix could not be applied (logged at ERROR level).
+        """
+        try:
+            import psycopg2  # type: ignore
+        except ImportError:
+            logger.warning("psycopg2 not available – skipping DB privilege check")
+            return True
+
+        from urllib.parse import urlparse
+
+        parsed = urlparse(db_url)
+        try:
+            conn = psycopg2.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                user=parsed.username,
+                password=parsed.password,
+                database=parsed.path.lstrip("/"),
+                connect_timeout=10,
+            )
+        except psycopg2.OperationalError as e:
+            logger.error(f"Cannot connect to database for privilege check: {e}")
+            return False
+
+        try:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                # Check whether auth_request table exists yet (migrations may not
+                # have run on a fresh deployment).
+                cur.execute(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                          AND table_name = 'auth_request'
+                    )
+                    """
+                )
+                if not cur.fetchone()[0]:
+                    logger.info(
+                        "auth_request table does not exist yet "
+                        "(Concourse migrations still pending) – skipping grant"
+                    )
+                    return True
+
+                # Check whether the current session user can INSERT.
+                cur.execute(
+                    "SELECT has_table_privilege('auth_request', 'INSERT')"
+                )
+                if cur.fetchone()[0]:
+                    logger.debug("DB privileges are already correct")
+                    return True
+
+                logger.warning(
+                    "Session user lacks INSERT on auth_request – attempting fix"
+                )
+
+                # Remember the actual login user before any SET ROLE.
+                cur.execute("SELECT session_user")
+                session_user = cur.fetchone()[0]
+
+                # Discover all distinct table-owner roles in the public schema.
+                cur.execute(
+                    "SELECT DISTINCT tableowner FROM pg_tables "
+                    "WHERE schemaname = 'public'"
+                )
+                owner_roles = [row[0] for row in cur.fetchall()]
+
+                # Determine all roles that should receive DML grants:
+                # the session user itself, plus any '*_dml' roles it belongs to.
+                cur.execute(
+                    """
+                    SELECT r.rolname
+                    FROM pg_roles r
+                    JOIN pg_auth_members am ON r.oid = am.roleid
+                    JOIN pg_roles m ON am.member = m.oid
+                    WHERE m.rolname = %s
+                      AND r.rolname LIKE '%%_dml'
+                    """,
+                    (session_user,),
+                )
+                dml_roles = [row[0] for row in cur.fetchall()]
+                grant_targets = list({session_user} | set(dml_roles))
+
+                fixed = False
+                for owner_role in owner_roles:
+                    if owner_role == session_user:
+                        # Already the owner – grant directly.
+                        pass
+                    else:
+                        try:
+                            cur.execute(f'SET ROLE "{owner_role}"')
+                        except psycopg2.Error as e:
+                            logger.warning(
+                                f"Cannot SET ROLE \"{owner_role}\": {e} – skipping"
+                            )
+                            continue
+
+                    for target in grant_targets:
+                        cur.execute(
+                            f'GRANT SELECT, INSERT, UPDATE, DELETE '
+                            f'ON ALL TABLES IN SCHEMA public TO "{target}"'
+                        )
+                        cur.execute(
+                            f'GRANT SELECT, USAGE '
+                            f'ON ALL SEQUENCES IN SCHEMA public TO "{target}"'
+                        )
+                        cur.execute(
+                            f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner_role}" '
+                            f'IN SCHEMA public '
+                            f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{target}"'
+                        )
+                        cur.execute(
+                            f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner_role}" '
+                            f'IN SCHEMA public '
+                            f'GRANT SELECT, USAGE ON SEQUENCES TO "{target}"'
+                        )
+
+                    cur.execute("RESET ROLE")
+                    fixed = True
+                    logger.info(
+                        f"Granted DML privileges (owner_role={owner_role!r}, "
+                        f"targets={grant_targets!r})"
+                    )
+
+                if not fixed:
+                    logger.error(
+                        "Could not grant DB privileges – no owner role could be "
+                        "assumed via SET ROLE.  Run manually as a PostgreSQL "
+                        "superuser:\n"
+                        "  GRANT SELECT, INSERT, UPDATE, DELETE "
+                        "ON ALL TABLES IN SCHEMA public TO "
+                        f'"{session_user}";'
+                    )
+                    return False
+
+                # Verify the fix worked.
+                cur.execute(
+                    "SELECT has_table_privilege('auth_request', 'INSERT')"
+                )
+                ok = cur.fetchone()[0]
+                if ok:
+                    logger.info("DB privilege fix verified successfully")
+                else:
+                    logger.error(
+                        "DB privilege fix applied but INSERT still denied – "
+                        "manual intervention required"
+                    )
+                return ok
+
+        except Exception as e:
+            logger.error(f"Unexpected error while ensuring DB privileges: {e}")
+            return False
+        finally:
+            conn.close()
+
     def upgrade_with_shared_storage(self, target_version: str) -> None:
         """Perform coordinated upgrade with shared storage (T050).
 
