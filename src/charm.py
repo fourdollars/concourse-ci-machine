@@ -1792,6 +1792,32 @@ class ConcourseCharm(CharmBase):
             if value:
                 web_config[env_key] = value
 
+        # Generic OAuth / OAuth2 configuration
+        oauth_config_map = {
+            "oauth-display-name": "CONCOURSE_OAUTH_DISPLAY_NAME",
+            "oauth-client-id": "CONCOURSE_OAUTH_CLIENT_ID",
+            "oauth-client-secret": "CONCOURSE_OAUTH_CLIENT_SECRET",
+            "oauth-auth-url": "CONCOURSE_OAUTH_AUTH_URL",
+            "oauth-token-url": "CONCOURSE_OAUTH_TOKEN_URL",
+            "oauth-userinfo-url": "CONCOURSE_OAUTH_USERINFO_URL",
+            "oauth-scope": "CONCOURSE_OAUTH_SCOPE",
+            "oauth-groups-key": "CONCOURSE_OAUTH_GROUPS_KEY",
+            "oauth-user-id-key": "CONCOURSE_OAUTH_USER_ID_KEY",
+            "oauth-user-name-key": "CONCOURSE_OAUTH_USER_NAME_KEY",
+            "oauth-ca-cert": "CONCOURSE_OAUTH_CA_CERT",
+            "main-team-oauth-user": "CONCOURSE_MAIN_TEAM_OAUTH_USER",
+            "main-team-oauth-group": "CONCOURSE_MAIN_TEAM_OAUTH_GROUP",
+        }
+        oauth_managed_env_keys = set(oauth_config_map.values()) | {
+            "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"
+        }
+        for charm_key, env_key in oauth_config_map.items():
+            value = self.config.get(charm_key)
+            if value:
+                web_config[env_key] = value
+        if self.config.get("oauth-skip-ssl-validation", False):
+            web_config["CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"] = "true"
+
         # Build log retention configuration
         retention_config_map = {
             "default-build-logs-to-retain": "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN",
@@ -1825,6 +1851,9 @@ class ConcourseCharm(CharmBase):
                 if line and not line.startswith("#") and "=" in line:
                     k, _, v = line.partition("=")
                     existing_web_config[k] = v
+        for key in oauth_managed_env_keys:
+            if key not in web_config:
+                existing_web_config.pop(key, None)
         existing_web_config.update(web_config)
         web_config_lines = [f"{k}={v}" for k, v in sorted(existing_web_config.items())]
         Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(web_config_lines) + "\n")

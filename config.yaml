@@ -320,6 +320,84 @@ options:
     default: ""
     type: string
 
+  # --- Generic OAuth / OAuth2 SSO ---
+
+  oauth-display-name:
+    description: "Display name for a Generic OAuth authentication provider. Maps to CONCOURSE_OAUTH_DISPLAY_NAME."
+    default: ""
+    type: string
+
+  oauth-client-id:
+    description: "Generic OAuth client ID. Maps to CONCOURSE_OAUTH_CLIENT_ID."
+    default: ""
+    type: string
+
+  oauth-client-secret:
+    description: "Generic OAuth client secret. Maps to CONCOURSE_OAUTH_CLIENT_SECRET."
+    default: ""
+    type: string
+
+  oauth-auth-url:
+    description: "Generic OAuth authorization URL. Maps to CONCOURSE_OAUTH_AUTH_URL."
+    default: ""
+    type: string
+
+  oauth-token-url:
+    description: "Generic OAuth token URL. Maps to CONCOURSE_OAUTH_TOKEN_URL."
+    default: ""
+    type: string
+
+  oauth-userinfo-url:
+    description: "Generic OAuth userinfo URL. Maps to CONCOURSE_OAUTH_USERINFO_URL."
+    default: ""
+    type: string
+
+  oauth-scope:
+    description: "Additional Generic OAuth scopes. Maps to CONCOURSE_OAUTH_SCOPE."
+    default: ""
+    type: string
+
+  oauth-groups-key:
+    description: "Generic OAuth claim/key containing group names. Maps to CONCOURSE_OAUTH_GROUPS_KEY."
+    default: ""
+    type: string
+
+  oauth-user-id-key:
+    description: "Generic OAuth claim/key used as the user ID. Maps to CONCOURSE_OAUTH_USER_ID_KEY."
+    default: ""
+    type: string
+
+  oauth-user-name-key:
+    description: "Generic OAuth claim/key used as the username. Maps to CONCOURSE_OAUTH_USER_NAME_KEY."
+    default: ""
+    type: string
+
+  oauth-ca-cert:
+    description: "Path to a CA certificate for the Generic OAuth provider. Maps to CONCOURSE_OAUTH_CA_CERT."
+    default: ""
+    type: string
+
+  oauth-skip-ssl-validation:
+    description: "Skip TLS certificate validation for the Generic OAuth provider. Maps to CONCOURSE_OAUTH_SKIP_SSL_VALIDATION."
+    default: false
+    type: boolean
+
+  main-team-oauth-user:
+    description: |
+      Comma-separated list of Generic OAuth users for the main team.
+      Example: "alice,bob"
+      Maps to CONCOURSE_MAIN_TEAM_OAUTH_USER.
+    default: ""
+    type: string
+
+  main-team-oauth-group:
+    description: |
+      Comma-separated list of Generic OAuth groups for the main team.
+      Example: "ci-admins,developers"
+      Maps to CONCOURSE_MAIN_TEAM_OAUTH_GROUP.
+    default: ""
+    type: string
+
   # --- Extra CLI flags ---
 
   extra-web-flags:

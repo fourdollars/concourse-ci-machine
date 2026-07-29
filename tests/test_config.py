@@ -897,3 +897,149 @@ class TestMainTeamLocalUser:
 
         result = helper._read_config(str(config_file))
         assert result["CONCOURSE_MAIN_TEAM_LOCAL_USER"] == "ci-admin"
+
+
+
+# ---------------------------------------------------------------------------
+# Generic OAuth config options
+# ---------------------------------------------------------------------------
+
+
+class TestGenericOAuthConfig:
+    """Tests for Generic OAuth config option mapping."""
+
+    BASE_CONFIG = {
+        "web-port": 8080,
+        "log-level": "info",
+        "initial-admin-username": "admin",
+        "enable-metrics": False,
+        "external-url": "http://test:8080",
+        "vault-url": "",
+        "encryption-key": "",
+        "ldap-display-name": "",
+        "ldap-host": "",
+        "ldap-bind-dn": "",
+        "ldap-bind-pw": "",
+        "ldap-user-search-base-dn": "",
+        "ldap-user-search-username": "",
+        "ldap-user-search-id-attr": "",
+        "ldap-user-search-email-attr": "",
+        "ldap-user-search-name-attr": "",
+        "ldap-user-search-filter": "",
+        "ldap-group-search-base-dn": "",
+        "ldap-group-search-name-attr": "",
+        "ldap-group-search-user-attr": "",
+        "ldap-group-search-group-attr": "",
+        "ldap-group-search-filter": "",
+        "main-team-ldap-group": "",
+        "default-build-logs-to-retain": 0,
+        "default-days-to-retain-build-logs": 0,
+        "max-build-logs-to-retain": 0,
+        "max-days-to-retain-build-logs": 0,
+        "gc-failed-grace-period": "",
+        "extra-local-users": "",
+        "main-team-local-user": "",
+        "oauth-display-name": "",
+        "oauth-client-id": "",
+        "oauth-client-secret": "",
+        "oauth-auth-url": "",
+        "oauth-token-url": "",
+        "oauth-userinfo-url": "",
+        "oauth-scope": "",
+        "oauth-groups-key": "",
+        "oauth-user-id-key": "",
+        "oauth-user-name-key": "",
+        "oauth-ca-cert": "",
+        "oauth-skip-ssl-validation": False,
+        "main-team-oauth-user": "",
+        "main-team-oauth-group": "",
+    }
+
+    def _make_web_helper(self, overrides=None):
+        from concourse_web import ConcourseWebHelper
+
+        config = {**self.BASE_CONFIG, **(overrides or {})}
+        charm = MagicMock()
+        charm.model.config = config
+        charm.model.get_binding.side_effect = Exception("no binding")
+        return ConcourseWebHelper(charm)
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_generic_oauth_env_mapping(self, mock_chmod, mock_run, tmp_path):
+        """Generic OAuth charm config writes the corresponding Concourse env vars."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper(
+            {
+                "oauth-display-name": "Launchpad",
+                "oauth-client-id": "concourse",
+                "oauth-client-secret": "secret",
+                "oauth-auth-url": "https://lp.example.test/oauth/authorize",
+                "oauth-token-url": "https://lp.example.test/oauth/token",
+                "oauth-userinfo-url": "https://lp.example.test/oauth/userinfo",
+                "oauth-scope": "openid profile email",
+                "oauth-groups-key": "groups",
+                "oauth-user-id-key": "sub",
+                "oauth-user-name-key": "username",
+                "oauth-ca-cert": "/etc/ssl/certs/lp-ca.pem",
+                "oauth-skip-ssl-validation": True,
+                "main-team-oauth-user": "alice,bob",
+                "main-team-oauth-group": "ci-admins",
+            }
+        )
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_OAUTH_DISPLAY_NAME"] == "Launchpad"
+        assert result["CONCOURSE_OAUTH_CLIENT_ID"] == "concourse"
+        assert result["CONCOURSE_OAUTH_CLIENT_SECRET"] == "secret"
+        assert result["CONCOURSE_OAUTH_AUTH_URL"] == "https://lp.example.test/oauth/authorize"
+        assert result["CONCOURSE_OAUTH_TOKEN_URL"] == "https://lp.example.test/oauth/token"
+        assert result["CONCOURSE_OAUTH_USERINFO_URL"] == "https://lp.example.test/oauth/userinfo"
+        assert result["CONCOURSE_OAUTH_SCOPE"] == "openid profile email"
+        assert result["CONCOURSE_OAUTH_GROUPS_KEY"] == "groups"
+        assert result["CONCOURSE_OAUTH_USER_ID_KEY"] == "sub"
+        assert result["CONCOURSE_OAUTH_USER_NAME_KEY"] == "username"
+        assert result["CONCOURSE_OAUTH_CA_CERT"] == "/etc/ssl/certs/lp-ca.pem"
+        assert result["CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"] == "true"
+        assert result["CONCOURSE_MAIN_TEAM_OAUTH_USER"] == "alice,bob"
+        assert result["CONCOURSE_MAIN_TEAM_OAUTH_GROUP"] == "ci-admins"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_unset_generic_oauth_options_are_not_written(self, mock_chmod, mock_run, tmp_path):
+        """Empty Generic OAuth options do not enable the provider accidentally."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper()
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert "CONCOURSE_OAUTH_CLIENT_ID" not in result
+        assert "CONCOURSE_OAUTH_AUTH_URL" not in result
+        assert "CONCOURSE_MAIN_TEAM_OAUTH_USER" not in result
+        assert "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION" not in result
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cleared_generic_oauth_options_remove_stale_env(self, mock_chmod, mock_run, tmp_path):
+        """Clearing OAuth Juju config removes stale charm-managed env vars."""
+        config_file = tmp_path / "config.env"
+        config_file.write_text(
+            "CONCOURSE_MAIN_TEAM_OAUTH_USER=alice\n"
+            "CONCOURSE_MAIN_TEAM_OAUTH_GROUP=ci-admins\n"
+            "CONCOURSE_OAUTH_CLIENT_ID=old-client\n"
+            "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION=true\n"
+            "OPERATOR_KEY=keep-me\n"
+        )
+        helper = self._make_web_helper()
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert "CONCOURSE_MAIN_TEAM_OAUTH_USER" not in result
+        assert "CONCOURSE_MAIN_TEAM_OAUTH_GROUP" not in result
+        assert "CONCOURSE_OAUTH_CLIENT_ID" not in result
+        assert "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION" not in result
+        assert result["OPERATOR_KEY"] == "keep-me"

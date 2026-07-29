@@ -184,10 +184,44 @@ juju relate web:tsa worker:flight
 | `enable-metrics` | bool | `true` | Enable Prometheus metrics on port 9391 |
 | `external-url` | string | (auto) | External URL for webhooks and OAuth |
 | `initial-admin-username` | string | `admin` | Initial admin username |
+| `oauth-display-name` | string | `""` | Generic OAuth provider display name |
+| `oauth-client-id` | string | `""` | Generic OAuth client ID |
+| `oauth-client-secret` | string | `""` | Generic OAuth client secret |
+| `oauth-auth-url` | string | `""` | Generic OAuth authorization URL |
+| `oauth-token-url` | string | `""` | Generic OAuth token URL |
+| `oauth-userinfo-url` | string | `""` | Generic OAuth userinfo URL |
+| `oauth-scope` | string | `""` | Additional Generic OAuth scopes |
+| `oauth-groups-key` | string | `""` | Claim/key containing OAuth group names |
+| `oauth-user-id-key` | string | `""` | Claim/key used as the OAuth user ID |
+| `oauth-user-name-key` | string | `""` | Claim/key used as the OAuth username |
+| `oauth-ca-cert` | string | `""` | CA certificate path for the OAuth provider |
+| `oauth-skip-ssl-validation` | bool | `false` | Skip OAuth provider TLS verification |
+| `main-team-oauth-user` | string | `""` | Comma-separated Generic OAuth users authorized for the main team |
+| `main-team-oauth-group` | string | `""` | Comma-separated Generic OAuth groups authorized for the main team |
 | `container-placement-strategy` | string | `volume-locality` | Container placement: volume-locality, random, etc. |
 | `max-concurrent-downloads` | int | `10` | Max concurrent resource downloads |
 | `containerd-dns-proxy-enable` | bool | `false` | Enable containerd DNS proxy |
 | `containerd-dns-server` | string | `1.1.1.1,8.8.8.8` | DNS servers for containerd containers |
+
+### Generic OAuth Authentication
+
+The charm can configure Concourse's Generic OAuth provider. This is useful for an OAuth2-compatible proxy such as `lp-api-proxy` that exposes Launchpad login through OAuth-style endpoints.
+
+```bash
+juju config web \
+  oauth-display-name=Launchpad \
+  oauth-client-id=concourse \
+  oauth-client-secret='replace-with-client-secret' \
+  oauth-auth-url='https://lp-api-proxy.example.com/oauth/authorize' \
+  oauth-token-url='https://lp-api-proxy.example.com/oauth/token' \
+  oauth-userinfo-url='https://lp-api-proxy.example.com/oauth/userinfo' \
+  oauth-user-id-key=username \
+  oauth-user-name-key=name \
+  oauth-groups-key=groups \
+  main-team-oauth-user=launchpad-username
+```
+
+These options map directly to Concourse environment variables such as `CONCOURSE_OAUTH_CLIENT_ID`, `CONCOURSE_OAUTH_AUTH_URL`, and `CONCOURSE_MAIN_TEAM_OAUTH_USER`. Clearing a charm-managed OAuth option also removes the corresponding environment variable from `config.env`, preventing stale OAuth users or groups from remaining authorized after `juju config option=""`.
 
 ### Changing Configuration
 

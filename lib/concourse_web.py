@@ -293,6 +293,32 @@ WantedBy=multi-user.target
             if value:
                 config[env_key] = value
 
+        # Generic OAuth / OAuth2 configuration
+        oauth_config_map = {
+            "oauth-display-name": "CONCOURSE_OAUTH_DISPLAY_NAME",
+            "oauth-client-id": "CONCOURSE_OAUTH_CLIENT_ID",
+            "oauth-client-secret": "CONCOURSE_OAUTH_CLIENT_SECRET",
+            "oauth-auth-url": "CONCOURSE_OAUTH_AUTH_URL",
+            "oauth-token-url": "CONCOURSE_OAUTH_TOKEN_URL",
+            "oauth-userinfo-url": "CONCOURSE_OAUTH_USERINFO_URL",
+            "oauth-scope": "CONCOURSE_OAUTH_SCOPE",
+            "oauth-groups-key": "CONCOURSE_OAUTH_GROUPS_KEY",
+            "oauth-user-id-key": "CONCOURSE_OAUTH_USER_ID_KEY",
+            "oauth-user-name-key": "CONCOURSE_OAUTH_USER_NAME_KEY",
+            "oauth-ca-cert": "CONCOURSE_OAUTH_CA_CERT",
+            "main-team-oauth-user": "CONCOURSE_MAIN_TEAM_OAUTH_USER",
+            "main-team-oauth-group": "CONCOURSE_MAIN_TEAM_OAUTH_GROUP",
+        }
+        oauth_managed_env_keys = set(oauth_config_map.values()) | {
+            "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"
+        }
+        for charm_key, env_key in oauth_config_map.items():
+            value = self.config.get(charm_key)
+            if value:
+                config[env_key] = value
+        if self.config.get("oauth-skip-ssl-validation", False):
+            config["CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"] = "true"
+
         # Build log retention
         retention_config_map = {
             "default-build-logs-to-retain": "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN",
@@ -331,8 +357,10 @@ WantedBy=multi-user.target
             config["no_proxy"] = no_proxy
             logger.info(f"Setting no_proxy={no_proxy}")
 
-        # Write config file
-        self._write_config(config)
+        # Write config file. Remove OAuth env vars that this charm manages
+        # when their Juju config is cleared; otherwise stale values can keep
+        # authorizing users/groups after clearing a Juju config option.
+        self._write_config(config, managed_keys=oauth_managed_env_keys)
         logger.info("Web server configuration updated")
 
     @staticmethod
@@ -348,14 +376,19 @@ WantedBy=multi-user.target
                     config[key] = value
         return config
 
-    def _write_config(self, config: dict):
+    def _write_config(self, config: dict, managed_keys: set[str] | None = None):
         """Merge charm-managed config with existing file, preserving operator-added keys.
 
-        Reads the current config.env, updates only the keys provided by the charm,
-        and writes the result back sorted alphabetically.
+        Reads the current config.env, updates keys provided by the charm,
+        optionally removes stale charm-managed keys that are absent from the
+        new config, and writes the result back sorted alphabetically.
         """
         try:
             existing = self._read_config(CONCOURSE_CONFIG_FILE)
+            if managed_keys:
+                for key in managed_keys:
+                    if key not in config:
+                        existing.pop(key, None)
             existing.update(config)
             config_lines = [f"{k}={v}" for k, v in sorted(existing.items())]
             Path(CONCOURSE_CONFIG_FILE).write_text("\n".join(config_lines) + "\n")
