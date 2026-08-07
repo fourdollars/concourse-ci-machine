@@ -1,0 +1,43 @@
+name: Release charm
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Charmhub revision to release (integer)
+        required: true
+        type: number
+      channel:
+        description: Charmhub channel to release to
+        required: true
+        type: choice
+        options:
+          - edge
+          - beta
+          - candidate
+          - stable
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release revision to channel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate revision
+        run: |
+          case "${{ inputs.revision }}" in
+            ''|*[!0-9]*)
+              echo "revision must be an integer"
+              exit 1
+              ;;
+          esac
+
+      - name: Install Charmcraft
+        run: sudo snap install charmcraft --classic
+
+      - name: Release charm revision
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMHUB_TOKEN }}
+        run: charmcraft release concourse-ci-machine --revision "${{ inputs.revision }}" --channel "${{ inputs.channel }}"
