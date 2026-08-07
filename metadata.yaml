@@ -2,7 +2,7 @@ name: concourse-ci-machine
 display-name: Concourse CI Machine
 summary: Machine charm for Concourse CI - modern continuous integration and delivery system
 description: |
-  **Work in Progress** - A Juju machine charm for deploying Concourse CI, a modern, 
+  A Juju machine charm for deploying Concourse CI, a modern, 
   scalable continuous integration and delivery system. Supports flexible deployment 
   patterns including single-unit all-in-one, multi-unit with automatic role assignment, 
   and dedicated web/worker configurations.

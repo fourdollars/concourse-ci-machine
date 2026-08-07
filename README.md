@@ -1,5 +1,3 @@
-**Work in progress**
-
 # Concourse CI Machine Charm
 
 [![GitHub](https://img.shields.io/badge/GitHub-fourdollars/concourse--ci--machine-blue.svg)](https://github.com/fourdollars/concourse-ci-machine)
