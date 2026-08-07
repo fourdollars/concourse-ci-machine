@@ -265,7 +265,7 @@
         <h2>Enable NVIDIA GPU</h2>
 
         <pre><code class="language-bash"># Deploy with CUDA enabled
-juju deploy concourse-ci-machine --channel edge worker \
+juju deploy concourse-ci-machine worker \
   --config mode=worker \
   --config compute-runtime=cuda
 
@@ -286,7 +286,7 @@ lxc exec juju-abc123-0 -- nvidia-smi</code></pre>
         <h2>Enable AMD GPU (ROCm)</h2>
 
         <pre><code class="language-bash"># Deploy with ROCm enabled
-juju deploy concourse-ci-machine --channel edge worker \
+juju deploy concourse-ci-machine worker \
   --config mode=worker \
   --config compute-runtime=rocm
 

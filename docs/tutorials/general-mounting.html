@@ -409,12 +409,12 @@
         <div class="step-box">
             <p><span class="step-number">1</span> <strong>Deploy a Concourse CI worker</strong></p>
             <pre><code class="language-bash"># Deploy web + worker
-juju deploy concourse-ci-machine --channel edge web --config mode=web
-juju deploy concourse-ci-machine --channel edge worker --config mode=worker
+juju deploy concourse-ci-machine web --config mode=web
+juju deploy concourse-ci-machine worker --config mode=worker
 juju integrate web:tsa worker:flight
 
 # Or use auto mode (simpler)
-juju deploy concourse-ci-machine --channel edge concourse --config mode=auto -n 2</code></pre>
+juju deploy concourse-ci-machine concourse --config mode=auto -n 2</code></pre>
         </div>
 
         <div class="step-box">

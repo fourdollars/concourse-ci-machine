@@ -546,14 +546,14 @@
 
         <h3>Basic Web Server</h3>
         <pre><code class="language-bash"># Deploy web server on custom port
-juju deploy concourse-ci-machine web --channel edge \
+juju deploy concourse-ci-machine web \
   --config mode=web \
   --config web-port=8080 \
   --config external-url=https://ci.example.com</code></pre>
 
         <h3>GPU Worker with NVIDIA CUDA</h3>
         <pre><code class="language-bash"># Deploy worker with NVIDIA GPU support
-juju deploy concourse-ci-machine gpu-worker --channel edge \
+juju deploy concourse-ci-machine gpu-worker \
   --config mode=worker \
   --config compute-runtime=cuda \
   --config gpu-device-ids=all \
@@ -561,14 +561,14 @@ juju deploy concourse-ci-machine gpu-worker --channel edge \
 
         <h3>AMD ROCm Worker</h3>
         <pre><code class="language-bash"># Deploy worker with AMD ROCm GPU support
-juju deploy concourse-ci-machine rocm-worker --channel edge \
+juju deploy concourse-ci-machine rocm-worker \
   --config mode=worker \
   --config compute-runtime=rocm \
   --config tag="rocm,amd-gpu"</code></pre>
 
         <h3>High-Performance Worker</h3>
         <pre><code class="language-bash"># Deploy worker with increased parallelism
-juju deploy concourse-ci-machine worker --channel edge \
+juju deploy concourse-ci-machine worker \
   --config mode=worker \
   --config worker-procs=4 \
   --config max-concurrent-downloads=20 \

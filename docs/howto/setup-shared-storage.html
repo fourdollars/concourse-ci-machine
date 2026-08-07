@@ -269,11 +269,11 @@
         <h2>Deploy with Shared Storage Config</h2>
 
         <pre><code class="language-bash"># Deploy web and workers with shared-storage=lxc
-juju deploy concourse-ci-machine --channel edge web \
+juju deploy concourse-ci-machine web \
   --config mode=web \
   --config shared-storage=lxc
 
-juju deploy concourse-ci-machine --channel edge worker \
+juju deploy concourse-ci-machine worker \
   --config mode=worker \
   --config shared-storage=lxc \
   -n 2</code></pre>

@@ -442,7 +442,7 @@
 
     <div class="container">
         <section class="hero" id="home">
-            <h2>Deploy Concourse CI with Confidence <span class="status-badge status-wip">Work in Progress</span></h2>
+            <h2>Deploy Concourse CI with Confidence</h2>
             <p>
                 The Concourse CI Machine Charm provides a production-ready deployment solution for Concourse CI using Juju. 
                 With flexible deployment modes, automated key management, GPU support for ML/AI workloads, and comprehensive monitoring, 
@@ -556,7 +556,7 @@ juju bootstrap localhost test-controller
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI (3 units: 1 web + 2 workers)
-juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto --channel edge
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 
 # Integrate with database
 juju integrate concourse-ci:postgresql postgresql:database

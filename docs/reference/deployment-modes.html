@@ -353,7 +353,7 @@
             </div>
 
             <p><strong>Example Deployment:</strong></p>
-            <pre><code class="language-bash">juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+            <pre><code class="language-bash">juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 juju integrate concourse-ci:postgresql postgresql:database</code></pre>
 
             <p><strong>Result:</strong></p>
@@ -396,8 +396,8 @@ juju integrate concourse-ci:postgresql postgresql:database</code></pre>
             </ul>
 
             <p><strong>Example Deployment:</strong></p>
-            <pre><code class="language-bash">juju deploy concourse-ci-machine web --channel edge --config mode=web
-juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+            <pre><code class="language-bash">juju deploy concourse-ci-machine web --config mode=web
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 juju integrate web:postgresql postgresql:database
 juju integrate web:tsa worker:flight</code></pre>
 
@@ -444,7 +444,7 @@ juju integrate web:tsa worker:flight</code></pre>
             </ul>
 
             <p><strong>Example Deployment:</strong></p>
-            <pre><code class="language-bash">juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+            <pre><code class="language-bash">juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 juju integrate worker:flight web:tsa</code></pre>
 
             <div class="warning">
@@ -452,7 +452,7 @@ juju integrate worker:flight web:tsa</code></pre>
             </div>
 
             <p><strong>GPU Worker Example:</strong></p>
-            <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker --channel edge \
+            <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker \
   --config mode=worker \
   --config compute-runtime=cuda \
   --config tag="cuda,gpu"</code></pre>
@@ -524,7 +524,7 @@ juju integrate worker:flight web:tsa</code></pre>
 
         <h3>auto Mode Scaling</h3>
         <pre><code class="language-bash"># Start with 3 units (1 web + 2 workers)
-juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 
 # Add 2 more workers (total: 1 web + 4 workers)
 juju add-unit concourse-ci -n 2</code></pre>

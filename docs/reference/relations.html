@@ -414,7 +414,7 @@
 juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 
 # Deploy Concourse CI
-juju deploy concourse-ci-machine concourse-ci --channel edge --config mode=auto
+juju deploy concourse-ci-machine concourse-ci --config mode=auto
 
 # Integrate
 juju integrate concourse-ci:postgresql postgresql:database</code></pre>
@@ -474,7 +474,7 @@ juju integrate concourse-ci:postgresql postgresql:database</code></pre>
 juju config concourse-ci enable-metrics=true
 
 # Deploy Prometheus
-juju deploy prometheus-machine prometheus --channel edge
+juju deploy prometheus-machine prometheus
 
 # Integrate monitoring relation
 juju integrate concourse-ci:monitoring prometheus:target
@@ -534,10 +534,10 @@ juju integrate concourse-ci:monitoring prometheus:target
 
             <p><strong>Usage Example:</strong></p>
             <pre><code class="language-bash"># Deploy web server
-juju deploy concourse-ci-machine web --channel edge --config mode=web
+juju deploy concourse-ci-machine web --config mode=web
 
 # Deploy workers
-juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 
 # Integrate web TSA endpoint with workers
 juju integrate web:tsa worker:flight</code></pre>
@@ -686,7 +686,7 @@ juju integrate worker:flight web:tsa</code></pre>
 
         <h3>auto Mode (Fully Automated)</h3>
         <pre><code class="language-bash"># Deploy with auto mode (peer relation handles key distribution)
-juju deploy concourse-ci-machine concourse-ci -n 3 --channel edge --config mode=auto
+juju deploy concourse-ci-machine concourse-ci -n 3 --config mode=auto
 juju integrate concourse-ci:postgresql postgresql:database
 juju integrate concourse-ci:monitoring prometheus:target
 
@@ -694,8 +694,8 @@ juju integrate concourse-ci:monitoring prometheus:target
 
         <h3>web + worker Mode (Separate Applications)</h3>
         <pre><code class="language-bash"># Deploy web and workers as separate apps
-juju deploy concourse-ci-machine web --channel edge --config mode=web
-juju deploy concourse-ci-machine worker -n 2 --channel edge --config mode=worker
+juju deploy concourse-ci-machine web --config mode=web
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
 
 # Required relations
 juju integrate web:postgresql postgresql:database
@@ -707,16 +707,16 @@ juju integrate worker:monitoring prometheus:target</code></pre>
 
         <h3>GPU Workers with Monitoring</h3>
         <pre><code class="language-bash"># Deploy web server
-juju deploy concourse-ci-machine web --channel edge --config mode=web
+juju deploy concourse-ci-machine web --config mode=web
 
 # Deploy GPU workers
-juju deploy concourse-ci-machine gpu-worker --channel edge \
+juju deploy concourse-ci-machine gpu-worker \
   --config mode=worker \
   --config compute-runtime=cuda \
   --config tag="cuda,gpu"
 
 # Deploy CPU workers
-juju deploy concourse-ci-machine cpu-worker -n 2 --channel edge \
+juju deploy concourse-ci-machine cpu-worker -n 2 \
   --config mode=worker \
   --config tag="cpu,high-mem"
 

@@ -277,7 +277,7 @@
         </ul>
 
         <div class="warning">
-            <strong>⚠️ Important:</strong> This charm is currently in active development. Always use <code>--channel edge</code> when deploying to get the latest version.
+            <strong>💡 Tip:</strong> Use <code>--channel edge</code> to get the latest cutting-edge version, or <code>--channel stable</code> for production-ready stable releases.
         </div>
 
         <h2>Step 1: Bootstrap Your Juju Controller</h2>
@@ -333,7 +333,7 @@
             <p><span class="step-number">4</span> <strong>Deploy Concourse CI with 3 units</strong></p>
             <pre><code class="language-bash">juju deploy concourse-ci-machine concourse-ci -n 3 \
   --config mode=auto \
-  --channel edge \
+  \
   --base ubuntu@24.04</code></pre>
         </div>
 
@@ -341,7 +341,6 @@
         <ul>
             <li><code>-n 3</code>: Creates 3 units (1 web server + 2 workers)</li>
             <li><code>--config mode=auto</code>: Automatically assigns roles (leader = web, others = workers)</li>
-            <li><code>--channel edge</code>: Uses the latest development version</li>
         </ul>
 
         <h2>Step 5: Connect Database and Concourse CI</h2>

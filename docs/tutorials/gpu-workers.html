@@ -263,7 +263,7 @@ juju deploy postgresql --channel 16/stable --base ubuntu@24.04
 # Deploy web server
 juju deploy concourse-ci-machine web \
   --config mode=web \
-  --channel edge \
+  \
   --base ubuntu@24.04
 
 # Connect them
@@ -279,7 +279,7 @@ juju integrate web:postgresql postgresql:database</code></pre>
             <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker \
   --config mode=worker \
   --config compute-runtime=cuda \
-  --channel edge \
+  \
   --base ubuntu@24.04</code></pre>
         </div>
 
@@ -287,7 +287,7 @@ juju integrate web:postgresql postgresql:database</code></pre>
         <pre><code class="language-bash">juju deploy concourse-ci-machine gpu-worker \
   --config mode=worker \
   --config compute-runtime=rocm \
-  --channel edge \
+  \
   --base ubuntu@24.04</code></pre>
 
         <div class="step-box">
