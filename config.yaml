@@ -398,6 +398,69 @@ options:
     default: ""
     type: string
 
+  # --- Generic OIDC SSO ---
+
+  oidc-display-name:
+    description: "Display name for a Generic OIDC authentication provider. Maps to CONCOURSE_OIDC_DISPLAY_NAME."
+    default: ""
+    type: string
+
+  oidc-issuer:
+    description: "OIDC issuer URL; used for discovery of auth/token/userinfo/jwks endpoints. Maps to CONCOURSE_OIDC_ISSUER."
+    default: ""
+    type: string
+
+  oidc-client-id:
+    description: "OIDC client ID. Maps to CONCOURSE_OIDC_CLIENT_ID."
+    default: ""
+    type: string
+
+  oidc-client-secret:
+    description: "OIDC client secret. Maps to CONCOURSE_OIDC_CLIENT_SECRET."
+    default: ""
+    type: string
+
+  oidc-scope:
+    description: "Additional OIDC scopes. Maps to CONCOURSE_OIDC_SCOPE."
+    default: ""
+    type: string
+
+  oidc-groups-key:
+    description: "OIDC claim/key containing group names. Maps to CONCOURSE_OIDC_GROUPS_KEY."
+    default: ""
+    type: string
+
+  oidc-user-name-key:
+    description: "OIDC claim/key used as the username. Maps to CONCOURSE_OIDC_USER_NAME_KEY."
+    default: ""
+    type: string
+
+  oidc-ca-cert:
+    description: "Path to a CA certificate for the OIDC provider. Maps to CONCOURSE_OIDC_CA_CERT."
+    default: ""
+    type: string
+
+  oidc-skip-ssl-validation:
+    description: "Skip TLS certificate validation for the OIDC provider. Maps to CONCOURSE_OIDC_SKIP_SSL_VALIDATION."
+    default: false
+    type: boolean
+
+  main-team-oidc-user:
+    description: |
+      Comma-separated list of OIDC users for the main team.
+      Example: "alice,bob"
+      Maps to CONCOURSE_MAIN_TEAM_OIDC_USER.
+    default: ""
+    type: string
+
+  main-team-oidc-group:
+    description: |
+      Comma-separated list of OIDC groups for the main team.
+      Example: "ci-admins,developers"
+      Maps to CONCOURSE_MAIN_TEAM_OIDC_GROUP.
+    default: ""
+    type: string
+
   # --- Extra CLI flags ---
 
   extra-web-flags:

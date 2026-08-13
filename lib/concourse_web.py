@@ -319,6 +319,29 @@ WantedBy=multi-user.target
         if self.config.get("oauth-skip-ssl-validation", False):
             config["CONCOURSE_OAUTH_SKIP_SSL_VALIDATION"] = "true"
 
+        # Generic OIDC configuration
+        oidc_config_map = {
+            "oidc-display-name": "CONCOURSE_OIDC_DISPLAY_NAME",
+            "oidc-issuer": "CONCOURSE_OIDC_ISSUER",
+            "oidc-client-id": "CONCOURSE_OIDC_CLIENT_ID",
+            "oidc-client-secret": "CONCOURSE_OIDC_CLIENT_SECRET",
+            "oidc-scope": "CONCOURSE_OIDC_SCOPE",
+            "oidc-groups-key": "CONCOURSE_OIDC_GROUPS_KEY",
+            "oidc-user-name-key": "CONCOURSE_OIDC_USER_NAME_KEY",
+            "oidc-ca-cert": "CONCOURSE_OIDC_CA_CERT",
+            "main-team-oidc-user": "CONCOURSE_MAIN_TEAM_OIDC_USER",
+            "main-team-oidc-group": "CONCOURSE_MAIN_TEAM_OIDC_GROUP",
+        }
+        oidc_managed_env_keys = set(oidc_config_map.values()) | {
+            "CONCOURSE_OIDC_SKIP_SSL_VALIDATION"
+        }
+        for charm_key, env_key in oidc_config_map.items():
+            value = self.config.get(charm_key)
+            if value:
+                config[env_key] = value
+        if self.config.get("oidc-skip-ssl-validation", False):
+            config["CONCOURSE_OIDC_SKIP_SSL_VALIDATION"] = "true"
+
         # Build log retention
         retention_config_map = {
             "default-build-logs-to-retain": "CONCOURSE_DEFAULT_BUILD_LOGS_TO_RETAIN",
@@ -360,7 +383,7 @@ WantedBy=multi-user.target
         # Write config file. Remove OAuth env vars that this charm manages
         # when their Juju config is cleared; otherwise stale values can keep
         # authorizing users/groups after clearing a Juju config option.
-        self._write_config(config, managed_keys=oauth_managed_env_keys)
+        self._write_config(config, managed_keys=oauth_managed_env_keys | oidc_managed_env_keys)
         logger.info("Web server configuration updated")
 
     @staticmethod

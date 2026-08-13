@@ -1043,3 +1043,132 @@ class TestGenericOAuthConfig:
         assert "CONCOURSE_OAUTH_CLIENT_ID" not in result
         assert "CONCOURSE_OAUTH_SKIP_SSL_VALIDATION" not in result
         assert result["OPERATOR_KEY"] == "keep-me"
+
+
+# ---------------------------------------------------------------------------
+# Generic OIDC config options
+# ---------------------------------------------------------------------------
+
+
+class TestGenericOIDCConfig:
+    """Tests for Generic OIDC config option mapping."""
+
+    BASE_CONFIG = {
+        **TestGenericOAuthConfig.BASE_CONFIG,
+        "oidc-display-name": "",
+        "oidc-issuer": "",
+        "oidc-client-id": "",
+        "oidc-client-secret": "",
+        "oidc-scope": "",
+        "oidc-groups-key": "",
+        "oidc-user-name-key": "",
+        "oidc-ca-cert": "",
+        "oidc-skip-ssl-validation": False,
+        "main-team-oidc-user": "",
+        "main-team-oidc-group": "",
+    }
+
+    def _make_web_helper(self, overrides=None):
+        from concourse_web import ConcourseWebHelper
+
+        config = {**self.BASE_CONFIG, **(overrides or {})}
+        charm = MagicMock()
+        charm.model.config = config
+        charm.model.get_binding.side_effect = Exception("no binding")
+        return ConcourseWebHelper(charm)
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_generic_oidc_env_mapping(self, mock_chmod, mock_run, tmp_path):
+        """Generic OIDC charm config writes the corresponding Concourse env vars."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper(
+            {
+                "oidc-display-name": "Launchpad API",
+                "oidc-issuer": "https://oidc.example.test",
+                "oidc-client-id": "Concourse CI",
+                "oidc-client-secret": "secret",
+                "oidc-scope": "openid profile",
+                "oidc-groups-key": "groups",
+                "oidc-user-name-key": "username",
+                "oidc-ca-cert": "/etc/ssl/certs/lp-ca.pem",
+                "oidc-skip-ssl-validation": True,
+                "main-team-oidc-user": "alice,bob",
+                "main-team-oidc-group": "ci-admins",
+            }
+        )
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_OIDC_DISPLAY_NAME"] == "Launchpad API"
+        assert result["CONCOURSE_OIDC_ISSUER"] == "https://oidc.example.test"
+        assert result["CONCOURSE_OIDC_CLIENT_ID"] == "Concourse CI"
+        assert result["CONCOURSE_OIDC_CLIENT_SECRET"] == "secret"
+        assert result["CONCOURSE_OIDC_SCOPE"] == "openid profile"
+        assert result["CONCOURSE_OIDC_GROUPS_KEY"] == "groups"
+        assert result["CONCOURSE_OIDC_USER_NAME_KEY"] == "username"
+        assert result["CONCOURSE_OIDC_CA_CERT"] == "/etc/ssl/certs/lp-ca.pem"
+        assert result["CONCOURSE_OIDC_SKIP_SSL_VALIDATION"] == "true"
+        assert result["CONCOURSE_MAIN_TEAM_OIDC_USER"] == "alice,bob"
+        assert result["CONCOURSE_MAIN_TEAM_OIDC_GROUP"] == "ci-admins"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_unset_generic_oidc_options_are_not_written(self, mock_chmod, mock_run, tmp_path):
+        """Empty Generic OIDC options do not enable the provider accidentally."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper()
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert "CONCOURSE_OIDC_ISSUER" not in result
+        assert "CONCOURSE_OIDC_CLIENT_ID" not in result
+        assert "CONCOURSE_MAIN_TEAM_OIDC_USER" not in result
+        assert "CONCOURSE_OIDC_SKIP_SSL_VALIDATION" not in result
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cleared_generic_oidc_options_remove_stale_env(self, mock_chmod, mock_run, tmp_path):
+        """Clearing OIDC Juju config removes stale charm-managed env vars."""
+        config_file = tmp_path / "config.env"
+        config_file.write_text(
+            "CONCOURSE_MAIN_TEAM_OIDC_USER=alice\n"
+            "CONCOURSE_MAIN_TEAM_OIDC_GROUP=ci-admins\n"
+            "CONCOURSE_OIDC_ISSUER=http://old-issuer.example.test\n"
+            "CONCOURSE_OIDC_SKIP_SSL_VALIDATION=true\n"
+            "OPERATOR_KEY=keep-me\n"
+        )
+        helper = self._make_web_helper()
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert "CONCOURSE_MAIN_TEAM_OIDC_USER" not in result
+        assert "CONCOURSE_MAIN_TEAM_OIDC_GROUP" not in result
+        assert "CONCOURSE_OIDC_ISSUER" not in result
+        assert "CONCOURSE_OIDC_SKIP_SSL_VALIDATION" not in result
+        assert result["OPERATOR_KEY"] == "keep-me"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_oauth_and_oidc_can_coexist_in_config_file(self, mock_chmod, mock_run, tmp_path):
+        """OAuth and OIDC env vars can both be written when both are configured
+        (e.g. during a migration window), without clobbering each other."""
+        config_file = tmp_path / "config.env"
+        helper = self._make_web_helper(
+            {
+                "oauth-client-id": "old-oauth-client",
+                "oauth-auth-url": "https://lp.example.test/oauth/authorize",
+                "oidc-issuer": "https://oidc.example.test",
+                "oidc-client-id": "Concourse CI",
+            }
+        )
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_OAUTH_CLIENT_ID"] == "old-oauth-client"
+        assert result["CONCOURSE_OIDC_ISSUER"] == "https://oidc.example.test"
+        assert result["CONCOURSE_OIDC_CLIENT_ID"] == "Concourse CI"
