@@ -2452,6 +2452,20 @@ class ConcourseCharm(CharmBase):
             upgrade_coordinator.complete_upgrade()
             self.unit.status = MaintenanceStatus("Upgrade complete")  # T053
 
+            # Coordinated upgrades only publish upgrade-state to THIS app's
+            # own `peers` relation. In web+worker mode (web and worker are
+            # separate Juju apps, e.g. `concourse-web` / `concourse-worker`),
+            # that peer relation is not shared across apps, so worker units
+            # never observe the "complete" signal and never restart their
+            # service -- leaving them stuck advertising a stale TSA
+            # registration/resource-type version even though their binary
+            # was already upgraded via shared storage. The `tsa`/`flight`
+            # relation IS shared across apps, and _on_tsa_relation_changed
+            # already contains the correct "version differs -> restart
+            # worker" logic -- it just needs the new version published here
+            # so relation-changed fires with the up to date value.
+            self._publish_version_to_tsa_relations()
+
             # Step 6: Reset state after a delay to ensure all workers have seen it
             import time
 
