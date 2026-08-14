@@ -24,7 +24,8 @@ help() {
     echo "  --steps=[step1,step2,...]     Specify exact steps to run in order (comma-separated)"
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
     echo "                                Available steps: deploy, verify, verify-marker, mounts, tagged,"
-    echo "                                                cuda, rocm, pytorch, upgrade, scale-out, config, destroy"
+    echo "                                                cuda, rocm, pytorch, upgrade, worker-version-upgrade,"
+    echo "                                                scale-out, config, destroy"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, cuda, rocm, pytorch, upgrade"
@@ -82,7 +83,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "scale-out" "config" "destroy")
+ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "worker-version-upgrade" "scale-out" "config" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -1303,6 +1304,156 @@ step_upgrade() {
     ./fly -t test sync
 }
 
+step_worker_version_upgrade() {
+    echo "=== Verifying worker/TSA registration version auto-upgrade (v8.2.5 -> v8.3.0) ==="
+    ensure_cli
+
+    BASELINE_VERSION="8.2.5"
+    TARGET_VERSION="8.3.0"
+    OLD_WORKER_VERSION="2.5"
+    NEW_WORKER_VERSION="3.0"
+
+    echo "Deploying/rolling back to baseline Concourse version $BASELINE_VERSION..."
+    if [[ "$MODE" == "auto" ]]; then
+        juju config "$APP_NAME" version="$BASELINE_VERSION"
+    else
+        juju config "$WEB_APP" version="$BASELINE_VERSION"
+        juju config "$WORKER_APP" version="$BASELINE_VERSION"
+    fi
+
+    echo "Waiting for baseline version to settle..."
+    sleep 15
+    _juju_wait_with_retry 900
+
+    if [[ "$MODE" == "auto" ]]; then
+        APPS=("$APP_NAME")
+    else
+        APPS=("$WEB_APP" "$WORKER_APP")
+    fi
+
+    for APP in "${APPS[@]}"; do
+        echo "Checking app: $APP is on baseline v$BASELINE_VERSION"
+        MAX_RETRIES=60
+        for ((i=1; i<=MAX_RETRIES; i++)); do
+            UNIT_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | length")
+            VERSION_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | to_entries[].value.\"workload-status\".message" | grep -c "v$BASELINE_VERSION" || true)
+
+            echo "Attempt $i/$MAX_RETRIES: Total units: $UNIT_COUNT, Units at v$BASELINE_VERSION: $VERSION_COUNT"
+
+            if [[ "$VERSION_COUNT" -eq "$UNIT_COUNT" ]]; then
+                echo "✓ All units for $APP on baseline v$BASELINE_VERSION"
+                break
+            fi
+
+            if [[ $i -eq $MAX_RETRIES ]]; then
+                echo "❌ Baseline deploy verification failed for $APP: not all units on v$BASELINE_VERSION after $((MAX_RETRIES * 5))s"
+                juju status -m "$MODEL_NAME" "$APP"
+                exit 1
+            fi
+            sleep 5
+        done
+    done
+
+    ensure_cli
+    echo "Syncing fly CLI with baseline version..."
+    ./fly -t test sync
+
+    echo ""
+    echo "Recording worker registration version reported to TSA before upgrade..."
+    BEFORE_JSON=$(./fly -t test workers --json)
+    echo "$BEFORE_JSON" | jq -r '.[] | "\(.name): state=\(.state) version=\(.version // "MISSING")"'
+
+    BEFORE_MISMATCH=$(echo "$BEFORE_JSON" | jq -r --arg want "$OLD_WORKER_VERSION" \
+        '[.[] | select(.state == "running") | .version // "MISSING" | select(. != $want)] | length')
+    if [[ "$BEFORE_MISMATCH" -gt 0 ]]; then
+        echo "⚠ WARNING: $BEFORE_MISMATCH worker(s) not reporting expected baseline worker version $OLD_WORKER_VERSION before upgrade."
+        echo "  Continuing — the important check is that the reported version actually changes after upgrade."
+    else
+        echo "✓ All running workers register with TSA using baseline worker version $OLD_WORKER_VERSION"
+    fi
+
+    echo ""
+    echo "Upgrading Concourse from v$BASELINE_VERSION to v$TARGET_VERSION..."
+    if [[ "$MODE" == "auto" ]]; then
+        juju config "$APP_NAME" version="$TARGET_VERSION"
+    else
+        juju config "$WEB_APP" version="$TARGET_VERSION"
+        juju config "$WORKER_APP" version="$TARGET_VERSION"
+    fi
+
+    echo "Waiting for upgrade..."
+    sleep 15
+    _juju_wait_with_retry 900
+
+    for APP in "${APPS[@]}"; do
+        echo "Checking app: $APP is on v$TARGET_VERSION"
+        MAX_RETRIES=60
+        for ((i=1; i<=MAX_RETRIES; i++)); do
+            UNIT_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | length")
+            VERSION_COUNT=$(juju status -m "$MODEL_NAME" "$APP" --format=json | jq -r ".applications.\"$APP\".units | to_entries[].value.\"workload-status\".message" | grep -c "v$TARGET_VERSION" || true)
+
+            echo "Attempt $i/$MAX_RETRIES: Total units: $UNIT_COUNT, Units at v$TARGET_VERSION: $VERSION_COUNT"
+
+            if [[ "$VERSION_COUNT" -eq "$UNIT_COUNT" ]]; then
+                echo "✓ All units for $APP upgraded to v$TARGET_VERSION"
+                break
+            fi
+
+            if [[ $i -eq $MAX_RETRIES ]]; then
+                echo "❌ Upgrade verification failed for $APP: not all units upgraded after $((MAX_RETRIES * 5))s"
+                juju status -m "$MODEL_NAME" "$APP"
+                echo "--- Charm debug logs (last 100 lines) ---"
+                juju debug-log -m "$MODEL_NAME" --include "$APP" --replay --no-tail 2>/dev/null | tail -100 || true
+                exit 1
+            fi
+            sleep 5
+        done
+    done
+    echo "✅ All units upgraded to v$TARGET_VERSION"
+
+    ensure_cli
+    echo "Syncing fly CLI with new version..."
+    ./fly -t test sync
+
+    echo ""
+    echo "Verifying every worker re-registers with TSA using worker version $NEW_WORKER_VERSION..."
+    echo "(regression check: the worker service must restart on charm upgrade so"
+    echo " it re-establishes its TSA session and stops advertising a stale"
+    echo " registration version, instead of requiring an operator to manually"
+    echo " cycle the flight/tsa relation.)"
+
+    MAX_RETRIES=60
+    for ((i=1; i<=MAX_RETRIES; i++)); do
+        AFTER_JSON=$(./fly -t test workers --json)
+        STALE_COUNT=$(echo "$AFTER_JSON" | jq -r --arg want "$NEW_WORKER_VERSION" \
+            '[.[] | select(.state == "running") | .version // "MISSING" | select(. != $want)] | length')
+        RUNNING_COUNT=$(echo "$AFTER_JSON" | jq -r '[.[] | select(.state == "running")] | length')
+
+        echo "Attempt $i/$MAX_RETRIES: $RUNNING_COUNT running worker(s), $STALE_COUNT still reporting a stale version"
+
+        if [[ "$STALE_COUNT" -eq 0 && "$RUNNING_COUNT" -gt 0 ]]; then
+            echo "✓ All $RUNNING_COUNT running worker(s) re-registered with TSA as version $NEW_WORKER_VERSION"
+            break
+        fi
+
+        if [[ $i -eq $MAX_RETRIES ]]; then
+            echo "❌ Worker/TSA registration version check failed: workers did not auto-upgrade to version $NEW_WORKER_VERSION after $((MAX_RETRIES * 5))s"
+            echo "=== fly workers (verbose) ==="
+            ./fly -t test workers || true
+            echo "=== fly workers --json ==="
+            echo "$AFTER_JSON"
+            echo "--- Charm debug logs (last 200 lines) ---"
+            juju debug-log -m "$MODEL_NAME" --replay --no-tail 2>/dev/null | tail -200 || true
+            exit 1
+        fi
+        sleep 5
+    done
+
+    echo ""
+    ./fly -t test workers
+    echo "✅ Worker/TSA registration version auto-upgrade verification passed"
+}
+
 step_scale_out() {
     echo "=== Testing Scale Out ==="
     ensure_cli
@@ -2035,6 +2186,7 @@ for step in "${STEPS_TO_RUN[@]}"; do
         rocm) step_rocm ;;
         pytorch) step_pytorch ;;
         upgrade) step_upgrade ;;
+        worker-version-upgrade) step_worker_version_upgrade ;;
         scale-out) step_scale_out ;;
         config) step_config ;;
         destroy) step_destroy ;;

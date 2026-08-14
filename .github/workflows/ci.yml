@@ -121,6 +121,9 @@ jobs:
       - name: Test Upgrade
         run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=upgrade
 
+      - name: Test Worker/TSA Registration Version Upgrade (v8.2.5 -> v8.3.0)
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=worker-version-upgrade
+
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=scale-out
 
@@ -194,6 +197,9 @@ jobs:
 
       - name: Test Upgrade
         run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=upgrade
+
+      - name: Test Worker/TSA Registration Version Upgrade (v8.2.5 -> v8.3.0)
+        run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=worker-version-upgrade
 
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=web+worker --skip-cleanup --steps=scale-out
@@ -272,6 +278,9 @@ jobs:
 
       - name: Test Upgrade
         run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=upgrade
+
+      - name: Test Worker/TSA Registration Version Upgrade (v8.2.5 -> v8.3.0)
+        run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=worker-version-upgrade
 
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=auto --shared-storage=lxc --skip-cleanup --steps=scale-out
@@ -354,6 +363,9 @@ jobs:
 
       - name: Test Upgrade
         run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=upgrade
+
+      - name: Test Worker/TSA Registration Version Upgrade (v8.2.5 -> v8.3.0)
+        run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=worker-version-upgrade
 
       - name: Test Scale Out
         run: ./scripts/deploy-test.sh --mode=web+worker --shared-storage=lxc --skip-cleanup --steps=scale-out
