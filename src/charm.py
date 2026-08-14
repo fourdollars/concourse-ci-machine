@@ -505,6 +505,30 @@ class ConcourseCharm(CharmBase):
                         ] = worker_pub_key
                         logger.info("Republished worker public key to TSA relation")
 
+                # Force a worker restart on every charm upgrade so the TSA
+                # session is re-established and the worker re-registers its
+                # current bundled resource-type versions (e.g. `time`) with
+                # the web/ATC. Without this, a worker whose Concourse binary
+                # was already up to date before the charm upgrade ran would
+                # never restart here: `_on_config_changed` below only
+                # restarts/upgrades when it detects a binary version
+                # mismatch, so the running worker process (and its stale TSA
+                # connection) could linger indefinitely, leaving it stuck
+                # advertising outdated resource-type versions until someone
+                # manually cycled the flight/tsa relation.
+                if self.worker_helper.is_running():
+                    logger.info(
+                        "Restarting worker service on charm upgrade to refresh "
+                        "TSA registration and resource-type versions"
+                    )
+                    try:
+                        self.worker_helper.restart_service()
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to restart worker during charm upgrade: {e}",
+                            exc_info=True,
+                        )
+
             # Trigger config update
             self._on_config_changed(event)
 
