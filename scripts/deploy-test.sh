@@ -519,7 +519,7 @@ step_deploy() {
     # Configuration
     CHARM_FILE="./concourse-ci-machine_amd64.charm"
     POSTGRES_CHANNEL="16/stable"
-    CONCOURSE_VERSION="7.14.2"
+    CONCOURSE_VERSION="${CONCOURSE_VERSION:-7.14.2}"
     CHARM_NAME="concourse-ci-machine"
 
     if [[ -z "$CHANNEL" && ! -f "$CHARM_FILE" ]]; then
@@ -2069,10 +2069,10 @@ step_vault() {
     echo "--- Step 2: Initialise and unseal Vault ---"
 
     # Wait for Vault to be blocked on "Vault needs to be initialized"
-    echo "Waiting for Vault to reach 'blocked' + idle status (needs initialisation)..."
+    echo "Waiting for Vault to reach 'blocked' status (needs initialisation)..."
     timeout 300 bash -c "
         while ! juju status -m $MODEL_NAME --format=json 2>/dev/null \
-            | jq -e '.applications.vault.units | to_entries[] | select(.value[\"workload-status\"].current == \"blocked\" and .value[\"agent-status\"].current == \"idle\")' >/dev/null 2>&1; do
+            | jq -e '.applications.vault.units | to_entries[] | .value[\"workload-status\"].current == \"blocked\"' >/dev/null 2>&1; do
             sleep 5
         done
     "
