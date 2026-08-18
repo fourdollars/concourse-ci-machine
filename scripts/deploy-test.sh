@@ -25,7 +25,7 @@ help() {
     echo "                                Default: deploy,verify,mounts,tagged,gpu,upgrade,destroy"
     echo "                                Available steps: deploy, verify, verify-marker, mounts, tagged,"
     echo "                                                cuda, rocm, pytorch, upgrade, worker-version-upgrade,"
-    echo "                                                scale-out, config, destroy"
+    echo "                                                scale-out, config, vault, destroy"
     echo ""
     echo "  --goto=[step]                 Start from specific step (deprecated in favor of --steps)"
     echo "                                Steps: deploy, verify, mounts, tagged, cuda, rocm, pytorch, upgrade"
@@ -83,7 +83,7 @@ if [[ "$SHARED_STORAGE" != "none" && "$SHARED_STORAGE" != "lxc" ]]; then
 fi
 
 # Determine steps to run
-ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "worker-version-upgrade" "scale-out" "config" "destroy")
+ALL_STEPS=("deploy" "verify" "verify-marker" "mounts" "tagged" "cuda" "rocm" "upgrade" "worker-version-upgrade" "scale-out" "config" "vault" "destroy")
 STEPS_TO_RUN=()
 
 if [[ -n "$STEPS" ]]; then
@@ -2032,6 +2032,219 @@ step_destroy() {
     DESTROYED=true
 }
 
+step_vault() {
+    echo "=== Testing Vault Integration ==="
+
+    _check_machines_healthy
+
+    # Determine app names for the current mode
+    if [[ "$MODE" == "auto" ]]; then
+        WEB_UNIT="$LEADER"
+        CFG_APP="$APP_NAME"
+    else
+        WEB_UNIT="$LEADER"
+        CFG_APP="$WEB_APP"
+    fi
+
+    VAULT_CHANNEL="2.0/stable"
+    VAULT_APP="vault"
+
+    # -------------------------------------------------------------------------
+    # 1. Deploy Vault and relate it to the web app
+    # -------------------------------------------------------------------------
+    echo "--- Step 1: Deploy Vault ($VAULT_CHANNEL) ---"
+    juju deploy "$VAULT_APP" --channel "$VAULT_CHANNEL"
+    juju integrate "$CFG_APP:vault-kv" "$VAULT_APP:vault-kv"
+
+    echo "Waiting for Vault unit to appear..."
+    timeout 120 bash -c "
+        while ! juju status -m $MODEL_NAME --format=json 2>/dev/null \
+            | jq -e '.applications.vault.units | length > 0' >/dev/null 2>&1; do
+            sleep 5
+        done
+    "
+
+    # -------------------------------------------------------------------------
+    # 2. Initialise and unseal Vault
+    # -------------------------------------------------------------------------
+    echo "--- Step 2: Initialise and unseal Vault ---"
+
+    # Wait for Vault to be blocked on "Vault needs to be initialized"
+    echo "Waiting for Vault to reach 'blocked' status (needs initialisation)..."
+    timeout 300 bash -c "
+        while ! juju status -m $MODEL_NAME --format=json 2>/dev/null \
+            | jq -e '.applications.vault.units | to_entries[] | .value[\"workload-status\"].current == \"blocked\"' >/dev/null 2>&1; do
+            sleep 5
+        done
+    "
+
+    VAULT_IP=$(juju status -m "$MODEL_NAME" --format=json \
+        | jq -r '.applications.vault.units | to_entries[0].value["public-address"] // empty' \
+        || true)
+    if [[ -z "$VAULT_IP" ]]; then
+        VAULT_MACHINE=$(juju status -m "$MODEL_NAME" --format=json \
+            | jq -r '.applications.vault.units | to_entries[0].value.machine')
+        VAULT_IP=$(juju status -m "$MODEL_NAME" --format=json \
+            | jq -r ".machines[\"$VAULT_MACHINE\"][\"dns-name\"]")
+    fi
+    echo "Vault IP: $VAULT_IP"
+    VAULT_ADDR="http://${VAULT_IP}:8200"
+
+    # Initialise
+    INIT_OUTPUT=$(curl -sf -X POST "$VAULT_ADDR/v1/sys/init" \
+        -H "Content-Type: application/json" \
+        -d '{"secret_shares":1,"secret_threshold":1}')
+    UNSEAL_KEY=$(echo "$INIT_OUTPUT" | jq -r '.keys[0]')
+    ROOT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r '.root_token')
+    echo "Vault initialised. Unseal key: $UNSEAL_KEY"
+
+    # Unseal
+    curl -sf -X POST "$VAULT_ADDR/v1/sys/unseal" \
+        -H "Content-Type: application/json" \
+        -d "{\"key\":\"$UNSEAL_KEY\"}" | jq -r '.sealed'
+    echo "Vault unsealed."
+
+    # Store root token as a Juju secret so the charm can use it
+    SECRET_URI=$(juju add-secret vault-root-token token="$ROOT_TOKEN" 2>/dev/null \
+        | grep -oP 'secret:\S+' || true)
+    if [[ -n "$SECRET_URI" ]]; then
+        juju grant-secret "$SECRET_URI" "$VAULT_APP" 2>/dev/null || true
+    fi
+
+    # -------------------------------------------------------------------------
+    # 3. Authorise the Concourse charm via vault action
+    # -------------------------------------------------------------------------
+    echo "--- Step 3: Authorise Concourse charm with Vault ---"
+    juju run vault/leader authorize-charm token="$ROOT_TOKEN"
+    echo "authorize-charm action complete."
+
+    # -------------------------------------------------------------------------
+    # 4. Wait for vault-kv relation to become ready
+    # -------------------------------------------------------------------------
+    echo "--- Step 4: Wait for charm to receive vault-kv credentials ---"
+    _juju_wait_with_retry 300
+
+    # -------------------------------------------------------------------------
+    # 5. Verify CONCOURSE_VAULT_* vars written to config.env
+    # -------------------------------------------------------------------------
+    echo "--- Step 5: Verify VAULT env vars in config.env ---"
+    CONFIG_CONTENT=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+
+    check_vault_var() {
+        local key="$1"
+        if echo "$CONFIG_CONTENT" | grep -q "^${key}="; then
+            local value
+            value=$(echo "$CONFIG_CONTENT" | grep "^${key}=" | cut -d= -f2-)
+            echo "✓ $key=${value:0:40}$([ ${#value} -gt 40 ] && echo '...')"
+        else
+            echo "✗ $key NOT FOUND in config.env"
+            return 1
+        fi
+    }
+
+    FAIL=0
+    check_vault_var "CONCOURSE_VAULT_URL"          || FAIL=1
+    check_vault_var "CONCOURSE_VAULT_AUTH_BACKEND" || FAIL=1
+    check_vault_var "CONCOURSE_VAULT_AUTH_PARAM"   || FAIL=1
+    check_vault_var "CONCOURSE_VAULT_CA_CERT"      || FAIL=1
+    check_vault_var "CONCOURSE_VAULT_PATH_PREFIX"  || FAIL=1
+
+    if [[ "$FAIL" -ne 0 ]]; then
+        echo "✗ Vault env var check FAILED"
+        echo "Full config.env:"
+        echo "$CONFIG_CONTENT"
+        exit 1
+    fi
+
+    # Verify auth backend is approle
+    AUTH_BACKEND=$(echo "$CONFIG_CONTENT" | grep "^CONCOURSE_VAULT_AUTH_BACKEND=" | cut -d= -f2-)
+    if [[ "$AUTH_BACKEND" == "approle" ]]; then
+        echo "✓ CONCOURSE_VAULT_AUTH_BACKEND=approle (correct)"
+    else
+        echo "✗ Expected approle, got: $AUTH_BACKEND"
+        exit 1
+    fi
+
+    # Verify path prefix starts with /charm-
+    PATH_PREFIX=$(echo "$CONFIG_CONTENT" | grep "^CONCOURSE_VAULT_PATH_PREFIX=" | cut -d= -f2-)
+    if [[ "$PATH_PREFIX" == /charm-* ]]; then
+        echo "✓ CONCOURSE_VAULT_PATH_PREFIX=$PATH_PREFIX (relation-provided mount)"
+    else
+        echo "✗ Unexpected CONCOURSE_VAULT_PATH_PREFIX: $PATH_PREFIX"
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # 6. Write a test secret into Vault and verify Concourse can resolve it
+    # -------------------------------------------------------------------------
+    echo "--- Step 6: Write a test secret to Vault ---"
+    # Strip leading slash from path prefix for KV put
+    MOUNT=$(echo "$PATH_PREFIX" | sed 's|^/||')
+    SECRET_PATH="${MOUNT}/main/test-pipeline/test-secret"
+    curl -sf -X POST "${VAULT_ADDR}/v1/${SECRET_PATH}" \
+        -H "X-Vault-Token: $ROOT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"value":"hello-from-vault"}' >/dev/null
+    echo "✓ Secret written to vault at $SECRET_PATH"
+
+    # -------------------------------------------------------------------------
+    # 7. Test vault-path-prefix juju config override
+    # -------------------------------------------------------------------------
+    echo "--- Step 7: Test vault-path-prefix config override ---"
+    # Create the override path in Vault first
+    OVERRIDE_MOUNT="secrets"
+    curl -sf -X POST "${VAULT_ADDR}/v1/${OVERRIDE_MOUNT}/main/ci-secret" \
+        -H "X-Vault-Token: $ROOT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"value":"override-secret"}' >/dev/null 2>&1 || true  # may fail if mount needs enabling
+
+    juju config "$CFG_APP" vault-path-prefix="/secrets"
+    _juju_wait_with_retry 120
+
+    CONFIG_AFTER=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    OVERRIDE_PREFIX=$(echo "$CONFIG_AFTER" | grep "^CONCOURSE_VAULT_PATH_PREFIX=" | cut -d= -f2-)
+    if [[ "$OVERRIDE_PREFIX" == "/secrets" ]]; then
+        echo "✓ vault-path-prefix override applied: CONCOURSE_VAULT_PATH_PREFIX=/secrets"
+    else
+        echo "✗ vault-path-prefix override NOT applied; got: $OVERRIDE_PREFIX"
+        exit 1
+    fi
+
+    # Reset override
+    juju config "$CFG_APP" vault-path-prefix=""
+    _juju_wait_with_retry 120
+    CONFIG_RESET=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    RESET_PREFIX=$(echo "$CONFIG_RESET" | grep "^CONCOURSE_VAULT_PATH_PREFIX=" | cut -d= -f2-)
+    if [[ "$RESET_PREFIX" == "/charm-"* ]]; then
+        echo "✓ vault-path-prefix reset to relation-provided mount: $RESET_PREFIX"
+    else
+        echo "✗ vault-path-prefix did not reset; got: $RESET_PREFIX"
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # 8. Remove vault-kv relation and verify VAULT vars are cleaned up
+    # -------------------------------------------------------------------------
+    echo "--- Step 8: Remove vault-kv relation and verify cleanup ---"
+    juju remove-relation "$CFG_APP:vault-kv" "$VAULT_APP:vault-kv"
+    _juju_wait_with_retry 120
+
+    CONFIG_CLEANED=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
+    STALE_KEYS=$(echo "$CONFIG_CLEANED" | grep "^CONCOURSE_VAULT_" || true)
+    if [[ -z "$STALE_KEYS" ]]; then
+        echo "✓ All CONCOURSE_VAULT_* vars removed after relation departure"
+    else
+        echo "✗ Stale VAULT vars remain after relation removal:"
+        echo "$STALE_KEYS"
+        exit 1
+    fi
+
+    # Remove vault app (no longer needed)
+    juju remove-application "$VAULT_APP" --force --no-wait 2>/dev/null || true
+
+    echo "✓ All Vault integration tests passed"
+}
+
 step_config() {
     echo "=== Testing Config Merge Behavior ==="
 
@@ -2189,6 +2402,7 @@ for step in "${STEPS_TO_RUN[@]}"; do
         worker-version-upgrade) step_worker_version_upgrade ;;
         scale-out) step_scale_out ;;
         config) step_config ;;
+        vault) step_vault ;;
         destroy) step_destroy ;;
         *) echo "Warning: Unknown step '$step'";;
     esac

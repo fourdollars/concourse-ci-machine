@@ -391,9 +391,62 @@ jobs:
           sudo snap remove juju --purge
           sudo snap remove lxd --purge
 
+  test-vault:
+    name: Test Vault integration (mode=auto)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: build-charm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: concourse-ci-machine-charm
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@v1
+        with:
+          channel: 5.21/stable
+
+      - name: Configure LXD IPv6
+        run: |
+          lxc network set lxdbr0 ipv6.address none
+          lxc network set lxdbr0 ipv6.dhcp false
+          lxc network set lxdbr0 ipv6.nat false
+
+      - name: Install Juju
+        run: |
+          sudo snap install juju --channel 3.6/stable
+          sudo snap install juju-wait --classic
+
+      - name: Bootstrap Juju
+        run: juju bootstrap localhost test-controller --config test-mode=true
+
+      - name: Make script executable
+        run: chmod +x ./scripts/deploy-test.sh
+
+      - name: Deploy
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=deploy
+
+      - name: Verify
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=verify
+
+      - name: Test Vault Integration
+        run: ./scripts/deploy-test.sh --mode=auto --skip-cleanup --steps=vault
+
+      - name: Cleanup
+        if: always()
+        run: |
+          MODEL_NAME="concourse-test-auto-none"
+          echo $MODEL_NAME | juju destroy-model $MODEL_NAME --destroy-storage --force --no-wait || true
+          sudo snap remove juju --purge
+          sudo snap remove lxd --purge
+
   publish-charm:
     name: Publish Charm to Edge
-    needs: [test-auto-mode, test-web-worker-mode, test-shared-storage-auto, test-shared-storage-web-worker]
+    needs: [test-auto-mode, test-web-worker-mode, test-shared-storage-auto, test-shared-storage-web-worker, test-vault]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -417,7 +470,7 @@ jobs:
   cleanup-artifacts:
     name: Cleanup artifacts
     runs-on: ubuntu-latest
-    needs: [test-auto-mode, test-web-worker-mode, test-shared-storage-auto, test-shared-storage-web-worker, publish-charm]
+    needs: [test-auto-mode, test-web-worker-mode, test-shared-storage-auto, test-shared-storage-web-worker, test-vault, publish-charm]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
       - name: Delete charm artifact
