@@ -1778,8 +1778,14 @@ class ConcourseCharm(CharmBase):
                 parsed.path.lstrip("/") or "concourse"
             )
 
-        # Add Vault configuration to web config if vault-url is set
-        if self.config.get("vault-url"):
+        # Add Vault configuration — vault-kv relation takes full precedence.
+        # _get_vault_kv_config() already applies the vault-path-prefix charm config
+        # override, so no further merging is needed here.
+        vault_kv_config = self._get_vault_kv_config()
+        if vault_kv_config:
+            web_config.update(vault_kv_config)
+        elif self.config.get("vault-url"):
+            # Manual Vault configuration (no vault-kv relation)
             logger.info(
                 "Vault URL is set, enabling Vault credential manager for merged config"
             )
@@ -1824,11 +1830,6 @@ class ConcourseCharm(CharmBase):
                 web_config["CONCOURSE_VAULT_SHARED_PATH"] = self.config[
                     "vault-shared-path"
                 ]
-
-        # Add Vault configuration from vault-kv relation (overrides manual config)
-        vault_kv_config = self._get_vault_kv_config()
-        if vault_kv_config:
-            web_config.update(vault_kv_config)
 
         # Encryption key
         if self.config.get("encryption-key"):
@@ -2964,7 +2965,24 @@ class ConcourseCharm(CharmBase):
                 vault_config["CONCOURSE_VAULT_CA_CERT"] = ca_cert_path
             except OSError as e:
                 logger.warning(f"Could not write Vault CA cert: {e}")
-        if vault_mount:
+
+        # Allow juju config vault-path-prefix to override the relation-provided
+        # mount path.  This is useful when the operator already has secrets stored
+        # under a different path (e.g. /secrets) and does not want to migrate them.
+        # NOTE: Concourse only *reads* from this path; nothing in Vault is written
+        # or deleted when this value changes.  The AppRole provisioned by the vault
+        # charm only covers the relation mount by default, so granting additional
+        # Vault policies may be required when pointing to a pre-existing path.
+        config_path_prefix = self.config.get("vault-path-prefix", "").strip()
+        if config_path_prefix:
+            if not config_path_prefix.startswith("/"):
+                config_path_prefix = f"/{config_path_prefix}"
+            logger.info(
+                f"vault-path-prefix config override active: using '{config_path_prefix}' "
+                f"instead of relation-provided '/{vault_mount}'"
+            )
+            vault_config["CONCOURSE_VAULT_PATH_PREFIX"] = config_path_prefix
+        elif vault_mount:
             vault_config["CONCOURSE_VAULT_PATH_PREFIX"] = f"/{vault_mount}"
         return vault_config
 

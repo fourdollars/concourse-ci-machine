@@ -235,8 +235,17 @@ WantedBy=multi-user.target
             web_port = self.config.get("web-port", 8080)
             config["CONCOURSE_EXTERNAL_URL"] = f"http://{unit_ip}:{web_port}"
 
-        # Add Vault configuration if vault-url is set
-        if self.config.get("vault-url"):
+        # Add Vault configuration — vault-kv relation takes full precedence over
+        # manual vault-url config when both are present.  The vault_kv_config dict
+        # already incorporates the vault-path-prefix charm config override (see
+        # ConcourseCharm._get_vault_kv_config), so no further merging is needed.
+        if vault_kv_config:
+            logger.info(
+                "vault-kv relation active, configuring Vault with AppRole credentials"
+            )
+            config.update(vault_kv_config)
+        elif self.config.get("vault-url"):
+            # Manual Vault configuration (no vault-kv relation)
             logger.info("Vault URL is set, enabling Vault credential manager")
             config["CONCOURSE_VAULT_URL"] = self.config["vault-url"]
             if self.config.get("vault-auth-backend"):
@@ -269,11 +278,6 @@ WantedBy=multi-user.target
                 config["CONCOURSE_VAULT_PATH_PREFIX"] = self.config["vault-path-prefix"]
             if self.config.get("vault-shared-path"):
                 config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
-
-        # Apply vault-kv relation config (overrides manual vault config)
-        if vault_kv_config:
-            logger.info("vault-kv relation active, configuring Vault with AppRole credentials")
-            config.update(vault_kv_config)
 
         # Encryption key
         if self.config.get("encryption-key"):
