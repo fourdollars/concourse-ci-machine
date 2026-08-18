@@ -76,6 +76,16 @@ except ImportError:
         "prometheus_scrape library not available, monitoring relation disabled"
     )
 
+# Import vault-kv library for Vault credential management integration
+try:
+    from charms.vault_k8s.v0.vault_kv import VaultKvRequires
+
+    HAS_VAULT_KV = True
+except ImportError:
+    HAS_VAULT_KV = False
+    logger = logging.getLogger("concourse-ci")
+    logger.warning("vault_k8s library not available, vault-kv relation disabled")
+
 # Configure logging
 log_handlers = [logging.StreamHandler()]
 log_file_path = Path("/var/log/concourse-ci.log")
@@ -91,6 +101,8 @@ logging.basicConfig(
     handlers=log_handlers,
 )
 logger = logging.getLogger("concourse-ci")
+
+VAULT_KV_NONCE_SECRET_LABEL = "vault-kv-nonce"
 
 
 class ConcourseCharm(CharmBase):
@@ -132,6 +144,19 @@ class ConcourseCharm(CharmBase):
             )
         else:
             self.metrics_endpoint = None
+
+        # Initialize Vault KV relation for credential management
+        if HAS_VAULT_KV:
+            self.vault_kv = VaultKvRequires(
+                self,
+                relation_name="vault-kv",
+                mount_suffix="concourse",
+            )
+            self.framework.observe(self.vault_kv.on.connected, self._on_vault_kv_connected)
+            self.framework.observe(self.vault_kv.on.ready, self._on_vault_kv_ready)
+            self.framework.observe(self.vault_kv.on.gone_away, self._on_vault_kv_gone_away)
+        else:
+            self.vault_kv = None
 
         # Register event handlers
         self.framework.observe(self.on.install, self._on_install)
@@ -729,7 +754,9 @@ class ConcourseCharm(CharmBase):
                     db_url = self._get_postgresql_url()
                     admin_password = self._get_or_create_admin_password()
                     self.web_helper.update_config(
-                        db_url=db_url, admin_password=admin_password
+                        db_url=db_url,
+                        admin_password=admin_password,
+                        vault_kv_config=self._get_vault_kv_config(),
                     )
                     # Restart web service to apply new config
                     self._restart_concourse_service()
@@ -1272,7 +1299,11 @@ class ConcourseCharm(CharmBase):
 
             logger.info("Database configuration updated")
             admin_password = self._get_or_create_admin_password()
-            self.web_helper.update_config(db_url=db_url, admin_password=admin_password)
+            self.web_helper.update_config(
+                db_url=db_url,
+                admin_password=admin_password,
+                vault_kv_config=self._get_vault_kv_config(),
+            )
 
             # Ensure DB user has DML privileges (fixes charmed-postgresql role gap)
             self.web_helper.ensure_db_privileges(db_url)
@@ -1357,7 +1388,11 @@ class ConcourseCharm(CharmBase):
                 return
 
             admin_password = self._get_or_create_admin_password()
-            self.web_helper.update_config(db_url=db_url, admin_password=admin_password)
+            self.web_helper.update_config(
+                db_url=db_url,
+                admin_password=admin_password,
+                vault_kv_config=self._get_vault_kv_config(),
+            )
 
             # Ensure DB user has DML privileges (fixes charmed-postgresql role gap)
             self.web_helper.ensure_db_privileges(db_url)
@@ -1789,6 +1824,11 @@ class ConcourseCharm(CharmBase):
                 web_config["CONCOURSE_VAULT_SHARED_PATH"] = self.config[
                     "vault-shared-path"
                 ]
+
+        # Add Vault configuration from vault-kv relation (overrides manual config)
+        vault_kv_config = self._get_vault_kv_config()
+        if vault_kv_config:
+            web_config.update(vault_kv_config)
 
         # Encryption key
         if self.config.get("encryption-key"):
@@ -2887,6 +2927,139 @@ class ConcourseCharm(CharmBase):
             error_msg = f"Folder discovery check failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return (False, error_msg)
+
+
+    def _get_vault_kv_config(self) -> Optional[dict]:
+        """Build the Vault environment config dict from vault-kv relation data.
+
+        Returns a dict of CONCOURSE_VAULT_* env vars if vault-kv relation is
+        active and credentials are available, otherwise returns None.
+        """
+        peer_relation = self.model.get_relation("peers")
+        if not peer_relation:
+            return None
+        vault_url = peer_relation.data[self.app].get("vault-url")
+        if not vault_url:
+            return None
+        role_id = peer_relation.data[self.app].get("vault-role-id", "")
+        role_secret_id = peer_relation.data[self.app].get("vault-role-secret-id", "")
+        ca_cert = peer_relation.data[self.app].get("vault-ca-certificate", "")
+        vault_mount = peer_relation.data[self.app].get("vault-mount", "")
+
+        vault_config: dict = {
+            "CONCOURSE_VAULT_URL": vault_url,
+            "CONCOURSE_VAULT_AUTH_BACKEND": "approle",
+        }
+        if role_id and role_secret_id:
+            vault_config["CONCOURSE_VAULT_AUTH_PARAM"] = (
+                f"role_id:{role_id},secret_id:{role_secret_id}"
+            )
+        if ca_cert:
+            ca_cert_path = "/etc/concourse/vault-ca.pem"
+            try:
+                import os as _os
+                _os.makedirs("/etc/concourse", exist_ok=True)
+                with open(ca_cert_path, "w") as f:
+                    f.write(ca_cert)
+                vault_config["CONCOURSE_VAULT_CA_CERT"] = ca_cert_path
+            except OSError as e:
+                logger.warning(f"Could not write Vault CA cert: {e}")
+        if vault_mount:
+            vault_config["CONCOURSE_VAULT_PATH_PREFIX"] = f"/{vault_mount}"
+        return vault_config
+
+    def _on_vault_kv_connected(self, event) -> None:
+        """Handle vault-kv connected event: request credentials from Vault.
+
+        Writes the unit's egress subnet and a unique nonce to the relation
+        databag so that Vault can provision an AppRole for this unit.
+        """
+        if not HAS_VAULT_KV or self.vault_kv is None:
+            return
+        relation = self.model.get_relation("vault-kv", event.relation_id)
+        if relation is None:
+            return
+        nonce = self._get_or_create_vault_nonce()
+        try:
+            binding = self.model.get_binding(relation)
+            egress_subnets = [
+                str(subnet) for subnet in binding.network.egress_subnets
+            ]
+        except Exception:
+            egress_subnets = [str(self.model.get_binding("vault-kv").network.interfaces[0].subnet)]
+        self.vault_kv.request_credentials(relation, egress_subnets, nonce)
+        logger.info("Vault KV: credentials requested (awaiting ready event)")
+
+    def _on_vault_kv_ready(self, event) -> None:
+        """Handle vault-kv ready event: configure Concourse with Vault credentials.
+
+        Retrieves the AppRole role_id and role_secret_id from the Juju secret
+        provided by Vault, then writes them into the web config.
+        """
+        if not HAS_VAULT_KV or self.vault_kv is None:
+            return
+        if not self._should_run_web():
+            logger.debug("Vault KV ready but this unit is not a web node, skipping")
+            return
+        relation = self.model.get_relation("vault-kv", event.relation_id)
+        if relation is None:
+            return
+        vault_url = self.vault_kv.get_vault_url(relation)
+        ca_certificate = self.vault_kv.get_ca_certificate(relation)
+        mount = self.vault_kv.get_mount(relation)
+        credentials_secret_id = self.vault_kv.get_unit_credentials(relation)
+        if not vault_url or not credentials_secret_id:
+            logger.warning("Vault KV: incomplete data, cannot configure Concourse")
+            return
+        try:
+            secret = self.model.get_secret(id=credentials_secret_id)
+            secret_content = secret.get_content(refresh=True)
+            role_id = secret_content.get("role-id", "")
+            role_secret_id = secret_content.get("role-secret-id", "")
+        except Exception as e:
+            logger.error(f"Vault KV: failed to retrieve credentials secret: {e}")
+            return
+        # Persist vault connection info in peer data so web service can use it
+        peer_relation = self.model.get_relation("peers")
+        if peer_relation and self.unit.is_leader():
+            peer_relation.data[self.app]["vault-url"] = vault_url
+            if ca_certificate:
+                peer_relation.data[self.app]["vault-ca-certificate"] = ca_certificate
+            if mount:
+                peer_relation.data[self.app]["vault-mount"] = mount
+            peer_relation.data[self.app]["vault-role-id"] = role_id
+            peer_relation.data[self.app]["vault-role-secret-id"] = role_secret_id
+        logger.info(f"Vault KV: ready, configuring Concourse with Vault at {vault_url}")
+        # Trigger config update so the web service picks up vault settings
+        self._on_config_changed(event)
+
+    def _on_vault_kv_gone_away(self, event) -> None:
+        """Handle vault-kv gone-away event: clear Vault config from web service."""
+        if not self._should_run_web():
+            return
+        peer_relation = self.model.get_relation("peers")
+        if peer_relation and self.unit.is_leader():
+            for key in ("vault-url", "vault-ca-certificate", "vault-mount", "vault-role-id", "vault-role-secret-id"):
+                peer_relation.data[self.app].pop(key, None)
+        logger.info("Vault KV relation gone, Vault configuration removed")
+        self._on_config_changed(event)
+
+    def _get_or_create_vault_nonce(self) -> str:
+        """Return the persistent nonce for the vault-kv relation, creating it if needed.
+
+        The nonce is stored as a Juju secret so it survives charm restarts.
+        """
+        try:
+            secret = self.model.get_secret(label=VAULT_KV_NONCE_SECRET_LABEL)
+            return secret.get_content(refresh=True)["nonce"]
+        except Exception:
+            nonce = secrets.token_hex(16)
+            self.unit.add_secret(
+                {"nonce": nonce},
+                label=VAULT_KV_NONCE_SECRET_LABEL,
+                description="Nonce for vault-kv relation",
+            )
+            return nonce
 
 
 if __name__ == "__main__":

@@ -66,6 +66,11 @@ requires:
     interface: concourse-ci_tsa
     description: TSA endpoint for worker to connect to web server
 
+  vault-kv:
+    interface: vault-kv
+    limit: 1
+    description: Vault KV secrets backend for Concourse credential management
+
 peers:
   peers:
     interface: concourse-ci_peers

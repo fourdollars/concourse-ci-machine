@@ -175,7 +175,12 @@ WantedBy=multi-user.target
             logger.error(f"Failed to create systemd service: {e}")
             raise
 
-    def update_config(self, db_url: str = None, admin_password: str = "admin"):
+    def update_config(
+        self,
+        db_url: str = None,
+        admin_password: str = "admin",
+        vault_kv_config: Optional[dict] = None,
+    ):
         """Update Concourse web server configuration"""
         import socket
 
@@ -264,6 +269,11 @@ WantedBy=multi-user.target
                 config["CONCOURSE_VAULT_PATH_PREFIX"] = self.config["vault-path-prefix"]
             if self.config.get("vault-shared-path"):
                 config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
+
+        # Apply vault-kv relation config (overrides manual vault config)
+        if vault_kv_config:
+            logger.info("vault-kv relation active, configuring Vault with AppRole credentials")
+            config.update(vault_kv_config)
 
         # Encryption key
         if self.config.get("encryption-key"):
