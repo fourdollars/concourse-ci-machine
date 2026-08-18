@@ -2050,11 +2050,10 @@ step_vault() {
     VAULT_APP="vault"
 
     # -------------------------------------------------------------------------
-    # 1. Deploy Vault and relate it to the web app
+    # 1. Deploy Vault (without relating yet)
     # -------------------------------------------------------------------------
     echo "--- Step 1: Deploy Vault ($VAULT_CHANNEL) ---"
     juju deploy "$VAULT_APP" --channel "$VAULT_CHANNEL"
-    juju integrate "$CFG_APP:vault-kv" "$VAULT_APP:vault-kv"
 
     echo "Waiting for Vault unit to appear..."
     timeout 120 bash -c "
@@ -2112,22 +2111,73 @@ step_vault() {
     fi
 
     # -------------------------------------------------------------------------
-    # 3. Authorise the Concourse charm via vault action
+    # 3. Write test secrets BEFORE relating to Concourse
+    #    This verifies Concourse can resolve secrets that pre-date the relation.
+    #    The vault charm mounts KV under charm-<app>-<suffix>; we use the
+    #    well-known default suffix to pre-populate, then confirm after relate.
     # -------------------------------------------------------------------------
-    echo "--- Step 3: Authorise Concourse charm with Vault ---"
+    echo "--- Step 3: Pre-populate secrets in Vault before vault-kv relation ---"
+
+    # The vault charm will mount KV at charm-<requirer-app>-<mount_suffix>.
+    # The mount suffix written by the charm's app databag is "concourse" by
+    # default, so the mount becomes charm-<CFG_APP>-concourse.
+    # We cannot know the exact mount name until the relation is established,
+    # so we write into a generic KV path that the operator would control, and
+    # verify access after authorisation.  The mount used here matches what the
+    # vault charm will provision once we relate.
+    PRE_RELATE_MOUNT="charm-${CFG_APP}-concourse"
+
+    # Enable the KV secrets engine at this path using the root token
+    echo "Enabling KV secrets engine at $PRE_RELATE_MOUNT/ ..."
+    ENABLE_RESP=$(curl -sf -o /dev/null -w "%{http_code}" \
+        -X POST "${VAULT_ADDR}/v1/sys/mounts/${PRE_RELATE_MOUNT}" \
+        -H "X-Vault-Token: $ROOT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"type":"kv","options":{"version":"1"}}' || echo "000")
+    if [[ "$ENABLE_RESP" == "204" || "$ENABLE_RESP" == "200" ]]; then
+        echo "✓ KV engine enabled at $PRE_RELATE_MOUNT/"
+    else
+        echo "  Note: KV mount response $ENABLE_RESP (may already exist or vault charm will create it)"
+    fi
+
+    # Write secrets that should be readable by Concourse after relation
+    PRE_SECRET_PATH="${PRE_RELATE_MOUNT}/main/test-pipeline/pre-existing-secret"
+    curl -sf -X POST "${VAULT_ADDR}/v1/${PRE_SECRET_PATH}" \
+        -H "X-Vault-Token: $ROOT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"value":"hello-before-relation"}' >/dev/null
+    echo "✓ Pre-existing secret written to $PRE_SECRET_PATH"
+
+    PRE_TEAM_SECRET_PATH="${PRE_RELATE_MOUNT}/main/pre-existing-team-secret"
+    curl -sf -X POST "${VAULT_ADDR}/v1/${PRE_TEAM_SECRET_PATH}" \
+        -H "X-Vault-Token: $ROOT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"value":"hello-team-before-relation"}' >/dev/null
+    echo "✓ Pre-existing team secret written to $PRE_TEAM_SECRET_PATH"
+
+    # -------------------------------------------------------------------------
+    # 4. Relate vault-kv to Concourse NOW (after secrets already exist)
+    # -------------------------------------------------------------------------
+    echo "--- Step 4: Relate vault-kv to Concourse (secrets pre-date the relation) ---"
+    juju integrate "$CFG_APP:vault-kv" "$VAULT_APP:vault-kv"
+
+    # -------------------------------------------------------------------------
+    # 5. Authorise the Concourse charm via vault action
+    # -------------------------------------------------------------------------
+    echo "--- Step 5: Authorise Concourse charm with Vault ---"
     juju run vault/leader authorize-charm token="$ROOT_TOKEN"
     echo "authorize-charm action complete."
 
     # -------------------------------------------------------------------------
-    # 4. Wait for vault-kv relation to become ready
+    # 6. Wait for vault-kv relation to become ready
     # -------------------------------------------------------------------------
-    echo "--- Step 4: Wait for charm to receive vault-kv credentials ---"
+    echo "--- Step 6: Wait for charm to receive vault-kv credentials ---"
     _juju_wait_with_retry 300
 
     # -------------------------------------------------------------------------
-    # 5. Verify CONCOURSE_VAULT_* vars written to config.env
+    # 7. Verify CONCOURSE_VAULT_* vars written to config.env
     # -------------------------------------------------------------------------
-    echo "--- Step 5: Verify VAULT env vars in config.env ---"
+    echo "--- Step 7: Verify VAULT env vars in config.env ---"
     CONFIG_CONTENT=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- cat /var/lib/concourse/config.env)
 
     check_vault_var() {
@@ -2165,7 +2215,7 @@ step_vault() {
         exit 1
     fi
 
-    # Verify path prefix starts with /charm-
+    # Capture the actual mount name provisioned by the vault charm
     PATH_PREFIX=$(echo "$CONFIG_CONTENT" | grep "^CONCOURSE_VAULT_PATH_PREFIX=" | cut -d= -f2-)
     if [[ "$PATH_PREFIX" == /charm-* ]]; then
         echo "✓ CONCOURSE_VAULT_PATH_PREFIX=$PATH_PREFIX (relation-provided mount)"
@@ -2173,31 +2223,82 @@ step_vault() {
         echo "✗ Unexpected CONCOURSE_VAULT_PATH_PREFIX: $PATH_PREFIX"
         exit 1
     fi
-
-    # -------------------------------------------------------------------------
-    # 6. Write a test secret into Vault and verify Concourse can resolve it
-    # -------------------------------------------------------------------------
-    echo "--- Step 6: Write a test secret to Vault ---"
-    # Strip leading slash from path prefix for KV put
     MOUNT=$(echo "$PATH_PREFIX" | sed 's|^/||')
-    SECRET_PATH="${MOUNT}/main/test-pipeline/test-secret"
-    curl -sf -X POST "${VAULT_ADDR}/v1/${SECRET_PATH}" \
-        -H "X-Vault-Token: $ROOT_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{"value":"hello-from-vault"}' >/dev/null
-    echo "✓ Secret written to vault at $SECRET_PATH"
 
     # -------------------------------------------------------------------------
-    # 7. Test vault-path-prefix juju config override
+    # 8. Verify pre-existing secrets are readable via the AppRole credentials
     # -------------------------------------------------------------------------
-    echo "--- Step 7: Test vault-path-prefix config override ---"
-    # Create the override path in Vault first
-    OVERRIDE_MOUNT="secrets"
-    curl -sf -X POST "${VAULT_ADDR}/v1/${OVERRIDE_MOUNT}/main/ci-secret" \
+    echo "--- Step 8: Verify pre-existing secrets are readable after relation ---"
+
+    # Extract role-id and secret-id from CONCOURSE_VAULT_AUTH_PARAM
+    # Format: role-id=<uuid>,secret-id=<uuid>
+    AUTH_PARAM=$(echo "$CONFIG_CONTENT" | grep "^CONCOURSE_VAULT_AUTH_PARAM=" | cut -d= -f2-)
+    ROLE_ID=$(echo "$AUTH_PARAM" | grep -oP 'role-id=\K[^,]+' || true)
+    SECRET_ID=$(echo "$AUTH_PARAM" | grep -oP 'secret-id=\K[^,]+' || true)
+
+    if [[ -z "$ROLE_ID" || -z "$SECRET_ID" ]]; then
+        echo "✗ Could not parse role-id/secret-id from CONCOURSE_VAULT_AUTH_PARAM: $AUTH_PARAM"
+        exit 1
+    fi
+
+    # Login with AppRole to get a client token
+    APPROLE_LOGIN=$(curl -sf -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}")
+    CLIENT_TOKEN=$(echo "$APPROLE_LOGIN" | jq -r '.auth.client_token')
+
+    if [[ -z "$CLIENT_TOKEN" || "$CLIENT_TOKEN" == "null" ]]; then
+        echo "✗ AppRole login failed. Response: $APPROLE_LOGIN"
+        exit 1
+    fi
+    echo "✓ AppRole login successful with relation-provisioned credentials"
+
+    # Read back the pre-existing pipeline secret using the AppRole token
+    READ_PIPELINE=$(curl -sf "${VAULT_ADDR}/v1/${MOUNT}/main/test-pipeline/pre-existing-secret" \
+        -H "X-Vault-Token: $CLIENT_TOKEN")
+    SECRET_VALUE=$(echo "$READ_PIPELINE" | jq -r '.data.value // empty')
+    if [[ "$SECRET_VALUE" == "hello-before-relation" ]]; then
+        echo "✓ Pre-existing pipeline secret readable: pre-existing-secret=hello-before-relation"
+    else
+        echo "✗ Pre-existing pipeline secret NOT readable. Response: $READ_PIPELINE"
+        exit 1
+    fi
+
+    # Read back the pre-existing team secret
+    READ_TEAM=$(curl -sf "${VAULT_ADDR}/v1/${MOUNT}/main/pre-existing-team-secret" \
+        -H "X-Vault-Token: $CLIENT_TOKEN")
+    TEAM_VALUE=$(echo "$READ_TEAM" | jq -r '.data.value // empty')
+    if [[ "$TEAM_VALUE" == "hello-team-before-relation" ]]; then
+        echo "✓ Pre-existing team secret readable: pre-existing-team-secret=hello-team-before-relation"
+    else
+        echo "✗ Pre-existing team secret NOT readable. Response: $READ_TEAM"
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # 9. Write an additional secret AFTER relation (normal post-relate workflow)
+    # -------------------------------------------------------------------------
+    echo "--- Step 9: Write a post-relate secret and verify it is also readable ---"
+    POST_SECRET_PATH="${MOUNT}/main/test-pipeline/post-relate-secret"
+    curl -sf -X POST "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"value":"override-secret"}' >/dev/null 2>&1 || true  # may fail if mount needs enabling
+        -d '{"value":"hello-after-relation"}' >/dev/null
 
+    READ_POST=$(curl -sf "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
+        -H "X-Vault-Token: $CLIENT_TOKEN")
+    POST_VALUE=$(echo "$READ_POST" | jq -r '.data.value // empty')
+    if [[ "$POST_VALUE" == "hello-after-relation" ]]; then
+        echo "✓ Post-relate secret readable: post-relate-secret=hello-after-relation"
+    else
+        echo "✗ Post-relate secret NOT readable. Response: $READ_POST"
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # 10. Test vault-path-prefix juju config override
+    # -------------------------------------------------------------------------
+    echo "--- Step 10: Test vault-path-prefix config override ---"
     juju config "$CFG_APP" vault-path-prefix="/secrets"
     _juju_wait_with_retry 120
 
@@ -2223,9 +2324,9 @@ step_vault() {
     fi
 
     # -------------------------------------------------------------------------
-    # 8. Remove vault-kv relation and verify VAULT vars are cleaned up
+    # 11. Remove vault-kv relation and verify VAULT vars are cleaned up
     # -------------------------------------------------------------------------
-    echo "--- Step 8: Remove vault-kv relation and verify cleanup ---"
+    echo "--- Step 11: Remove vault-kv relation and verify cleanup ---"
     juju remove-relation "$CFG_APP:vault-kv" "$VAULT_APP:vault-kv"
     _juju_wait_with_retry 120
 
