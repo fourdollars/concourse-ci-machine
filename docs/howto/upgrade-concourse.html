@@ -265,7 +265,7 @@
         <h2>Upgrade to Newer Version</h2>
 
         <pre><code class="language-bash"># Set new version
-juju config concourse-ci version=7.14.3
+juju config concourse-ci version=8.3.0
 
 # Monitor upgrade progress
 juju status --watch 1s</code></pre>
@@ -286,7 +286,7 @@ juju status --watch 1s</code></pre>
             <rect x="50" y="90" width="200" height="60" fill="#e8f4f8" stroke="#11a8cd" stroke-width="2" rx="6"/>
             <text x="150" y="115" text-anchor="middle" font-size="14" font-weight="bold" fill="#11a8cd">User Action</text>
             <text x="150" y="135" text-anchor="middle" font-size="12" fill="#333">juju config concourse-ci</text>
-            <text x="150" y="150" text-anchor="middle" font-size="12" fill="#333">version=7.14.3</text>
+            <text x="150" y="150" text-anchor="middle" font-size="12" fill="#333">version=8.3.0</text>
             
             <!-- Step 1: Web Server Downloads -->
             <defs>
@@ -299,7 +299,7 @@ juju status --watch 1s</code></pre>
             <rect x="320" y="175" width="220" height="80" fill="#fff4e6" stroke="#f99b11" stroke-width="3" rx="6"/>
             <text x="430" y="200" text-anchor="middle" font-size="14" font-weight="bold" fill="#f99b11">Step 1: Web Server (Leader)</text>
             <line x1="340" y1="208" x2="520" y2="208" stroke="#d9d9d9" stroke-width="1"/>
-            <text x="430" y="225" text-anchor="middle" font-size="12" fill="#333">⬇️ Downloads v7.14.3</text>
+            <text x="430" y="225" text-anchor="middle" font-size="12" fill="#333">⬇️ Downloads v8.3.0</text>
             <text x="430" y="242" text-anchor="middle" font-size="12" fill="#333">🔄 Restarts service</text>
             <text x="560" y="215" font-size="11" fill="#999">~10-30s</text>
             
@@ -316,19 +316,19 @@ juju status --watch 1s</code></pre>
             <text x="220" y="318" text-anchor="middle" font-size="13" font-weight="bold" fill="#0e8420">Worker 1</text>
             <line x1="135" y1="325" x2="305" y2="325" stroke="#d9d9d9" stroke-width="1"/>
             <text x="220" y="340" text-anchor="middle" font-size="11" fill="#333">🔍 Detects mismatch</text>
-            <text x="220" y="355" text-anchor="middle" font-size="11" fill="#333">v7.12.1 ≠ v7.14.3</text>
+            <text x="220" y="355" text-anchor="middle" font-size="11" fill="#333">v8.2.5 ≠ v8.3.0</text>
             
             <rect x="350" y="295" width="200" height="70" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
             <text x="450" y="318" text-anchor="middle" font-size="13" font-weight="bold" fill="#0e8420">Worker 2</text>
             <line x1="365" y1="325" x2="535" y2="325" stroke="#d9d9d9" stroke-width="1"/>
             <text x="450" y="340" text-anchor="middle" font-size="11" fill="#333">🔍 Detects mismatch</text>
-            <text x="450" y="355" text-anchor="middle" font-size="11" fill="#333">v7.12.1 ≠ v7.14.3</text>
+            <text x="450" y="355" text-anchor="middle" font-size="11" fill="#333">v8.2.5 ≠ v8.3.0</text>
             
             <rect x="580" y="295" width="200" height="70" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
             <text x="680" y="318" text-anchor="middle" font-size="13" font-weight="bold" fill="#0e8420">Worker N</text>
             <line x1="595" y1="325" x2="765" y2="325" stroke="#d9d9d9" stroke-width="1"/>
             <text x="680" y="340" text-anchor="middle" font-size="11" fill="#333">🔍 Detects mismatch</text>
-            <text x="680" y="355" text-anchor="middle" font-size="11" fill="#333">v7.12.1 ≠ v7.14.3</text>
+            <text x="680" y="355" text-anchor="middle" font-size="11" fill="#333">v8.2.5 ≠ v8.3.0</text>
             
             <!-- Step 3: Workers Auto-Upgrade -->
             <defs>
@@ -342,17 +342,17 @@ juju status --watch 1s</code></pre>
             
             <rect x="120" y="405" width="200" height="70" fill="#e0f7fa" stroke="#00838f" stroke-width="2" rx="6"/>
             <text x="220" y="428" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">Auto-Upgrade</text>
-            <text x="220" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v7.14.3</text>
+            <text x="220" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v8.3.0</text>
             <text x="220" y="462" text-anchor="middle" font-size="11" fill="#333">🔄 Restart service</text>
             
             <rect x="350" y="405" width="200" height="70" fill="#e0f7fa" stroke="#00838f" stroke-width="2" rx="6"/>
             <text x="450" y="428" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">Auto-Upgrade</text>
-            <text x="450" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v7.14.3</text>
+            <text x="450" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v8.3.0</text>
             <text x="450" y="462" text-anchor="middle" font-size="11" fill="#333">🔄 Restart service</text>
             
             <rect x="580" y="405" width="200" height="70" fill="#e0f7fa" stroke="#00838f" stroke-width="2" rx="6"/>
             <text x="680" y="428" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">Auto-Upgrade</text>
-            <text x="680" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v7.14.3</text>
+            <text x="680" y="445" text-anchor="middle" font-size="11" fill="#333">⬇️ Download v8.3.0</text>
             <text x="680" y="462" text-anchor="middle" font-size="11" fill="#333">🔄 Restart service</text>
             
             <text x="810" y="440" font-size="11" fill="#999">~10-30s</text>
@@ -360,7 +360,7 @@ juju status --watch 1s</code></pre>
             
             <!-- Final State -->
             <rect x="300" y="495" width="300" height="40" fill="#e8f5e9" stroke="#0e8420" stroke-width="2" rx="6"/>
-            <text x="450" y="520" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">✅ All Units Running v7.14.3</text>
+            <text x="450" y="520" text-anchor="middle" font-size="14" font-weight="bold" fill="#0e8420">✅ All Units Running v8.3.0</text>
             
             <!-- Legend -->
             <text x="50" y="545" font-size="12" fill="#666">💡 <tspan font-weight="bold">Zero manual intervention</tspan> - Workers upgrade automatically!</text>
@@ -373,7 +373,7 @@ juju status --watch 1s</code></pre>
         <h2>Downgrade to Older Version</h2>
 
         <pre><code class="language-bash"># Set older version
-juju config concourse-ci version=7.12.1
+juju config concourse-ci version=8.2.5
 
 # Workers will automatically downgrade to match</code></pre>
 
@@ -395,7 +395,7 @@ juju config concourse-ci version=latest</code></pre>
 
         <pre><code class="language-bash"># Via juju status
 juju status concourse-ci
-# Look for version in status message: "Web ready (v7.14.2)"
+# Look for version in status message: "Web ready (v8.2.5)"
 
 # Via configuration
 juju config concourse-ci version
@@ -408,12 +408,12 @@ juju config concourse-ci version
         <p>For distributed deployments, upgrade web first, then workers follow automatically:</p>
 
         <pre><code class="language-bash"># Upgrade web application
-juju config web version=7.14.3
+juju config web version=8.3.0
 
 # Workers automatically upgrade via TSA relation
 # Check worker status
 juju status worker
-# Should show: "Auto-upgrading Concourse CI to 7.14.3..."</code></pre>
+# Should show: "Auto-upgrading Concourse CI to 8.3.0..."</code></pre>
 
         <h2>Monitor Upgrade Progress</h2>
 
@@ -428,15 +428,15 @@ juju debug-log --include concourse-ci/0 --replay --no-tail</code></pre>
 
         <p><strong>Status messages during upgrade:</strong></p>
         <ul>
-            <li><code>Upgrading to v7.14.3...</code> - Download and installation in progress</li>
-            <li><code>Auto-upgrading Concourse CI to 7.14.3...</code> - Worker detected version mismatch</li>
-            <li><code>Web ready (v7.14.3)</code> - Upgrade complete</li>
+            <li><code>Upgrading to v8.3.0...</code> - Download and installation in progress</li>
+            <li><code>Auto-upgrading Concourse CI to 8.3.0...</code> - Worker detected version mismatch</li>
+            <li><code>Web ready (v8.3.0)</code> - Upgrade complete</li>
         </ul>
 
         <h2>Rollback After Failed Upgrade</h2>
 
         <pre><code class="language-bash"># If upgrade fails, revert to previous version
-juju config concourse-ci version=7.12.1
+juju config concourse-ci version=8.2.5
 
 # Check logs for failure reason
 juju debug-log --include concourse-ci --replay | grep -i error</code></pre>

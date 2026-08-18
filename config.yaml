@@ -11,7 +11,7 @@ options:
   
   version:
     description: |
-      Concourse CI version to deploy (e.g., 7.14.3).
+      Concourse CI version to deploy (e.g., 8.2.5).
       Leave empty to use the latest stable version.
     default: ""
     type: string

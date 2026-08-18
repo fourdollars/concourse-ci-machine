@@ -271,14 +271,14 @@ Use the `upgrade` action to change Concourse CI version (update the `version` co
 
 ```bash
 # Set version configuration first (essential for persistence)
-juju config concourse-ci version=7.14.3
+juju config concourse-ci version=8.3.0
 
 # Trigger the upgrade action (automatically upgrades all workers)
-juju config concourse-ci version=7.14.3
+juju config concourse-ci version=8.3.0
 
 # Downgrade is also supported (update config then run action)
-juju config concourse-ci version=7.12.1
-juju config concourse-ci version=7.12.1
+juju config concourse-ci version=8.2.5
+juju config concourse-ci version=8.2.5
 ```
 
 **Auto-upgrade behavior:**
@@ -675,7 +675,7 @@ juju relate web:tsa worker:flight
 
 # 6. Check status
 juju status worker
-# Expected: "Worker ready (v7.14.2) (GPU: 1x AMD)"
+# Expected: "Worker ready (v8.2.5) (GPU: 1x AMD)"
 ```
 
 ### Enable ROCm on Existing Worker
@@ -817,7 +817,7 @@ jobs:
 ```bash
 # Check worker status
 juju status worker
-# Should show: "Worker ready (v7.14.2) (GPU: 1x AMD)"
+# Should show: "Worker ready (v8.2.5) (GPU: 1x AMD)"
 
 # Verify GPU tags in Concourse
 fly -t local workers

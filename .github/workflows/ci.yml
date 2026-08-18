@@ -397,7 +397,7 @@ jobs:
     timeout-minutes: 45
     needs: build-charm
     env:
-      CONCOURSE_VERSION: "8.3.0"
+      CONCOURSE_VERSION: "8.2.5"
     steps:
       - name: Checkout
         uses: actions/checkout@v6

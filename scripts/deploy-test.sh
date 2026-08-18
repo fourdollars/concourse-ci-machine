@@ -519,7 +519,7 @@ step_deploy() {
     # Configuration
     CHARM_FILE="./concourse-ci-machine_amd64.charm"
     POSTGRES_CHANNEL="16/stable"
-    CONCOURSE_VERSION="${CONCOURSE_VERSION:-7.14.2}"
+    CONCOURSE_VERSION="${CONCOURSE_VERSION:-8.2.5}"
     CHARM_NAME="concourse-ci-machine"
 
     if [[ -z "$CHANNEL" && ! -f "$CHARM_FILE" ]]; then
@@ -1241,7 +1241,7 @@ EOF
 
 step_upgrade() {
     echo "=== Verifying Upgrade ==="
-    UPGRADE_VERSION="7.14.3"
+    UPGRADE_VERSION="8.3.0"
     echo "Upgrading to $UPGRADE_VERSION..."
 
     if [[ "$MODE" == "auto" ]]; then
