@@ -205,12 +205,15 @@ options:
   vault-path-prefix:
     description: |
       Prefix for all secret paths in Vault (e.g., '/concourse/my-team' or '/secrets').
+      Concourse looks up ((secret-name)) at:
+        <vault-path-prefix>/<team>/<pipeline>/<secret-name>
+        <vault-path-prefix>/<team>/<secret-name>
       When the vault-kv relation is active, this overrides the KV mount path that Vault
       provisioned automatically (default: '/charm-<app>-concourse'). Useful when you have
       existing secrets stored under a different path. Concourse only reads from this path;
       no data in Vault is written or deleted when this value changes. Note: the AppRole
-      provisioned by the vault charm may not have read access to a pre-existing path —
-      you may need to grant additional Vault policies manually.
+      provisioned by the vault charm only covers the auto-provisioned mount by default —
+      you may need to grant additional Vault policies for a pre-existing path.
       Maps to CONCOURSE_VAULT_PATH_PREFIX.
     default: ""
     type: string

@@ -419,16 +419,21 @@ juju grant-secret vault-root-token vault</code></pre>
             Concourse resolves secrets at runtime from the KV mount <code>charm-&lt;app&gt;-concourse</code>
             (e.g. <code>charm-web-concourse</code> when your application is named <code>web</code>).
         </p>
+        <p>
+            <strong>Path structure:</strong> <code>CONCOURSE_VAULT_PATH_PREFIX</code> is the full prefix.
+            Concourse appends <code>/&lt;team&gt;/&lt;pipeline&gt;/&lt;secret&gt;</code> directly — there is
+            no extra segment inserted automatically.
+        </p>
 
         <h3>Write a Secret to Vault</h3>
 
         <pre><code class="language-bash"># Write a pipeline-scoped secret
-# Path format: &lt;mount&gt;/concourse/&lt;team&gt;/&lt;pipeline&gt;/&lt;secret-name&gt;
-vault kv put charm-web-concourse/concourse/main/my-pipeline/db-password \
+# Path format: &lt;vault-path-prefix&gt;/&lt;team&gt;/&lt;pipeline&gt;/&lt;secret-name&gt;
+vault kv put charm-web-concourse/main/my-pipeline/db-password \
     value=s3cr3t
 
 # Write a team-scoped secret (shared across all pipelines in the team)
-vault kv put charm-web-concourse/concourse/main/db-password \
+vault kv put charm-web-concourse/main/db-password \
     value=s3cr3t</code></pre>
 
         <h3>Reference the Secret in a Pipeline</h3>
@@ -464,9 +469,15 @@ jobs:
 
         <p>Concourse resolves secrets in the following lookup order:</p>
         <ol>
-            <li>Pipeline-scoped: <code>&lt;mount&gt;/concourse/&lt;team&gt;/&lt;pipeline&gt;/&lt;name&gt;</code></li>
-            <li>Team-scoped: <code>&lt;mount&gt;/concourse/&lt;team&gt;/&lt;name&gt;</code></li>
+            <li>Pipeline-scoped: <code>&lt;vault-path-prefix&gt;/&lt;team&gt;/&lt;pipeline&gt;/&lt;name&gt;</code></li>
+            <li>Team-scoped: <code>&lt;vault-path-prefix&gt;/&lt;team&gt;/&lt;name&gt;</code></li>
         </ol>
+        <p>
+            Example with <code>vault-path-prefix=/charm-web-concourse</code>, team <code>main</code>,
+            pipeline <code>my-pipeline</code>, secret <code>db-password</code>: Concourse checks
+            <code>charm-web-concourse/main/my-pipeline/db-password</code> then
+            <code>charm-web-concourse/main/db-password</code>.
+        </p>
 
         <h2>Troubleshooting</h2>
 
