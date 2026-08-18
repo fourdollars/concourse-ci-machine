@@ -363,6 +363,13 @@
                     <td>Worker units</td>
                 </tr>
                 <tr>
+                    <td><code>vault-kv</code></td>
+                    <td>requires</td>
+                    <td><code>vault-kv</code></td>
+                    <td><span class="badge optional">Optional</span></td>
+                    <td>Web server units</td>
+                </tr>
+                <tr>
                     <td><code>peers</code></td>
                     <td>peer</td>
                     <td><code>concourse-ci_peers</code></td>
@@ -589,6 +596,89 @@ juju integrate worker:flight web:tsa</code></pre>
             <p><strong>Related Configuration:</strong> None (worker keys and TSA connection managed automatically)</p>
         </div>
 
+        <h2 id="vault-kv-relation">vault-kv Relation</h2>
+
+        <div class="relation-card">
+            <h3 id="vault-kv">vault-kv (requires)</h3>
+            <div class="metadata">
+                <div class="item">
+                    <span class="label">Interface</span>
+                    <span class="value"><code>vault-kv</code></span>
+                </div>
+                <div class="item">
+                    <span class="label">Limit</span>
+                    <span class="value">1</span>
+                </div>
+                <div class="item">
+                    <span class="label">Applied To</span>
+                    <span class="value">Web server units</span>
+                </div>
+                <div class="item">
+                    <span class="label">Status</span>
+                    <span class="value"><span class="badge optional">Optional</span></span>
+                </div>
+            </div>
+
+            <p><strong>Description:</strong> Connects the Concourse web server to HashiCorp Vault for pipeline credential management. When established, Concourse automatically resolves <code>((secret-name))</code> variable references in pipelines by looking them up in the Vault KV store. Credentials are provisioned via AppRole authentication.</p>
+
+            <p><strong>Compatible Providers:</strong></p>
+            <ul>
+                <li><code>vault</code> charm (2.0/stable — ubuntu@24.04)</li>
+            </ul>
+
+            <p><strong>Data Exchanged:</strong></p>
+            <ul>
+                <li><strong>vault_url:</strong> Vault server HTTPS URL (provided by Vault)</li>
+                <li><strong>ca_certificate:</strong> Vault TLS CA certificate PEM (provided by Vault)</li>
+                <li><strong>mount:</strong> KV mount path, e.g. <code>charm-web-concourse</code> (provided by Vault)</li>
+                <li><strong>credentials:</strong> Juju secret ID containing <code>role-id</code> and <code>role-secret-id</code> (provided by Vault)</li>
+                <li><strong>mount_suffix:</strong> Suffix for the KV mount name, set to <code>concourse</code> (provided by requirer)</li>
+                <li><strong>egress_subnet / nonce:</strong> Unit identity data used by Vault to issue AppRole credentials (provided by requirer)</li>
+            </ul>
+
+            <p><strong>Effect on Concourse Config:</strong> When the relation is ready, the following environment variables are written to <code>config.env</code> on the web unit:</p>
+            <ul>
+                <li><code>CONCOURSE_VAULT_URL</code></li>
+                <li><code>CONCOURSE_VAULT_AUTH_BACKEND=approle</code></li>
+                <li><code>CONCOURSE_VAULT_AUTH_PARAM=role_id:...,secret_id:...</code></li>
+                <li><code>CONCOURSE_VAULT_CA_CERT</code> (written to <code>/etc/concourse/vault-ca.pem</code>)</li>
+                <li><code>CONCOURSE_VAULT_PATH_PREFIX=/charm-web-concourse</code></li>
+            </ul>
+
+            <p><strong>Integration Example:</strong></p>
+            <pre><code class="language-bash"># Deploy and integrate
+juju deploy vault --channel 2.0/stable
+juju integrate vault:vault-kv web:vault-kv
+
+# Initialize Vault (save unseal key and root token)
+juju ssh vault/leader -- vault operator init -key-shares=1 -key-threshold=1 -format=json
+
+# Unseal
+juju ssh vault/leader -- vault operator unseal &lt;unseal-key&gt;
+
+# Authorize the charm
+juju add-secret vault-root-token token="&lt;root-token&gt;"
+juju grant-secret vault-root-token vault
+juju run vault/leader authorize-charm secret-id=&lt;secret-id&gt; --wait 2m
+
+# Verify
+juju ssh web/0 -- sudo grep VAULT /var/lib/concourse/config.env</code></pre>
+
+            <div class="note">
+                <strong>Note:</strong> Vault-kv credentials override the manual <code>vault-url</code> charm config option when both are set. See the <a href="../howto/use-vault.html">Vault How-To Guide</a> for the complete setup procedure.
+            </div>
+
+            <p><strong>Troubleshooting:</strong></p>
+            <table>
+                <thead><tr><th>Message</th><th>Cause</th><th>Solution</th></tr></thead>
+                <tbody>
+                    <tr><td>vault blocked "Please initialize Vault"</td><td>Vault not initialized</td><td>Run <code>vault operator init</code> and <code>vault operator unseal</code></td></tr>
+                    <tr><td>VAULT vars missing from config.env</td><td>Charm not authorized</td><td>Run <code>juju run vault/leader authorize-charm</code></td></tr>
+                    <tr><td>Pipelines fail with "credential not found"</td><td>Secret not in correct KV path</td><td>Write secrets to <code>charm-web-concourse/concourse/&lt;team&gt;/&lt;pipeline&gt;/&lt;name&gt;</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <h2 id="peer-relation">Peer Relation</h2>
 
         <div class="relation-card">
@@ -673,6 +763,13 @@ juju integrate worker:flight web:tsa</code></pre>
                     <td>✅ Required</td>
                 </tr>
                 <tr>
+                    <td><code>vault-kv</code></td>
+                    <td>✅ Optional</td>
+                    <td>❌ N/A</td>
+                    <td>✅ Optional</td>
+                    <td>❌ N/A</td>
+                </tr>
+                <tr>
                     <td><code>peers</code></td>
                     <td>✅ Automatic</td>
                     <td>✅ Automatic</td>
@@ -727,6 +824,20 @@ juju integrate web:tsa cpu-worker:flight
 juju integrate web:monitoring prometheus:target
 juju integrate gpu-worker:monitoring prometheus:target
 juju integrate cpu-worker:monitoring prometheus:target</code></pre>
+
+        <h3>Web with Vault Credential Management</h3>
+        <pre><code class="language-bash"># Deploy web, workers, and Vault
+juju deploy concourse-ci-machine web --config mode=web
+juju deploy concourse-ci-machine worker -n 2 --config mode=worker
+juju deploy vault --channel 2.0/stable
+
+# Wire up relations
+juju integrate web:postgresql postgresql:database
+juju integrate web:tsa worker:flight
+juju integrate vault:vault-kv web:vault-kv
+
+# Initialize and unseal Vault, then authorize the charm
+# (see howto/use-vault.html for full procedure)</code></pre>
 
         <h2 id="troubleshooting">Troubleshooting Relations</h2>
 

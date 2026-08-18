@@ -26,6 +26,7 @@ A Juju **machine charm** for deploying [Concourse CI](https://concourse-ci.org/)
 - **Download Progress**: Real-time installation progress in Juju status
 - **GPU Support**: NVIDIA (CUDA) and AMD (ROCm) GPU workers for ML/AI workloads ([GPU Guide](docs/gpu-support.md))
 - **Dataset Mounting**: Automatic dataset injection for GPU tasks ([Dataset Guide](docs/dataset-mounting.md))
+- **Vault Integration**: Native HashiCorp Vault credential management via `vault-kv` Juju relation ([Vault Guide](docs/howto/use-vault.html))
 - **🆕 General Folder Mounting**: Automatic discovery and mounting of ANY folder under `/srv` ([General Mounting Guide](docs/general-mounting.md))
   - ✅ Zero configuration - just mount folders to `/srv` and go
   - ✅ Read-only by default for data safety
@@ -221,6 +222,31 @@ juju config web \
 
 These options map directly to Concourse environment variables such as `CONCOURSE_OAUTH_CLIENT_ID`, `CONCOURSE_OAUTH_AUTH_URL`, and `CONCOURSE_MAIN_TEAM_OAUTH_USER`. Clearing a charm-managed OAuth option also removes the corresponding environment variable from `config.env`, preventing stale OAuth users or groups from remaining authorized after `juju config option=""`.
 
+### HashiCorp Vault Integration
+
+Concourse can use HashiCorp Vault as a credential manager, allowing pipelines to reference secrets with `((secret-name))` syntax without embedding credentials in pipeline YAML.
+
+**Recommended: Juju relation (Vault 2.0/stable)**
+
+```bash
+juju deploy vault --channel 2.0/stable
+juju integrate vault:vault-kv web:vault-kv
+```
+
+The charm automatically configures Concourse with the Vault URL, AppRole credentials, CA certificate, and KV mount path once Vault is initialized and unsealed. See the [Vault How-To Guide](docs/howto/use-vault.html) for the complete setup procedure.
+
+**Alternative: Manual configuration**
+
+Set the `vault-url` config option along with auth options:
+
+```bash
+juju config web \
+  vault-url=https://vault.example.com:8200 \
+  vault-auth-backend=approle \
+  vault-auth-param='role_id:...,secret_id:...' \
+  vault-ca-cert=/path/to/ca.pem
+```
+
 ### Changing Configuration
 
 Configuration changes are applied dynamically with automatic service restart.
@@ -399,6 +425,31 @@ juju relate concourse-ci:monitoring prometheus:target
 
 #### Peer Relation
 Units automatically coordinate via the `peers` relation (automatic, no action needed).
+
+#### Vault (Credential Management)
+Connect to HashiCorp Vault 2.0/stable for pipeline secret management:
+
+```bash
+juju deploy vault --channel 2.0/stable
+juju integrate vault:vault-kv web:vault-kv
+```
+
+After deploying Vault, initialize, unseal, and authorize the charm:
+
+```bash
+# Initialize (save the unseal key and root token from the output)
+juju ssh vault/leader -- vault operator init -key-shares=1 -key-threshold=1 -format=json
+
+# Unseal
+juju ssh vault/leader -- vault operator unseal <unseal-key>
+
+# Authorize the charm
+juju add-secret vault-root-token token="<root-token>"
+juju grant-secret vault-root-token vault
+juju run vault/leader authorize-charm secret-id=<secret-id> --wait 2m
+```
+
+Concourse will then automatically resolve `((secret-name))` variables in pipelines using Vault. See [How to Use Vault](docs/howto/use-vault.html) for full details.
 
 ## Storage
 
