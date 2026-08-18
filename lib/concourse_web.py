@@ -394,10 +394,31 @@ WantedBy=multi-user.target
             config["no_proxy"] = no_proxy
             logger.info(f"Setting no_proxy={no_proxy}")
 
-        # Write config file. Remove OAuth env vars that this charm manages
-        # when their Juju config is cleared; otherwise stale values can keep
-        # authorizing users/groups after clearing a Juju config option.
-        self._write_config(config, managed_keys=oauth_managed_env_keys | oidc_managed_env_keys)
+        # All CONCOURSE_VAULT_* keys this charm can ever write — used as managed_keys
+        # so stale vault config is removed when the vault-kv relation is gone and
+        # no manual vault-url is configured.
+        vault_managed_env_keys = {
+            "CONCOURSE_VAULT_URL",
+            "CONCOURSE_VAULT_AUTH_BACKEND",
+            "CONCOURSE_VAULT_AUTH_BACKEND_MAX_TTL",
+            "CONCOURSE_VAULT_AUTH_PARAM",
+            "CONCOURSE_VAULT_CA_CERT",
+            "CONCOURSE_VAULT_CLIENT_CERT",
+            "CONCOURSE_VAULT_CLIENT_KEY",
+            "CONCOURSE_VAULT_CLIENT_TOKEN",
+            "CONCOURSE_VAULT_LOOKUP_TEMPLATES",
+            "CONCOURSE_VAULT_NAMESPACE",
+            "CONCOURSE_VAULT_PATH_PREFIX",
+            "CONCOURSE_VAULT_SHARED_PATH",
+        }
+
+        # Write config file. Remove OAuth/OIDC/Vault env vars that this charm
+        # manages when their Juju config is cleared; otherwise stale values can
+        # keep authorizing users or connecting to a removed Vault instance.
+        self._write_config(
+            config,
+            managed_keys=oauth_managed_env_keys | oidc_managed_env_keys | vault_managed_env_keys,
+        )
         logger.info("Web server configuration updated")
 
     @staticmethod
