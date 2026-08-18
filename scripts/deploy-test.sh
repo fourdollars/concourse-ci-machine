@@ -2069,10 +2069,10 @@ step_vault() {
     echo "--- Step 2: Initialise and unseal Vault ---"
 
     # Wait for Vault to be blocked on "Vault needs to be initialized"
-    echo "Waiting for Vault to reach 'blocked' status (needs initialisation)..."
+    echo "Waiting for Vault to reach 'blocked' + idle status (needs initialisation)..."
     timeout 300 bash -c "
         while ! juju status -m $MODEL_NAME --format=json 2>/dev/null \
-            | jq -e '.applications.vault.units | to_entries[] | .value[\"workload-status\"].current == \"blocked\"' >/dev/null 2>&1; do
+            | jq -e '.applications.vault.units | to_entries[] | select(.value[\"workload-status\"].current == \"blocked\" and .value[\"agent-status\"].current == \"idle\")' >/dev/null 2>&1; do
             sleep 5
         done
     "
@@ -2088,6 +2088,23 @@ step_vault() {
     fi
     echo "Vault IP: $VAULT_IP"
     VAULT_ADDR="http://${VAULT_IP}:8200"
+
+    # Wait for the Vault HTTP API to be reachable (vault snap may take a few
+    # seconds to start listening even after the charm hook is idle)
+    echo "Waiting for Vault HTTP API at $VAULT_ADDR ..."
+    for _attempt in $(seq 1 30); do
+        if curl -sf --max-time 5 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 \
+            || curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "$VAULT_ADDR/v1/sys/health" 2>/dev/null | grep -qE '^[245][0-9][0-9]$'; then
+            echo "Vault HTTP API is up (attempt $_attempt)."
+            break
+        fi
+        echo "  Vault API not yet reachable (attempt $_attempt/30), retrying in 5s..."
+        sleep 5
+        if [[ $_attempt -eq 30 ]]; then
+            echo "Error: Vault API did not become reachable after 150s."
+            exit 1
+        fi
+    done
 
     # Initialise
     INIT_OUTPUT=$(curl -sf -X POST "$VAULT_ADDR/v1/sys/init" \
