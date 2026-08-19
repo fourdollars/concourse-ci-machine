@@ -241,7 +241,7 @@ options:
       duration, the shorter value is used. Only effective when secret-cache-enabled=true.
       Maps to CONCOURSE_SECRET_CACHE_DURATION.
       Example values: "1m", "5m", "1h"
-    default: "1m"
+    default: "5m"
     type: string
 
   secret-cache-duration-notfound:

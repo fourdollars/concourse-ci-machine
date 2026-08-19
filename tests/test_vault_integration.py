@@ -54,7 +54,7 @@ _BASE_CONFIG = {
     "extra-local-users": "",
     "main-team-local-user": "",
     "secret-cache-enabled": True,
-    "secret-cache-duration": "1m",
+    "secret-cache-duration": "5m",
     "secret-cache-duration-notfound": "10s",
 }
 
@@ -542,7 +542,7 @@ class TestSecretCache:
 
         result = helper._read_config(str(config_file))
         assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "true"
-        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "1m"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "5m"
         assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "10s"
 
     @patch("concourse_web.subprocess.run")
@@ -552,7 +552,7 @@ class TestSecretCache:
         config_file = tmp_path / "config.env"
         helper = _make_web_helper({
             "secret-cache-enabled": False,
-            "secret-cache-duration": "1m",
+            "secret-cache-duration": "5m",
             "secret-cache-duration-notfound": "10s",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
