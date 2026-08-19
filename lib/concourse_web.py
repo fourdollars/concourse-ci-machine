@@ -412,12 +412,29 @@ WantedBy=multi-user.target
             "CONCOURSE_VAULT_SHARED_PATH",
         }
 
+        # Credential caching (CONCOURSE_SECRET_CACHE_*)
+        cache_managed_env_keys = {
+            "CONCOURSE_SECRET_CACHE_ENABLED",
+            "CONCOURSE_SECRET_CACHE_DURATION",
+            "CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND",
+        }
+        if self.config.get("secret-cache-enabled", True):
+            config["CONCOURSE_SECRET_CACHE_ENABLED"] = "true"
+            duration = self.config.get("secret-cache-duration", "1m")
+            if duration:
+                config["CONCOURSE_SECRET_CACHE_DURATION"] = duration
+            notfound = self.config.get("secret-cache-duration-notfound", "10s")
+            if notfound:
+                config["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] = notfound
+        else:
+            config["CONCOURSE_SECRET_CACHE_ENABLED"] = "false"
+
         # Write config file. Remove OAuth/OIDC/Vault env vars that this charm
         # manages when their Juju config is cleared; otherwise stale values can
         # keep authorizing users or connecting to a removed Vault instance.
         self._write_config(
             config,
-            managed_keys=oauth_managed_env_keys | oidc_managed_env_keys | vault_managed_env_keys,
+            managed_keys=oauth_managed_env_keys | oidc_managed_env_keys | vault_managed_env_keys | cache_managed_env_keys,
         )
         logger.info("Web server configuration updated")
 

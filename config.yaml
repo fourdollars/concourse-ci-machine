@@ -223,6 +223,37 @@ options:
     default: ""
     type: string
 
+  # --- Credential Caching ---
+
+  secret-cache-enabled:
+    description: |
+      Enable caching of credentials fetched from the credential manager (e.g. Vault).
+      Caching reduces the number of requests to the credential server by reusing
+      previously fetched secrets for subsequent pipeline runs.
+      Maps to CONCOURSE_SECRET_CACHE_ENABLED.
+    default: true
+    type: boolean
+
+  secret-cache-duration:
+    description: |
+      How long to cache a successfully fetched credential. Increase to further reduce
+      load on the credential server. If the credential manager returns a shorter lease
+      duration, the shorter value is used. Only effective when secret-cache-enabled=true.
+      Maps to CONCOURSE_SECRET_CACHE_DURATION.
+      Example values: "1m", "5m", "1h"
+    default: "1m"
+    type: string
+
+  secret-cache-duration-notfound:
+    description: |
+      How long to cache the absence of a credential (lookup returned not-found).
+      Prevents Concourse from repeatedly querying for misconfigured or missing secrets.
+      Only effective when secret-cache-enabled=true.
+      Maps to CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND.
+      Example values: "10s", "30s"
+    default: "10s"
+    type: string
+
   # --- Encryption ---
 
   encryption-key:

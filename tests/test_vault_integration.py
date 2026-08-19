@@ -53,6 +53,9 @@ _BASE_CONFIG = {
     "gc-failed-grace-period": "",
     "extra-local-users": "",
     "main-team-local-user": "",
+    "secret-cache-enabled": True,
+    "secret-cache-duration": "1m",
+    "secret-cache-duration-notfound": "10s",
 }
 
 
@@ -518,3 +521,122 @@ class TestVaultKvGoneAway:
         assert result["CONCOURSE_LOG_LEVEL"] == "debug"
         vault_keys = [k for k in result if k.startswith("CONCOURSE_VAULT_")]
         assert vault_keys == [], f"Stale VAULT keys remain: {vault_keys}"
+
+
+# ---------------------------------------------------------------------------
+# Credential caching (CONCOURSE_SECRET_CACHE_*)
+# ---------------------------------------------------------------------------
+
+
+class TestSecretCache:
+    """Tests for secret-cache-enabled / duration / duration-notfound config options."""
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cache_enabled_by_default(self, mock_chmod, mock_run, tmp_path):
+        """With default config (secret-cache-enabled=True), cache env vars are written."""
+        config_file = tmp_path / "config.env"
+        helper = _make_web_helper()
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "true"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "1m"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "10s"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cache_disabled(self, mock_chmod, mock_run, tmp_path):
+        """When secret-cache-enabled=False, ENABLED is false and duration vars are absent."""
+        config_file = tmp_path / "config.env"
+        helper = _make_web_helper({
+            "secret-cache-enabled": False,
+            "secret-cache-duration": "1m",
+            "secret-cache-duration-notfound": "10s",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "false"
+        assert "CONCOURSE_SECRET_CACHE_DURATION" not in result
+        assert "CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND" not in result
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_custom_cache_duration(self, mock_chmod, mock_run, tmp_path):
+        """Custom duration values are written when cache is enabled."""
+        config_file = tmp_path / "config.env"
+        helper = _make_web_helper({
+            "secret-cache-enabled": True,
+            "secret-cache-duration": "5m",
+            "secret-cache-duration-notfound": "30s",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "true"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "5m"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "30s"
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cache_keys_cleaned_up_when_disabled(self, mock_chmod, mock_run, tmp_path):
+        """Disabling cache removes DURATION and DURATION_NOTFOUND from config.env."""
+        config_file = tmp_path / "config.env"
+
+        # First enable
+        helper = _make_web_helper({
+            "secret-cache-enabled": True,
+            "secret-cache-duration": "5m",
+            "secret-cache-duration-notfound": "30s",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "5m"
+
+        # Now disable
+        helper2 = _make_web_helper({
+            "secret-cache-enabled": False,
+            "secret-cache-duration": "5m",
+            "secret-cache-duration-notfound": "30s",
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper2.update_config(admin_password="pass123")
+
+        result2 = helper2._read_config(str(config_file))
+        assert result2["CONCOURSE_SECRET_CACHE_ENABLED"] == "false"
+        assert "CONCOURSE_SECRET_CACHE_DURATION" not in result2
+        assert "CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND" not in result2
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_cache_works_alongside_vault_kv_config(self, mock_chmod, mock_run, tmp_path):
+        """Cache vars are written even when vault-kv relation is active."""
+        config_file = tmp_path / "config.env"
+        helper = _make_web_helper({
+            "secret-cache-enabled": True,
+            "secret-cache-duration": "2m",
+            "secret-cache-duration-notfound": "15s",
+        })
+        vault_kv_config = {
+            "CONCOURSE_VAULT_URL": "https://vault.example.com:8200",
+            "CONCOURSE_VAULT_AUTH_BACKEND": "approle",
+            "CONCOURSE_VAULT_AUTH_PARAM": "role_id:abc,secret_id:def",
+            "CONCOURSE_VAULT_CA_CERT": "/etc/concourse/vault-ca.pem",
+            "CONCOURSE_VAULT_PATH_PREFIX": "/charm-web-concourse",
+        }
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123", vault_kv_config=vault_kv_config)
+
+        result = helper._read_config(str(config_file))
+        # Vault vars present
+        assert result["CONCOURSE_VAULT_URL"] == "https://vault.example.com:8200"
+        # Cache vars also present
+        assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "true"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "2m"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "15s"

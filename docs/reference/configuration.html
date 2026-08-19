@@ -542,6 +542,39 @@
             </tbody>
         </table>
 
+        <h3 id="credential-cache">Credential Cache</h3>
+        <p>Concourse can cache credentials fetched from the credential manager to reduce the number of requests to Vault (or other backends). Caching is enabled by default.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>secret-cache-enabled</code></td>
+                    <td>boolean</td>
+                    <td><code>true</code></td>
+                    <td>Enable caching of credentials fetched from the credential manager. Reduces load on Vault. Maps to <code>CONCOURSE_SECRET_CACHE_ENABLED</code>.</td>
+                </tr>
+                <tr>
+                    <td><code>secret-cache-duration</code></td>
+                    <td>string</td>
+                    <td><code>"1m"</code></td>
+                    <td>How long to cache a found credential. If the credential manager returns a shorter lease duration, the shorter value is used. Only effective when caching is enabled. Maps to <code>CONCOURSE_SECRET_CACHE_DURATION</code>. Example: <code>"5m"</code>, <code>"1h"</code>.</td>
+                </tr>
+                <tr>
+                    <td><code>secret-cache-duration-notfound</code></td>
+                    <td>string</td>
+                    <td><code>"10s"</code></td>
+                    <td>How long to cache the absence of a credential (not-found result). Prevents repeated lookups for missing or misconfigured secrets. Only effective when caching is enabled. Maps to <code>CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND</code>. Example: <code>"30s"</code>.</td>
+                </tr>
+            </tbody>
+        </table>
+
         <h2 id="examples">Configuration Examples</h2>
 
         <h3>Basic Web Server</h3>
