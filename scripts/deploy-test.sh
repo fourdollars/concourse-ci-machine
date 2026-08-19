@@ -2087,14 +2087,14 @@ step_vault() {
             | jq -r ".machines[\"$VAULT_MACHINE\"][\"dns-name\"]")
     fi
     echo "Vault IP: $VAULT_IP"
-    VAULT_ADDR="http://${VAULT_IP}:8200"
+    VAULT_ADDR="https://${VAULT_IP}:8200"
 
     # Wait for the Vault HTTP API to be reachable (vault snap may take a few
     # seconds to start listening even after the charm hook is idle)
     echo "Waiting for Vault HTTP API at $VAULT_ADDR ..."
     for _attempt in $(seq 1 30); do
-        if curl -sf --max-time 5 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 \
-            || curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "$VAULT_ADDR/v1/sys/health" 2>/dev/null | grep -qE '^[245][0-9][0-9]$'; then
+        if curl -skf --max-time 5 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 \
+            || curl -skf --max-time 5 -o /dev/null -w "%{http_code}" "$VAULT_ADDR/v1/sys/health" 2>/dev/null | grep -qE '^[245][0-9][0-9]$'; then
             echo "Vault HTTP API is up (attempt $_attempt)."
             break
         fi
@@ -2107,7 +2107,7 @@ step_vault() {
     done
 
     # Initialise
-    INIT_OUTPUT=$(curl -sf -X POST "$VAULT_ADDR/v1/sys/init" \
+    INIT_OUTPUT=$(curl -skf -X POST "$VAULT_ADDR/v1/sys/init" \
         -H "Content-Type: application/json" \
         -d '{"secret_shares":1,"secret_threshold":1}')
     UNSEAL_KEY=$(echo "$INIT_OUTPUT" | jq -r '.keys[0]')
@@ -2115,7 +2115,7 @@ step_vault() {
     echo "Vault initialised. Unseal key: $UNSEAL_KEY"
 
     # Unseal
-    curl -sf -X POST "$VAULT_ADDR/v1/sys/unseal" \
+    curl -skf -X POST "$VAULT_ADDR/v1/sys/unseal" \
         -H "Content-Type: application/json" \
         -d "{\"key\":\"$UNSEAL_KEY\"}" | jq -r '.sealed'
     echo "Vault unsealed."
@@ -2146,7 +2146,7 @@ step_vault() {
 
     # Enable the KV secrets engine at this path using the root token
     echo "Enabling KV secrets engine at $PRE_RELATE_MOUNT/ ..."
-    ENABLE_RESP=$(curl -sf -o /dev/null -w "%{http_code}" \
+    ENABLE_RESP=$(curl -skf -o /dev/null -w "%{http_code}" \
         -X POST "${VAULT_ADDR}/v1/sys/mounts/${PRE_RELATE_MOUNT}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
@@ -2159,14 +2159,14 @@ step_vault() {
 
     # Write secrets that should be readable by Concourse after relation
     PRE_SECRET_PATH="${PRE_RELATE_MOUNT}/main/test-pipeline/pre-existing-secret"
-    curl -sf -X POST "${VAULT_ADDR}/v1/${PRE_SECRET_PATH}" \
+    curl -skf -X POST "${VAULT_ADDR}/v1/${PRE_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
         -d '{"value":"hello-before-relation"}' >/dev/null
     echo "✓ Pre-existing secret written to $PRE_SECRET_PATH"
 
     PRE_TEAM_SECRET_PATH="${PRE_RELATE_MOUNT}/main/pre-existing-team-secret"
-    curl -sf -X POST "${VAULT_ADDR}/v1/${PRE_TEAM_SECRET_PATH}" \
+    curl -skf -X POST "${VAULT_ADDR}/v1/${PRE_TEAM_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
         -d '{"value":"hello-team-before-relation"}' >/dev/null
@@ -2259,7 +2259,7 @@ step_vault() {
     fi
 
     # Login with AppRole to get a client token
-    APPROLE_LOGIN=$(curl -sf -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
+    APPROLE_LOGIN=$(curl -skf -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
         -H "Content-Type: application/json" \
         -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}")
     CLIENT_TOKEN=$(echo "$APPROLE_LOGIN" | jq -r '.auth.client_token')
@@ -2271,7 +2271,7 @@ step_vault() {
     echo "✓ AppRole login successful with relation-provisioned credentials"
 
     # Read back the pre-existing pipeline secret using the AppRole token
-    READ_PIPELINE=$(curl -sf "${VAULT_ADDR}/v1/${MOUNT}/main/test-pipeline/pre-existing-secret" \
+    READ_PIPELINE=$(curl -skf "${VAULT_ADDR}/v1/${MOUNT}/main/test-pipeline/pre-existing-secret" \
         -H "X-Vault-Token: $CLIENT_TOKEN")
     SECRET_VALUE=$(echo "$READ_PIPELINE" | jq -r '.data.value // empty')
     if [[ "$SECRET_VALUE" == "hello-before-relation" ]]; then
@@ -2282,7 +2282,7 @@ step_vault() {
     fi
 
     # Read back the pre-existing team secret
-    READ_TEAM=$(curl -sf "${VAULT_ADDR}/v1/${MOUNT}/main/pre-existing-team-secret" \
+    READ_TEAM=$(curl -skf "${VAULT_ADDR}/v1/${MOUNT}/main/pre-existing-team-secret" \
         -H "X-Vault-Token: $CLIENT_TOKEN")
     TEAM_VALUE=$(echo "$READ_TEAM" | jq -r '.data.value // empty')
     if [[ "$TEAM_VALUE" == "hello-team-before-relation" ]]; then
@@ -2297,12 +2297,12 @@ step_vault() {
     # -------------------------------------------------------------------------
     echo "--- Step 9: Write a post-relate secret and verify it is also readable ---"
     POST_SECRET_PATH="${MOUNT}/main/test-pipeline/post-relate-secret"
-    curl -sf -X POST "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
+    curl -skf -X POST "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
         -d '{"value":"hello-after-relation"}' >/dev/null
 
-    READ_POST=$(curl -sf "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
+    READ_POST=$(curl -skf "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
         -H "X-Vault-Token: $CLIENT_TOKEN")
     POST_VALUE=$(echo "$READ_POST" | jq -r '.data.value // empty')
     if [[ "$POST_VALUE" == "hello-after-relation" ]]; then
