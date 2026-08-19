@@ -2250,14 +2250,14 @@ step_vault() {
     # -------------------------------------------------------------------------
     echo "--- Step 8: Verify pre-existing secrets are readable after relation ---"
 
-    # Extract role-id and secret-id from CONCOURSE_VAULT_AUTH_PARAM
-    # Format: role-id=<uuid>,secret-id=<uuid>
+    # Extract role_id and secret_id from CONCOURSE_VAULT_AUTH_PARAM
+    # Charm sets format: role_id:<uuid>,secret_id:<uuid> (underscores, colons)
     AUTH_PARAM=$(echo "$CONFIG_CONTENT" | grep "^CONCOURSE_VAULT_AUTH_PARAM=" | cut -d= -f2-)
-    ROLE_ID=$(echo "$AUTH_PARAM" | grep -oP 'role-id=\K[^,]+' || true)
-    SECRET_ID=$(echo "$AUTH_PARAM" | grep -oP 'secret-id=\K[^,]+' || true)
+    ROLE_ID=$(echo "$AUTH_PARAM" | grep -oP 'role_id:\K[^,]+' || true)
+    SECRET_ID=$(echo "$AUTH_PARAM" | grep -oP 'secret_id:\K[^,]+' || true)
 
     if [[ -z "$ROLE_ID" || -z "$SECRET_ID" ]]; then
-        echo "✗ Could not parse role-id/secret-id from CONCOURSE_VAULT_AUTH_PARAM: $AUTH_PARAM"
+        echo "✗ Could not parse role_id/secret_id from CONCOURSE_VAULT_AUTH_PARAM: $AUTH_PARAM"
         exit 1
     fi
 
