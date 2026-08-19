@@ -2147,33 +2147,35 @@ step_vault() {
     # vault charm will provision once we relate.
     PRE_RELATE_MOUNT="charm-${CFG_APP}-concourse"
 
-    # Enable the KV secrets engine at this path using the root token
-    echo "Enabling KV secrets engine at $PRE_RELATE_MOUNT/ ..."
+    # Enable the KV v2 secrets engine at this path using the root token.
+    # The vault 2.0 charm creates KV v2 mounts; we match that here so secrets
+    # written before the relation use the same format the charm expects.
+    echo "Enabling KV v2 secrets engine at $PRE_RELATE_MOUNT/ ..."
     ENABLE_RESP=$(curl -skf -o /dev/null -w "%{http_code}" \
         -X POST "${VAULT_ADDR}/v1/sys/mounts/${PRE_RELATE_MOUNT}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"type":"kv","options":{"version":"1"}}' || echo "000")
+        -d '{"type":"kv","options":{"version":"2"}}' || echo "000")
     if [[ "$ENABLE_RESP" == "204" || "$ENABLE_RESP" == "200" ]]; then
-        echo "✓ KV engine enabled at $PRE_RELATE_MOUNT/"
+        echo "✓ KV v2 engine enabled at $PRE_RELATE_MOUNT/"
     else
         echo "  Note: KV mount response $ENABLE_RESP (may already exist or vault charm will create it)"
     fi
 
-    # Write secrets that should be readable by Concourse after relation
-    PRE_SECRET_PATH="${PRE_RELATE_MOUNT}/main/test-pipeline/pre-existing-secret"
+    # Write secrets using KV v2 format: path is <mount>/data/<path>, body {"data":{...}}
+    PRE_SECRET_PATH="${PRE_RELATE_MOUNT}/data/main/test-pipeline/pre-existing-secret"
     curl -skf -X POST "${VAULT_ADDR}/v1/${PRE_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"value":"hello-before-relation"}' >/dev/null
-    echo "✓ Pre-existing secret written to $PRE_SECRET_PATH"
+        -d '{"data":{"value":"hello-before-relation"}}' >/dev/null
+    echo "✓ Pre-existing secret written to charm-${CFG_APP}-concourse/main/test-pipeline/pre-existing-secret"
 
-    PRE_TEAM_SECRET_PATH="${PRE_RELATE_MOUNT}/main/pre-existing-team-secret"
+    PRE_TEAM_SECRET_PATH="${PRE_RELATE_MOUNT}/data/main/pre-existing-team-secret"
     curl -skf -X POST "${VAULT_ADDR}/v1/${PRE_TEAM_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"value":"hello-team-before-relation"}' >/dev/null
-    echo "✓ Pre-existing team secret written to $PRE_TEAM_SECRET_PATH"
+        -d '{"data":{"value":"hello-team-before-relation"}}' >/dev/null
+    echo "✓ Pre-existing team secret written to charm-${CFG_APP}-concourse/main/pre-existing-team-secret"
 
     # -------------------------------------------------------------------------
     # 4. Relate vault-kv to Concourse NOW (after secrets already exist)
@@ -2261,10 +2263,12 @@ step_vault() {
         exit 1
     fi
 
-    # Login with AppRole to get a client token
-    APPROLE_LOGIN=$(curl -skf -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
+    # Login with AppRole FROM the web unit (vault charm sets CIDR restriction to
+    # the unit's IP, so AppRole login must originate from within that unit)
+    APPROLE_LOGIN=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- \
+        curl -sk -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
         -H "Content-Type: application/json" \
-        -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}")
+        -d "{\"role_id\":\"${ROLE_ID}\",\"secret_id\":\"${SECRET_ID}\"}")
     CLIENT_TOKEN=$(echo "$APPROLE_LOGIN" | jq -r '.auth.client_token')
 
     if [[ -z "$CLIENT_TOKEN" || "$CLIENT_TOKEN" == "null" ]]; then
@@ -2273,10 +2277,11 @@ step_vault() {
     fi
     echo "✓ AppRole login successful with relation-provisioned credentials"
 
-    # Read back the pre-existing pipeline secret using the AppRole token
-    READ_PIPELINE=$(curl -skf "${VAULT_ADDR}/v1/${MOUNT}/main/test-pipeline/pre-existing-secret" \
-        -H "X-Vault-Token: $CLIENT_TOKEN")
-    SECRET_VALUE=$(echo "$READ_PIPELINE" | jq -r '.data.value // empty')
+    # Read back the pre-existing pipeline secret from the web unit (KV v2: /data/ path)
+    READ_PIPELINE=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- \
+        curl -sk "${VAULT_ADDR}/v1/${MOUNT}/data/main/test-pipeline/pre-existing-secret" \
+        -H "X-Vault-Token: ${CLIENT_TOKEN}")
+    SECRET_VALUE=$(echo "$READ_PIPELINE" | jq -r '.data.data.value // empty')
     if [[ "$SECRET_VALUE" == "hello-before-relation" ]]; then
         echo "✓ Pre-existing pipeline secret readable: pre-existing-secret=hello-before-relation"
     else
@@ -2284,10 +2289,11 @@ step_vault() {
         exit 1
     fi
 
-    # Read back the pre-existing team secret
-    READ_TEAM=$(curl -skf "${VAULT_ADDR}/v1/${MOUNT}/main/pre-existing-team-secret" \
-        -H "X-Vault-Token: $CLIENT_TOKEN")
-    TEAM_VALUE=$(echo "$READ_TEAM" | jq -r '.data.value // empty')
+    # Read back the pre-existing team secret from the web unit (KV v2: /data/ path)
+    READ_TEAM=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- \
+        curl -sk "${VAULT_ADDR}/v1/${MOUNT}/data/main/pre-existing-team-secret" \
+        -H "X-Vault-Token: ${CLIENT_TOKEN}")
+    TEAM_VALUE=$(echo "$READ_TEAM" | jq -r '.data.data.value // empty')
     if [[ "$TEAM_VALUE" == "hello-team-before-relation" ]]; then
         echo "✓ Pre-existing team secret readable: pre-existing-team-secret=hello-team-before-relation"
     else
@@ -2299,15 +2305,17 @@ step_vault() {
     # 9. Write an additional secret AFTER relation (normal post-relate workflow)
     # -------------------------------------------------------------------------
     echo "--- Step 9: Write a post-relate secret and verify it is also readable ---"
-    POST_SECRET_PATH="${MOUNT}/main/test-pipeline/post-relate-secret"
+    # KV v2: write to <mount>/data/<path> with {"data":{...}} wrapper
+    POST_SECRET_PATH="${MOUNT}/data/main/test-pipeline/post-relate-secret"
     curl -skf -X POST "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
         -H "X-Vault-Token: $ROOT_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"value":"hello-after-relation"}' >/dev/null
+        -d '{"data":{"value":"hello-after-relation"}}' >/dev/null
 
-    READ_POST=$(curl -skf "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
-        -H "X-Vault-Token: $CLIENT_TOKEN")
-    POST_VALUE=$(echo "$READ_POST" | jq -r '.data.value // empty')
+    READ_POST=$(_juju_exec_with_retry --unit "$WEB_UNIT" -- \
+        curl -sk "${VAULT_ADDR}/v1/${POST_SECRET_PATH}" \
+        -H "X-Vault-Token: ${CLIENT_TOKEN}")
+    POST_VALUE=$(echo "$READ_POST" | jq -r '.data.data.value // empty')
     if [[ "$POST_VALUE" == "hello-after-relation" ]]; then
         echo "✓ Post-relate secret readable: post-relate-secret=hello-after-relation"
     else
