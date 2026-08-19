@@ -2121,11 +2121,14 @@ step_vault() {
     echo "Vault unsealed."
 
     # Store root token as a Juju secret so the charm can use it
-    SECRET_URI=$(juju add-secret vault-root-token token="$ROOT_TOKEN" 2>/dev/null \
+    SECRET_URI=$(juju add-secret vault-root-token token="$ROOT_TOKEN" 2>&1 \
         | grep -oP 'secret:\S+' || true)
-    if [[ -n "$SECRET_URI" ]]; then
-        juju grant-secret "$SECRET_URI" "$VAULT_APP" 2>/dev/null || true
+    if [[ -z "$SECRET_URI" ]]; then
+        echo "Error: failed to create Juju secret for vault root token"
+        exit 1
     fi
+    juju grant-secret "$SECRET_URI" "$VAULT_APP"
+    echo "Root token stored as Juju secret: $SECRET_URI"
 
     # -------------------------------------------------------------------------
     # 3. Write test secrets BEFORE relating to Concourse
@@ -2182,7 +2185,7 @@ step_vault() {
     # 5. Authorise the Concourse charm via vault action
     # -------------------------------------------------------------------------
     echo "--- Step 5: Authorise Concourse charm with Vault ---"
-    juju run vault/leader authorize-charm token="$ROOT_TOKEN"
+    juju run vault/0 authorize-charm secret-id="$SECRET_URI"
     echo "authorize-charm action complete."
 
     # -------------------------------------------------------------------------
