@@ -539,6 +539,12 @@
                     <td><code>""</code></td>
                     <td>Shared path for Vault secrets accessible across teams.</td>
                 </tr>
+                <tr>
+                    <td><code>vault-enable-kv-mount-cache</code></td>
+                    <td>boolean</td>
+                    <td><code>true</code></td>
+                    <td>Enable caching of Vault KV mount version detection to reduce preflight requests to <code>/v1/sys/internal/ui/mounts</code>. Maps to <code>CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE</code>.</td>
+                </tr>
             </tbody>
         </table>
 
@@ -563,13 +569,13 @@
                 <tr>
                     <td><code>secret-cache-duration</code></td>
                     <td>string</td>
-                    <td><code>"1m"</code></td>
+                    <td><code>"5m"</code></td>
                     <td>How long to cache a found credential. If the credential manager returns a shorter lease duration, the shorter value is used. Only effective when caching is enabled. Maps to <code>CONCOURSE_SECRET_CACHE_DURATION</code>. Example: <code>"5m"</code>, <code>"1h"</code>.</td>
                 </tr>
                 <tr>
                     <td><code>secret-cache-duration-notfound</code></td>
                     <td>string</td>
-                    <td><code>"10s"</code></td>
+                    <td><code>"1m"</code></td>
                     <td>How long to cache the absence of a credential (not-found result). Prevents repeated lookups for missing or misconfigured secrets. Only effective when caching is enabled. Maps to <code>CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND</code>. Example: <code>"30s"</code>.</td>
                 </tr>
             </tbody>

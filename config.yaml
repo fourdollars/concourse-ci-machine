@@ -223,6 +223,15 @@ options:
     default: ""
     type: string
 
+  vault-enable-kv-mount-cache:
+    description: |
+      Enable caching of KV mount version detection to reduce preflight requests to Vault.
+      When enabled, Concourse caches whether a Vault mount is KV v1 or KV v2, avoiding
+      redundant /v1/sys/internal/ui/mounts preflight calls on every secret lookup.
+      Maps to CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE.
+    default: true
+    type: boolean
+
   # --- Credential Caching ---
 
   secret-cache-enabled:
@@ -251,7 +260,7 @@ options:
       Only effective when secret-cache-enabled=true.
       Maps to CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND.
       Example values: "10s", "30s"
-    default: "10s"
+    default: "1m"
     type: string
 
   # --- Encryption ---

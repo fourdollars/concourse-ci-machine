@@ -279,6 +279,12 @@ WantedBy=multi-user.target
             if self.config.get("vault-shared-path"):
                 config["CONCOURSE_VAULT_SHARED_PATH"] = self.config["vault-shared-path"]
 
+        if vault_kv_config or self.config.get("vault-url"):
+            if self.config.get("vault-enable-kv-mount-cache", True):
+                config["CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE"] = "true"
+            else:
+                config["CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE"] = "false"
+
         # Encryption key
         if self.config.get("encryption-key"):
             config["CONCOURSE_ENCRYPTION_KEY"] = self.config["encryption-key"]
@@ -410,6 +416,7 @@ WantedBy=multi-user.target
             "CONCOURSE_VAULT_NAMESPACE",
             "CONCOURSE_VAULT_PATH_PREFIX",
             "CONCOURSE_VAULT_SHARED_PATH",
+            "CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE",
         }
 
         # Credential caching (CONCOURSE_SECRET_CACHE_*)
@@ -420,10 +427,10 @@ WantedBy=multi-user.target
         }
         if self.config.get("secret-cache-enabled", True):
             config["CONCOURSE_SECRET_CACHE_ENABLED"] = "true"
-            duration = self.config.get("secret-cache-duration", "1m")
+            duration = self.config.get("secret-cache-duration", "5m")
             if duration:
                 config["CONCOURSE_SECRET_CACHE_DURATION"] = duration
-            notfound = self.config.get("secret-cache-duration-notfound", "10s")
+            notfound = self.config.get("secret-cache-duration-notfound", "1m")
             if notfound:
                 config["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] = notfound
         else:

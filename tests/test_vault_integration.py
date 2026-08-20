@@ -29,6 +29,7 @@ _BASE_CONFIG = {
     "vault-lookup-templates": "",
     "vault-namespace": "",
     "vault-shared-path": "",
+    "vault-enable-kv-mount-cache": True,
     "encryption-key": "",
     "ldap-display-name": "",
     "ldap-host": "",
@@ -55,7 +56,7 @@ _BASE_CONFIG = {
     "main-team-local-user": "",
     "secret-cache-enabled": True,
     "secret-cache-duration": "5m",
-    "secret-cache-duration-notfound": "10s",
+    "secret-cache-duration-notfound": "1m",
 }
 
 
@@ -104,6 +105,7 @@ class TestVaultKvRelationConfig:
         assert result["CONCOURSE_VAULT_AUTH_PARAM"] == "role-id=abc123,secret-id=def456"
         assert result["CONCOURSE_VAULT_PATH_PREFIX"] == "/charm-web-concourse"
         assert "-----BEGIN CERTIFICATE-----" in result["CONCOURSE_VAULT_CA_CERT"]
+        assert result["CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE"] == "true" 
 
     @patch("concourse_web.subprocess.run")
     @patch("concourse_web.os.chmod")
@@ -378,6 +380,22 @@ class TestManualVaultUrlConfig:
 # ---------------------------------------------------------------------------
 
 
+
+    @patch("concourse_web.subprocess.run")
+    @patch("concourse_web.os.chmod")
+    def test_vault_kv_mount_cache_can_be_disabled(self, mock_chmod, mock_run, tmp_path):
+        """Setting vault-enable-kv-mount-cache=False writes false to config.env."""
+        config_file = tmp_path / "config.env"
+        helper = _make_web_helper({
+            "vault-url": "https://vault.example.com:8200",
+            "vault-enable-kv-mount-cache": False,
+        })
+        with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
+            helper.update_config(admin_password="pass123")
+
+        result = helper._read_config(str(config_file))
+        assert result["CONCOURSE_VAULT_ENABLE_KV_MOUNT_CACHE"] == "false"
+
 class TestVaultPathPrefixOverride:
     """Tests for vault-path-prefix juju config overriding the vault-kv mount path."""
 
@@ -543,7 +561,7 @@ class TestSecretCache:
         result = helper._read_config(str(config_file))
         assert result["CONCOURSE_SECRET_CACHE_ENABLED"] == "true"
         assert result["CONCOURSE_SECRET_CACHE_DURATION"] == "5m"
-        assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "10s"
+        assert result["CONCOURSE_SECRET_CACHE_DURATION_NOTFOUND"] == "1m"
 
     @patch("concourse_web.subprocess.run")
     @patch("concourse_web.os.chmod")
@@ -553,7 +571,7 @@ class TestSecretCache:
         helper = _make_web_helper({
             "secret-cache-enabled": False,
             "secret-cache-duration": "5m",
-            "secret-cache-duration-notfound": "10s",
+            "secret-cache-duration-notfound": "1m",
         })
         with patch("concourse_web.CONCOURSE_CONFIG_FILE", str(config_file)):
             helper.update_config(admin_password="pass123")
