@@ -7,40 +7,38 @@ Supports web-only, worker-only, or combined deployments
 import logging
 import os
 import secrets
+import socket
 import string
 import sys
-import socket
 from pathlib import Path
-from typing import Optional
 
 # Add lib to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 
-from ops.charm import CharmBase
-from ops.main import main
-from ops.model import (
-    ActiveStatus,
-    WaitingStatus,
-    BlockedStatus,
-    MaintenanceStatus,
-)
-
 # Import new modular helpers
 from concourse_common import (
+    CONCOURSE_BIN,
+    KEYS_DIR,
+    create_concourse_user,
     ensure_directories,
     generate_keys,
-    create_concourse_user,
     get_concourse_version,
-    KEYS_DIR,
-    CONCOURSE_BIN,
 )
+from concourse_exporter import ConcourseExporterHelper
 from concourse_installer import (
     download_and_install_concourse,
     verify_installation,
 )
 from concourse_web import ConcourseWebHelper
 from concourse_worker import ConcourseWorkerHelper
-from concourse_exporter import ConcourseExporterHelper
+from ops.charm import CharmBase
+from ops.main import main
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    WaitingStatus,
+)
 
 # Import folder mount manager for discovery status reporting
 try:
@@ -152,9 +150,13 @@ class ConcourseCharm(CharmBase):
                 relation_name="vault-kv",
                 mount_suffix="concourse",
             )
-            self.framework.observe(self.vault_kv.on.connected, self._on_vault_kv_connected)
+            self.framework.observe(
+                self.vault_kv.on.connected, self._on_vault_kv_connected
+            )
             self.framework.observe(self.vault_kv.on.ready, self._on_vault_kv_ready)
-            self.framework.observe(self.vault_kv.on.gone_away, self._on_vault_kv_gone_away)
+            self.framework.observe(
+                self.vault_kv.on.gone_away, self._on_vault_kv_gone_away
+            )
         else:
             self.vault_kv = None
 
@@ -362,8 +364,8 @@ class ConcourseCharm(CharmBase):
                         f"Waiting for binaries v{version}..."  # T034
                     )
                     from concourse_installer import (
-                        download_and_install_concourse_with_storage,
                         detect_existing_binaries,
+                        download_and_install_concourse_with_storage,
                     )
 
                     existing = detect_existing_binaries(storage_coordinator, version)
@@ -463,7 +465,7 @@ class ConcourseCharm(CharmBase):
             logger.info("Concourse installation completed successfully")
 
         except Exception as e:
-            logger.error(f"Installation failed: {e}", exc_info=True)
+            logger.exception("Installation failed")
             self.unit.status = BlockedStatus(f"Installation failed: {e}")
 
     def _ensure_keys_generated(self):
@@ -557,10 +559,9 @@ class ConcourseCharm(CharmBase):
                     )
                     try:
                         self.worker_helper.restart_service()
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to restart worker during charm upgrade: {e}",
-                            exc_info=True,
+                    except Exception:
+                        logger.exception(
+                            "Failed to restart worker during charm upgrade"
                         )
 
             # Trigger config update
@@ -569,7 +570,7 @@ class ConcourseCharm(CharmBase):
             logger.info("Charm upgrade completed successfully")
 
         except Exception as e:
-            logger.error(f"Charm upgrade failed: {e}", exc_info=True)
+            logger.exception("Charm upgrade failed")
             self.unit.status = BlockedStatus(f"Upgrade failed: {e}")
 
     def _on_config_changed(self, event):
@@ -669,7 +670,7 @@ class ConcourseCharm(CharmBase):
                                             is_complete = True
                                         elif state.state == "idle":
                                             is_idle = True
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.warning(f"Failed to check upgrade state: {e}")
 
                             # If state is idle but versions mismatch, check if binaries are already there
@@ -688,7 +689,7 @@ class ConcourseCharm(CharmBase):
                                             f"Binaries v{desired_version} found in shared storage while state is idle, proceeding with upgrade"
                                         )
                                         is_complete = True
-                                except Exception as e:
+                                except Exception as e:  # noqa: BLE001
                                     logger.warning(
                                         f"Failed to verify binaries in idle state: {e}"
                                     )
@@ -775,6 +776,7 @@ class ConcourseCharm(CharmBase):
 
                 if self._should_run_worker():
                     from pathlib import Path
+
                     from concourse_common import CONCOURSE_BIN
 
                     # Check if Concourse binaries are installed before configuring
@@ -816,7 +818,7 @@ class ConcourseCharm(CharmBase):
             logger.info("Configuration updated successfully")
 
         except Exception as e:
-            logger.error(f"Config update failed: {e}", exc_info=True)
+            logger.exception("Config update failed")
             self.unit.status = BlockedStatus(f"Config failed: {e}")
 
     def _on_start(self, event):
@@ -830,7 +832,7 @@ class ConcourseCharm(CharmBase):
 
             self._update_status()
         except Exception as e:
-            logger.error(f"Start failed: {e}", exc_info=True)
+            logger.exception("Start failed")
             self.unit.status = BlockedStatus(f"Start failed: {e}")
 
     def _on_update_status(self, event):
@@ -908,7 +910,7 @@ class ConcourseCharm(CharmBase):
             )
             should_check_storage = True
 
-        if should_check_storage:
+        if should_check_storage:  # noqa: SIM102
             # Check if shared storage is configured
             if self.config.get("shared-storage", "none") == "lxc":
                 storage_path = Path("/var/lib/concourse")
@@ -1052,7 +1054,7 @@ class ConcourseCharm(CharmBase):
                                 self._update_status()
                                 return
                             except Exception as e:
-                                logger.error(f"Setup failed: {e}", exc_info=True)
+                                logger.exception("Setup failed")
                                 self.unit.status = BlockedStatus(f"Setup failed: {e}")
                                 return
 
@@ -1083,7 +1085,7 @@ class ConcourseCharm(CharmBase):
                                 self._update_status()
                                 return
                             except Exception as e:
-                                logger.error(f"Web setup failed: {e}", exc_info=True)
+                                logger.exception("Web setup failed")
                                 self.unit.status = BlockedStatus(
                                     f"Web setup failed: {e}"
                                 )
@@ -1141,7 +1143,7 @@ class ConcourseCharm(CharmBase):
 
                                 logger.info("Installation completed via update-status")
                         except Exception as e:
-                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            logger.exception("Installation failed")
                             self.unit.status = BlockedStatus(
                                 f"Installation failed: {e}"
                             )
@@ -1169,7 +1171,7 @@ class ConcourseCharm(CharmBase):
                                 self.worker_helper.setup_systemd_service()
                                 logger.info("Installation completed via update-status")
                         except Exception as e:
-                            logger.error(f"Installation failed: {e}", exc_info=True)
+                            logger.exception("Installation failed")
                             self.unit.status = BlockedStatus(
                                 f"Installation failed: {e}"
                             )
@@ -1267,7 +1269,7 @@ class ConcourseCharm(CharmBase):
 
                     # Publish updated version to peer relation
                     self._publish_version_to_peer_relation()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to check for automatic upgrade: {e}")
 
         self._update_status()
@@ -1280,8 +1282,8 @@ class ConcourseCharm(CharmBase):
                 self.web_helper.stop_service()
             if self._should_run_worker():
                 self.worker_helper.stop_service()
-        except Exception as e:
-            logger.error(f"Stop failed: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Stop failed")
 
     def _on_postgresql_relation_created(self, event):
         """Handle PostgreSQL relation created"""
@@ -1326,7 +1328,7 @@ class ConcourseCharm(CharmBase):
             self._update_status()
 
         except Exception as e:
-            logger.error(f"PostgreSQL relation handling failed: {e}", exc_info=True)
+            logger.exception("PostgreSQL relation handling failed")
             self.unit.status = BlockedStatus(f"Database config failed: {e}")
 
     def _on_postgresql_relation_broken(self, event):
@@ -1373,7 +1375,7 @@ class ConcourseCharm(CharmBase):
 
             # Extract connection info from first relation
             db_url = None
-            for rel_id, data in db_data.items():
+            for data in db_data.values():
                 # Library provides 'uris' with full connection string including credentials
                 if "uris" in data:
                     db_url = data["uris"]
@@ -1415,13 +1417,13 @@ class ConcourseCharm(CharmBase):
             self._update_status()
 
         except Exception as e:
-            logger.error(f"Database configuration failed: {e}", exc_info=True)
+            logger.exception("Database configuration failed")
             self.unit.status = BlockedStatus(f"Database config failed: {e}")
 
     def _publish_keys_to_peers(self):
         """Publish TSA keys and web IP to peer relation"""
-        from pathlib import Path
         import socket
+        from pathlib import Path
 
         peer_relation = self.model.get_relation("peers")
         if not peer_relation:
@@ -1436,7 +1438,8 @@ class ConcourseCharm(CharmBase):
                     if binding and binding.network and binding.network.ingress_address:
                         unit_ip = str(binding.network.ingress_address)
                         break
-                except Exception:
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Binding {binding_name!r} unavailable: {e}")
                     continue
 
             if not unit_ip:
@@ -1462,8 +1465,8 @@ class ConcourseCharm(CharmBase):
                 peer_relation.data[self.unit]["concourse-version"] = installed_version
                 logger.info(f"Published version {installed_version} to peers")
 
-        except Exception as e:
-            logger.error(f"Failed to publish keys to peers: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to publish keys to peers")
 
     def _authorize_worker_key(self, worker_pub_key: str):
         """Add a worker's public key to authorized_worker_keys"""
@@ -1508,8 +1511,8 @@ class ConcourseCharm(CharmBase):
             else:
                 logger.debug("Worker key already authorized")
 
-        except Exception as e:
-            logger.error(f"Failed to authorize worker key: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to authorize worker key")
 
     def _on_peer_relation_changed(self, event):
         """Handle peer relation changed - share TSA keys, worker keys, and upgrade signals (T046)"""
@@ -1689,9 +1692,9 @@ class ConcourseCharm(CharmBase):
 
     def _update_merged_config(self):
         """Update config when running both web and worker"""
-        from pathlib import Path
         import os
         import subprocess
+        from pathlib import Path
 
         # Get configs from both helpers (but don't write them)
         db_url = self._get_postgresql_url()
@@ -1729,7 +1732,8 @@ class ConcourseCharm(CharmBase):
                 if _b and _b.network and _b.network.ingress_address:
                     unit_ip = str(_b.network.ingress_address)
                     break
-            except Exception:
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Binding {binding_name!r} unavailable: {e}")
                 continue
         if not unit_ip:
             unit_ip = socket.gethostbyname(socket.gethostname())
@@ -2024,8 +2028,8 @@ class ConcourseCharm(CharmBase):
             # Update Prometheus scrape targets based on enable-metrics config
             self._update_prometheus_jobs()
 
-        except Exception as e:
-            logger.error(f"Failed to handle exporter service: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to handle exporter service")
 
     def _update_prometheus_jobs(self):
         """Update Prometheus scrape jobs based on enable-metrics config"""
@@ -2070,6 +2074,7 @@ class ConcourseCharm(CharmBase):
                 ["systemctl", "is-active", "concourse-server.service"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.returncode == 0:
                 subprocess.run(
@@ -2085,6 +2090,7 @@ class ConcourseCharm(CharmBase):
                 ["systemctl", "is-active", "concourse-worker.service"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.returncode == 0:
                 subprocess.run(
@@ -2111,7 +2117,7 @@ class ConcourseCharm(CharmBase):
         # Use DatabaseRequires library if available - it handles secrets
         if HAS_DATA_PLATFORM and self.database:
             db_data = self.database.fetch_relation_data()
-            for rel_id, data in db_data.items():
+            for data in db_data.values():
                 # Library provides 'uris' with full connection string
                 if "uris" in data:
                     logger.info("Using connection URI from DatabaseRequires library")
@@ -2150,7 +2156,7 @@ class ConcourseCharm(CharmBase):
                     if tsa_host:
                         logger.info(f"Using TSA host from relation: {tsa_host}")
                         return tsa_host
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to get TSA host from relation: {e}")
 
         # Priority 2: Try to get leader IP from peer relation (for auto mode)
@@ -2167,8 +2173,10 @@ class ConcourseCharm(CharmBase):
                     web_ip = data.get("web-ip")
                     if web_ip:
                         return f"{web_ip}:2222"
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(
+                        f"Failed to read web-ip from peer relation for {unit}: {e}"
+                    )
 
         # Fallback: if we're the leader, return our own IP
         if self.unit.is_leader():
@@ -2177,7 +2185,7 @@ class ConcourseCharm(CharmBase):
             try:
                 unit_ip = socket.gethostbyname(socket.gethostname())
                 return f"{unit_ip}:2222"
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return "127.0.0.1:2222"
 
         # Last resort: try localhost (will fail for remote workers)
@@ -2316,7 +2324,7 @@ class ConcourseCharm(CharmBase):
                 )
 
         except Exception as e:
-            logger.error(f"Status update failed: {e}", exc_info=True)
+            logger.exception("Status update failed")
             self.unit.status = BlockedStatus(f"Status check failed: {e}")
 
     def _on_get_admin_password_action(self, event):
@@ -2335,26 +2343,26 @@ class ConcourseCharm(CharmBase):
             logger.info("Admin password retrieved via action")
         except Exception as e:
             event.fail(f"Failed to retrieve admin password: {e}")
-            logger.error(f"Get admin password action failed: {e}", exc_info=True)
+            logger.exception("Get admin password action failed")
 
-    def _get_installed_concourse_version(self) -> Optional[str]:
+    def _get_installed_concourse_version(self) -> str | None:
         """Detect installed Concourse version from binary output"""
         try:
-            import subprocess
             import re
+            import subprocess
 
             result = subprocess.run(
-                [CONCOURSE_BIN, "-v"], capture_output=True, text=True
+                [CONCOURSE_BIN, "-v"], capture_output=True, text=True, check=False
             )
             output = (result.stdout or result.stderr or "").strip()
             match = re.search(r"v?(\d+\.\d+\.\d+)", output)
             if match:
                 return match.group(1)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect installed version: {e}")
         return None
 
-    def _get_web_url(self) -> Optional[str]:
+    def _get_web_url(self) -> str | None:
         """Get the web server URL for status display
 
         Prioritizes external-url config, falls back to auto-detected IP:PORT
@@ -2373,7 +2381,8 @@ class ConcourseCharm(CharmBase):
                     binding = self.model.get_binding(binding_name)
                     if binding and binding.network and binding.network.ingress_address:
                         break
-                except Exception:
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Binding {binding_name!r} unavailable: {e}")
                     continue
 
             if (
@@ -2388,7 +2397,7 @@ class ConcourseCharm(CharmBase):
             web_port = self.config.get("web-port", 8080)
 
             return f"http://{unit_ip}:{web_port}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not construct web URL: {e}")
             return None
 
@@ -2412,26 +2421,26 @@ class ConcourseCharm(CharmBase):
                     try:
                         self.unit.close_port("tcp", port_obj.port)
                         logger.info(f"Closed old port {port_obj.port}/tcp")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.warning(f"Failed to close port {port_obj.port}/tcp: {e}")
 
             # Open the desired port
             try:
                 self.unit.open_port("tcp", desired_port)
                 logger.info(f"Opened port {desired_port}/tcp")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to open port {desired_port}/tcp: {e}")
 
-        except Exception as e:
-            logger.error(f"Port management failed: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Port management failed")
 
     def _orchestrate_coordinated_upgrade(self, event, version: str):
         """Orchestrate coordinated upgrade across multiple units (T045)"""
         try:
             from storage_coordinator import (
-                UpgradeCoordinator,
                 RelationDataAccessor,
                 ServiceManager,
+                UpgradeCoordinator,
             )
 
             # T053: Set status messages
@@ -2443,7 +2452,7 @@ class ConcourseCharm(CharmBase):
             if not storage_coordinator:
                 storage_coordinator = self.web_helper.initialize_shared_storage()
             if not storage_coordinator:
-                raise Exception(
+                raise RuntimeError(
                     "Storage coordinator not initialized for coordinated upgrade"
                 )
 
@@ -2539,14 +2548,15 @@ class ConcourseCharm(CharmBase):
             )  # T052
             self._update_status()
 
-        except Exception as e:
-            logger.error(f"Coordinated upgrade failed: {e}", exc_info=True)  # T052
+        except Exception:
+            logger.exception("Coordinated upgrade failed")  # T052
             # Reset upgrade state so a future retry (or the next
             # config-changed) does not hit "Upgrade already in progress".
             try:
                 peer_relation = self.model.get_relation("peers")
                 if peer_relation and self.unit.is_leader():
                     from datetime import datetime, timezone
+
                     from storage_coordinator import UpgradeState
 
                     idle_state = UpgradeState(
@@ -2560,7 +2570,7 @@ class ConcourseCharm(CharmBase):
                     for key, value in idle_state.to_relation_data().items():
                         peer_relation.data[self.app][key] = value
                     logger.info("Upgrade state reset to idle after failure")
-            except Exception as reset_err:
+            except Exception as reset_err:  # noqa: BLE001
                 logger.warning(f"Failed to reset upgrade state: {reset_err}")
             raise
 
@@ -2605,9 +2615,9 @@ class ConcourseCharm(CharmBase):
         """Handle upgrade coordination signals from leader (T046, T047, T048)"""
         try:
             from storage_coordinator import (
-                UpgradeCoordinator,
                 RelationDataAccessor,
                 ServiceManager,
+                UpgradeCoordinator,
                 UpgradeState,
             )
 
@@ -2696,8 +2706,8 @@ class ConcourseCharm(CharmBase):
                 elif isinstance(self.unit.status, WaitingStatus):
                     self._update_status()
 
-        except Exception as e:
-            logger.error(f"Failed to handle upgrade signal: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to handle upgrade signal")
 
     def _publish_version_to_peer_relation(self):
         """Publish current version to peer relation to trigger worker upgrades"""
@@ -2711,10 +2721,8 @@ class ConcourseCharm(CharmBase):
             if peer_relation:
                 peer_relation.data[self.unit]["concourse-version"] = installed_version
                 logger.info(f"Published version {installed_version} to peer relation")
-        except Exception as e:
-            logger.error(
-                f"Failed to publish version to peer relation: {e}", exc_info=True
-            )
+        except Exception:
+            logger.exception("Failed to publish version to peer relation")
 
     def _publish_version_to_tsa_relations(self):
         """Publish current version to all TSA relations to trigger worker upgrades"""
@@ -2733,10 +2741,8 @@ class ConcourseCharm(CharmBase):
                 )
             else:
                 logger.info("No TSA relations found to publish version to")
-        except Exception as e:
-            logger.error(
-                f"Failed to publish version to TSA relations: {e}", exc_info=True
-            )
+        except Exception:
+            logger.exception("Failed to publish version to TSA relations")
 
     def _on_tsa_relation_joined(self, event):
         """Handle TSA relation joined - bidirectional: web publishes TSA info, worker publishes worker key"""
@@ -2772,8 +2778,8 @@ class ConcourseCharm(CharmBase):
 
                 logger.info(f"Published TSA info: {web_ip}:2222")
 
-            except Exception as e:
-                logger.error(f"Failed to publish TSA info: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Failed to publish TSA info")
 
         elif self._should_run_worker():
             # Worker side: publish worker public key
@@ -2794,8 +2800,8 @@ class ConcourseCharm(CharmBase):
 
                 logger.info("Published worker public key")
 
-            except Exception as e:
-                logger.error(f"Failed to publish worker key: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Failed to publish worker key")
 
     def _on_tsa_relation_changed(self, event):
         """Handle TSA relation changed - bidirectional exchange"""
@@ -2826,8 +2832,8 @@ class ConcourseCharm(CharmBase):
                     logger.info("Restarting web server to pick up new worker keys")
                     self.web_helper.restart_service()
 
-            except Exception as e:
-                logger.error(f"Failed to authorize worker keys: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Failed to authorize worker keys")
 
         elif self._should_run_worker():
             # Worker side: get TSA info and connect
@@ -2903,7 +2909,7 @@ class ConcourseCharm(CharmBase):
                 self._update_status()
 
             except Exception as e:
-                logger.error(f"Failed to handle TSA relation: {e}", exc_info=True)
+                logger.exception("Failed to handle TSA relation")
                 self.unit.status = BlockedStatus(f"TSA relation failed: {e}")
 
     def _check_folder_discovery_status(self):
@@ -2944,12 +2950,11 @@ class ConcourseCharm(CharmBase):
                 return (True, "")  # No folders is valid
 
         except Exception as e:
-            error_msg = f"Folder discovery check failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            error_msg = f"Folder discovery check failed: {e!s}"
+            logger.exception(error_msg)
             return (False, error_msg)
 
-
-    def _get_vault_kv_config(self) -> Optional[dict]:
+    def _get_vault_kv_config(self) -> dict | None:
         """Build the Vault environment config dict from vault-kv relation data.
 
         Returns a dict of CONCOURSE_VAULT_* env vars if vault-kv relation is
@@ -2978,6 +2983,7 @@ class ConcourseCharm(CharmBase):
             ca_cert_path = "/etc/concourse/vault-ca.pem"
             try:
                 import os as _os
+
                 _os.makedirs("/etc/concourse", exist_ok=True)
                 with open(ca_cert_path, "w") as f:
                     f.write(ca_cert)
@@ -3019,11 +3025,11 @@ class ConcourseCharm(CharmBase):
         nonce = self._get_or_create_vault_nonce()
         try:
             binding = self.model.get_binding(relation)
+            egress_subnets = [str(subnet) for subnet in binding.network.egress_subnets]
+        except Exception:  # noqa: BLE001
             egress_subnets = [
-                str(subnet) for subnet in binding.network.egress_subnets
+                str(self.model.get_binding("vault-kv").network.interfaces[0].subnet)
             ]
-        except Exception:
-            egress_subnets = [str(self.model.get_binding("vault-kv").network.interfaces[0].subnet)]
         self.vault_kv.request_credentials(relation, egress_subnets, nonce)
         logger.info("Vault KV: credentials requested (awaiting ready event)")
 
@@ -3053,7 +3059,7 @@ class ConcourseCharm(CharmBase):
             secret_content = secret.get_content(refresh=True)
             role_id = secret_content.get("role-id", "")
             role_secret_id = secret_content.get("role-secret-id", "")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Vault KV: failed to retrieve credentials secret: {e}")
             return
         # Persist vault connection info in peer data so web service can use it
@@ -3076,7 +3082,13 @@ class ConcourseCharm(CharmBase):
             return
         peer_relation = self.model.get_relation("peers")
         if peer_relation and self.unit.is_leader():
-            for key in ("vault-url", "vault-ca-certificate", "vault-mount", "vault-role-id", "vault-role-secret-id"):
+            for key in (
+                "vault-url",
+                "vault-ca-certificate",
+                "vault-mount",
+                "vault-role-id",
+                "vault-role-secret-id",
+            ):
                 peer_relation.data[self.app].pop(key, None)
         logger.info("Vault KV relation gone, Vault configuration removed")
         self._on_config_changed(event)
@@ -3089,7 +3101,7 @@ class ConcourseCharm(CharmBase):
         try:
             secret = self.model.get_secret(label=VAULT_KV_NONCE_SECRET_LABEL)
             return secret.get_content(refresh=True)["nonce"]
-        except Exception:
+        except Exception:  # noqa: BLE001
             nonce = secrets.token_hex(16)
             self.unit.add_secret(
                 {"nonce": nonce},
