@@ -466,6 +466,30 @@ class ConcourseCharm(CharmBase):
             logger.error(f"Installation failed: {e}", exc_info=True)
             self.unit.status = BlockedStatus(f"Installation failed: {e}")
 
+    def _ensure_keys_generated(self):
+        """Ensure TSA/session keys exist for the current role, generating them if missing.
+
+        This is a safety net for any code path that installs/upgrades the
+        Concourse binary (e.g. install retried via config-changed after an
+        earlier failed install, or an upgrade) but might not otherwise
+        regenerate missing keys. Without this, the web/worker service can
+        start without a tsa_host_key(.pub), causing a crash loop.
+        """
+        keys_dir_path = KEYS_DIR
+        if self._should_run_worker() and not self._should_run_web():
+            from concourse_common import WORKER_KEYS_DIR
+
+            keys_dir_path = WORKER_KEYS_DIR
+
+        keys_dir = Path(keys_dir_path)
+        if not (keys_dir / "tsa_host_key").exists():
+            # Check if binary exists before generating keys
+            if verify_installation():
+                logger.info(f"Generating missing keys in {keys_dir}")
+                generate_keys(keys_dir_path)
+            else:
+                logger.warning("Concourse binary missing, skipping key generation")
+
     def _on_upgrade_charm(self, event):
         """Handle upgrade-charm event"""
         try:
@@ -487,22 +511,7 @@ class ConcourseCharm(CharmBase):
                 os.chmod(default_concourse, 0o644)
 
             # Ensure keys are generated
-            keys_dir_path = KEYS_DIR
-            if self._should_run_worker() and not self._should_run_web():
-                from concourse_common import WORKER_KEYS_DIR
-
-                keys_dir_path = WORKER_KEYS_DIR
-
-            keys_dir = Path(keys_dir_path)
-            if not (keys_dir / "tsa_host_key").exists():
-                # Check if binary exists before generating keys
-                if verify_installation():
-                    logger.info(f"Generating missing keys in {keys_dir}")
-                    generate_keys(keys_dir_path)
-                else:
-                    logger.warning(
-                        "Concourse binary missing, skipping key generation during upgrade"
-                    )
+            self._ensure_keys_generated()
 
             # Recreate systemd services (in case service definitions changed)
             if self._should_run_web():
@@ -2485,6 +2494,10 @@ class ConcourseCharm(CharmBase):
                 self, version, storage_coordinator
             )
 
+            # Ensure keys exist before restarting the service (safety net for
+            # cases where an earlier failed install never generated them).
+            self._ensure_keys_generated()
+
             logger.info("Step 5: Restarting web service")  # T052
             self.web_helper.start_service()
 
@@ -2562,6 +2575,12 @@ class ConcourseCharm(CharmBase):
             self.worker_helper.stop_service()
 
         download_and_install_concourse(self, version)
+
+        # Ensure keys exist before (re)starting the service. This path can be
+        # reached on a fresh, previously-failed install (e.g. the initial
+        # install hook failed before it could install the binary/generate
+        # keys), so keys may not have been generated yet.
+        self._ensure_keys_generated()
 
         # Re-install wrappers after upgrade if we are a worker
         if self._should_run_worker():
