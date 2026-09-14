@@ -202,6 +202,9 @@ class ConcourseCharm(CharmBase):
         self.framework.observe(
             self.on.get_admin_password_action, self._on_get_admin_password_action
         )
+        self.framework.observe(
+            self.on.reset_db_health_action, self._on_reset_db_health_action
+        )
 
     def _get_deployment_mode(self) -> str:
         """
@@ -2230,6 +2233,21 @@ class ConcourseCharm(CharmBase):
                 # SELECT check before any GRANTs are issued).
                 self.web_helper.ensure_db_privileges(db_url)
 
+                # Detect and recover from stale DB connections left over from
+                # a PostgreSQL charm/snap refresh that didn't change
+                # endpoints/credentials (so no relation-changed event fired
+                # to trigger a reconnect). Bounded by a circuit breaker so a
+                # genuinely broken database cannot cause an endless restart
+                # loop — see ConcourseWebHelper.evaluate_db_health_circuit_breaker.
+                db_health = self.web_helper.evaluate_db_health_circuit_breaker()
+                if db_health == "circuit_open":
+                    self.unit.status = BlockedStatus(
+                        "Database errors persist after automatic restarts; "
+                        "manual investigation required (run the "
+                        "reset-db-health action once fixed)"
+                    )
+                    return
+
             # Start worker service if needed
             if self._should_run_worker():
                 # Verify essential worker files exist before starting service.
@@ -2344,6 +2362,29 @@ class ConcourseCharm(CharmBase):
         except Exception as e:
             event.fail(f"Failed to retrieve admin password: {e}")
             logger.exception("Get admin password action failed")
+
+    def _on_reset_db_health_action(self, event):
+        """Handle reset-db-health action.
+
+        Manually clears the DB-health circuit breaker state after an
+        operator has confirmed and fixed the underlying database issue,
+        so automatic restart-on-error detection resumes with a fresh
+        retry budget.
+        """
+        try:
+            self.web_helper.reset_db_health_circuit_breaker()
+            event.set_results(
+                {
+                    "message": (
+                        "DB health circuit breaker reset; automatic "
+                        "restart-on-error detection resumed."
+                    )
+                }
+            )
+            logger.info("DB health circuit breaker reset via action")
+        except Exception as e:
+            event.fail(f"Failed to reset DB health circuit breaker: {e}")
+            logger.exception("Reset DB health action failed")
 
     def _get_installed_concourse_version(self) -> str | None:
         """Detect installed Concourse version from binary output"""

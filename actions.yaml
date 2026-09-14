@@ -24,3 +24,11 @@ run-migrations:
 
 get-admin-password:
   description: Get or generate initial admin password
+
+reset-db-health:
+  description: >
+    Manually reset the DB-health circuit breaker after fixing a persistent
+    database problem, so automatic restart-on-error detection (which
+    restarts concourse-server when it detects stale-connection permission
+    errors, bounded to avoid restart loops) resumes with a fresh retry
+    budget.

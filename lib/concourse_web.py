@@ -3,9 +3,11 @@
 Concourse Web Server Helper Library
 """
 
+import json
 import logging
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,19 @@ from concourse_common import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Known log signatures for the "stale DB connection after PostgreSQL
+# refresh" failure mode: concourse-server keeps running against old
+# connections/role state after the database charm/snap has been
+# refreshed without endpoint/credential changes (so no relation-changed
+# event fires to trigger a reconnect). A single restart of the service
+# re-establishes fresh connections and clears the errors.
+DB_ERROR_LOG_SIGNATURES = (
+    "SQLSTATE 42501",
+    "permission denied for table",
+    "permission denied for sequence",
+    "Failed to connect to the database",
+)
 
 # Import storage coordinator (may not be available)
 try:
@@ -37,6 +52,14 @@ except ImportError:
 class ConcourseWebHelper:
     """Helper class for Concourse web server operations"""
 
+    # Circuit breaker for the "stale DB connection" restart heuristic.
+    # Bounded so a genuinely broken database cannot trigger an infinite
+    # restart loop: MAX_AUTO_RESTARTS attempts, with growing cooldowns
+    # between each, before the circuit opens and hands control back to
+    # a human (BlockedStatus + `reset-db-health` action).
+    MAX_AUTO_RESTARTS = 3
+    DB_HEALTH_COOLDOWN_SCHEDULE_SECONDS = (300, 900, 1800)  # 5m, 15m, 30m
+
     def __init__(self, charm):
         self.charm = charm
         self.model = charm.model
@@ -44,6 +67,7 @@ class ConcourseWebHelper:
         self.storage_coordinator = (
             None  # Will be initialized if shared storage available
         )
+        self._db_health_state_file = Path(CONCOURSE_DATA_DIR) / "db-health-state.json"
 
     def initialize_shared_storage(self) -> Optional[object]:
         """Initialize shared storage for web/leader unit (T022).
@@ -599,6 +623,161 @@ WantedBy=multi-user.target
             return result.returncode == 0 and result.stdout.strip() == "active"
         except Exception:
             return False
+
+    def check_recent_db_errors(self, lines: int = 200) -> bool:
+        """Check whether recent concourse-server logs contain a known
+        DB-error signature (e.g. stale-connection permission errors after
+        a PostgreSQL charm/snap refresh).
+
+        Args:
+            lines: how many recent journal lines to scan.
+
+        Returns:
+            True if any known DB-error signature was found, else False.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "journalctl",
+                    "-u",
+                    "concourse-server.service",
+                    "-n",
+                    str(lines),
+                    "--no-pager",
+                ],
+                capture_output=True,
+                text=True,
+            )
+        except Exception as e:
+            logger.warning(f"Could not read concourse-server logs: {e}")
+            return False
+
+        output = result.stdout or ""
+        return any(signature in output for signature in DB_ERROR_LOG_SIGNATURES)
+
+    def _load_db_health_state(self) -> dict:
+        """Load the DB-health circuit breaker state, defaulting to a
+        fresh/closed circuit if no state file exists yet."""
+        default_state = {
+            "restart_count": 0,
+            "last_restart": None,
+            "circuit_open": False,
+        }
+        try:
+            return {
+                **default_state,
+                **json.loads(self._db_health_state_file.read_text()),
+            }
+        except (FileNotFoundError, json.JSONDecodeError):
+            return default_state
+
+    def _save_db_health_state(self, state: dict) -> None:
+        """Persist the DB-health circuit breaker state."""
+        self._db_health_state_file.parent.mkdir(parents=True, exist_ok=True)
+        self._db_health_state_file.write_text(json.dumps(state))
+
+    def _cooldown_remaining_seconds(self, state: dict) -> float:
+        """Return how many seconds remain before another automatic
+        restart attempt is allowed (0 if the cooldown has elapsed or no
+        restart has happened yet)."""
+        last_restart = state.get("last_restart")
+        if not last_restart:
+            return 0.0
+
+        schedule = self.DB_HEALTH_COOLDOWN_SCHEDULE_SECONDS
+        # restart_count reflects attempts already made; the cooldown that
+        # applies now is the one associated with the most recent attempt.
+        index = min(max(state.get("restart_count", 1), 1), len(schedule)) - 1
+        cooldown = schedule[index]
+
+        elapsed = (
+            datetime.now(timezone.utc)
+            - datetime.fromisoformat(last_restart)
+        ).total_seconds()
+        return max(0.0, cooldown - elapsed)
+
+    def evaluate_db_health_circuit_breaker(self) -> str:
+        """Detect stale-DB-connection errors and, if present, restart the
+        web service — bounded by a circuit breaker so a genuinely broken
+        database cannot trigger an endless restart loop.
+
+        Returns one of: "healthy", "restarted", "cooldown", "circuit_open".
+        """
+        state = self._load_db_health_state()
+
+        if state.get("circuit_open"):
+            logger.error(
+                "DB health circuit breaker is open (persistent DB errors "
+                "after automatic restarts) — refusing further automatic "
+                "restarts. Run the reset-db-health action once the "
+                "database issue has been fixed."
+            )
+            return "circuit_open"
+
+        has_errors = self.check_recent_db_errors()
+
+        if not has_errors:
+            if state.get("restart_count", 0) or state.get("last_restart"):
+                logger.info(
+                    "No recent DB errors detected — resetting DB health "
+                    "circuit breaker state"
+                )
+                self._save_db_health_state(
+                    {
+                        "restart_count": 0,
+                        "last_restart": None,
+                        "circuit_open": False,
+                    }
+                )
+            return "healthy"
+
+        remaining = self._cooldown_remaining_seconds(state)
+        if remaining > 0:
+            logger.warning(
+                f"DB errors detected but still within cooldown "
+                f"({remaining:.0f}s remaining) — skipping automatic restart"
+            )
+            return "cooldown"
+
+        restart_count = state.get("restart_count", 0)
+        if restart_count >= self.MAX_AUTO_RESTARTS:
+            logger.error(
+                f"DB errors persisted after {restart_count} automatic "
+                "restarts — opening circuit breaker, manual investigation "
+                "required"
+            )
+            self._save_db_health_state(
+                {
+                    "restart_count": restart_count,
+                    "last_restart": state.get("last_restart"),
+                    "circuit_open": True,
+                }
+            )
+            return "circuit_open"
+
+        logger.warning(
+            "Detected DB errors indicating stale connections "
+            f"(attempt {restart_count + 1}/{self.MAX_AUTO_RESTARTS}) — "
+            "restarting concourse-server"
+        )
+        self.restart_service()
+        self._save_db_health_state(
+            {
+                "restart_count": restart_count + 1,
+                "last_restart": datetime.now(timezone.utc).isoformat(),
+                "circuit_open": False,
+            }
+        )
+        return "restarted"
+
+    def reset_db_health_circuit_breaker(self) -> None:
+        """Manually clear the DB-health circuit breaker state (used by the
+        `reset-db-health` action after a human has fixed the underlying
+        database problem)."""
+        self._save_db_health_state(
+            {"restart_count": 0, "last_restart": None, "circuit_open": False}
+        )
+        logger.info("DB health circuit breaker manually reset")
 
     def ensure_db_privileges(self, db_url: str) -> bool:
         """Ensure the DB user has DML privileges on all Concourse tables.
