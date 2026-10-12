@@ -465,7 +465,10 @@ WantedBy=multi-user.target
         # keep authorizing users or connecting to a removed Vault instance.
         self._write_config(
             config,
-            managed_keys=oauth_managed_env_keys | oidc_managed_env_keys | vault_managed_env_keys | cache_managed_env_keys,
+            managed_keys=oauth_managed_env_keys
+            | oidc_managed_env_keys
+            | vault_managed_env_keys
+            | cache_managed_env_keys,
         )
         logger.info("Web server configuration updated")
 
@@ -818,6 +821,14 @@ WantedBy=multi-user.target
             logger.error(f"Cannot connect to database for privilege check: {e}")
             return False
 
+        missing_priv_sql = (
+            "SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname = 'public' "
+            "AND NOT (has_table_privilege(format('%I.%I', schemaname, tablename), "
+            "'SELECT') AND has_table_privilege(format('%I.%I', schemaname, "
+            "tablename), 'INSERT') AND has_table_privilege(format('%I.%I', "
+            "schemaname, tablename), 'UPDATE') AND has_table_privilege("
+            "format('%I.%I', schemaname, tablename), 'DELETE')))"
+        )
         try:
             conn.autocommit = True
             with conn.cursor() as cur:
@@ -839,11 +850,11 @@ WantedBy=multi-user.target
                     )
                     return True
 
-                # Check whether the current session user can INSERT.
-                cur.execute(
-                    "SELECT has_table_privilege('auth_request', 'INSERT')"
-                )
-                if cur.fetchone()[0]:
+                # Check every table, not just auth_request: tables added by
+                # later Concourse migrations (e.g. access_tokens) can be missing
+                # grants even when older tables are fine.
+                cur.execute(missing_priv_sql)
+                if not cur.fetchone()[0]:
                     logger.debug("DB privileges are already correct")
                     return True
 
@@ -888,27 +899,27 @@ WantedBy=multi-user.target
                             cur.execute(f'SET ROLE "{owner_role}"')
                         except psycopg2.Error as e:
                             logger.warning(
-                                f"Cannot SET ROLE \"{owner_role}\": {e} – skipping"
+                                f'Cannot SET ROLE "{owner_role}": {e} – skipping'
                             )
                             continue
 
                     for target in grant_targets:
                         cur.execute(
-                            f'GRANT SELECT, INSERT, UPDATE, DELETE '
+                            f"GRANT SELECT, INSERT, UPDATE, DELETE "
                             f'ON ALL TABLES IN SCHEMA public TO "{target}"'
                         )
                         cur.execute(
-                            f'GRANT SELECT, USAGE '
+                            f"GRANT SELECT, USAGE "
                             f'ON ALL SEQUENCES IN SCHEMA public TO "{target}"'
                         )
                         cur.execute(
                             f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner_role}" '
-                            f'IN SCHEMA public '
+                            f"IN SCHEMA public "
                             f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{target}"'
                         )
                         cur.execute(
                             f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner_role}" '
-                            f'IN SCHEMA public '
+                            f"IN SCHEMA public "
                             f'GRANT SELECT, USAGE ON SEQUENCES TO "{target}"'
                         )
 
@@ -931,10 +942,8 @@ WantedBy=multi-user.target
                     return False
 
                 # Verify the fix worked.
-                cur.execute(
-                    "SELECT has_table_privilege('auth_request', 'INSERT')"
-                )
-                ok = cur.fetchone()[0]
+                cur.execute(missing_priv_sql)
+                ok = not cur.fetchone()[0]
                 if ok:
                     logger.info("DB privilege fix verified successfully")
                 else:

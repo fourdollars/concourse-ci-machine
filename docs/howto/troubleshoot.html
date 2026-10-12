@@ -349,6 +349,20 @@ lxc config device show &lt;container-name&gt;
 
 # Should show: shift: "true"</code></pre>
 
+        <h2>Web Login Fails (HTTP 500)</h2>
+
+        <p>Symptom: <code>journalctl -u concourse-server</code> shows
+        <code>permission denied for table access_tokens (SQLSTATE 42501)</code>
+        and workers cannot register. Tables created by Concourse migrations are owned by
+        <code>charmed_concourse_owner</code> but the DML role was not granted access.
+        Recent charm revisions repair this automatically on <code>update-status</code>;
+        on older revisions run as the PostgreSQL <code>operator</code> user:</p>
+
+        <pre><code class="language-sql">GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO charmed_concourse_dml;
+GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO charmed_concourse_dml;
+ALTER DEFAULT PRIVILEGES FOR ROLE charmed_concourse_owner IN SCHEMA public
+  GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO charmed_concourse_dml;</code></pre>
+
         <h2>Tasks Failing to Start</h2>
 
         <h3>Missing Image Resource</h3>
